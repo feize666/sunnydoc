@@ -2,18 +2,20 @@
 
 import { useState, useRef, useEffect } from "react";
 import { SendIcon, LinkIcon } from "./icons";
+import { chat, type Citation } from "@/lib/api";
 
 interface Message {
   role: "user" | "ai";
   content: string;
-  citations?: { doc: string; segment: string }[];
+  citations?: Citation[];
+  error?: boolean;
 }
 
 const initialMessages: Message[] = [
   {
     role: "ai",
     content:
-      "你好，我可以基于知识库中的文档回答你的问题。试试问我关于「部署」或「权限」相关的内容。",
+      "你好，我可以基于知识库中的文档回答你的问题。试试问我关于「部署」或「导入」相关的内容。",
   },
 ];
 
@@ -27,34 +29,31 @@ export function AiPanel() {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
   }, [messages, loading]);
 
-  const ask = () => {
+  const ask = async () => {
     const q = input.trim();
     if (!q || loading) return;
     setMessages((m) => [...m, { role: "user", content: q }]);
     setInput("");
     setLoading(true);
 
-    // 模拟后端检索（后续替换为真实 API 调用）
-    setTimeout(() => {
-      const docName = q.includes("部署")
-        ? "部署指南"
-        : q.includes("权限")
-          ? "功能指南"
-          : "快速开始";
+    try {
+      const res = await chat(q);
+      setMessages((m) => [
+        ...m,
+        { role: "ai", content: res.answer, citations: res.citations },
+      ]);
+    } catch (e) {
       setMessages((m) => [
         ...m,
         {
           role: "ai",
-          content:
-            "根据知识库中的文档，以下是相关回答：\n\n这是一条基于检索结果的示例回答，实际接入后端后，这里会展示由大模型结合检索片段生成的答案。",
-          citations: [
-            { doc: docName, segment: "第 2 段" },
-            { doc: docName, segment: "第 5 段" },
-          ],
+          content: `请求失败：${e instanceof Error ? e.message : "未知错误"}，请确认后端服务已启动。`,
+          error: true,
         },
       ]);
+    } finally {
       setLoading(false);
-    }, 600);
+    }
   };
 
   return (
@@ -81,11 +80,13 @@ export function AiPanel() {
               className={
                 msg.role === "user"
                   ? "max-w-[90%] rounded-xl rounded-br-sm bg-accent px-3 py-2 text-white"
-                  : "max-w-full rounded-xl rounded-bl-sm border border-line bg-background px-3 py-2.5 whitespace-pre-wrap"
+                  : `max-w-full rounded-xl rounded-bl-sm border px-3 py-2.5 whitespace-pre-wrap ${
+                      msg.error ? "border-red-400 bg-red-50 text-red-600" : "border-line bg-background"
+                    }`
               }
             >
               {msg.content}
-              {msg.citations && (
+              {msg.citations && msg.citations.length > 0 && (
                 <div className="mt-1.5 space-y-0.5 border-t border-line pt-1.5 text-[11px]">
                   {msg.citations.map((c, j) => (
                     <a
@@ -94,7 +95,7 @@ export function AiPanel() {
                       className="flex items-center gap-1 text-accent hover:underline"
                     >
                       <LinkIcon size={11} />
-                      {c.doc} · {c.segment}
+                      {c.title} · 片段 {c.segment_index + 1}
                     </a>
                   ))}
                 </div>

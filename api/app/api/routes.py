@@ -43,6 +43,21 @@ def list_documents():
     }
 
 
+@router.get("/documents/{doc_id}")
+def get_document(doc_id: str):
+    doc = store.get(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    return {
+        "id": doc["id"],
+        "title": doc["title"],
+        "text": doc["text"],
+        "source": doc["source"],
+        "ext": doc["ext"],
+        "created_at": doc["created_at"],
+    }
+
+
 @router.post("/documents/import")
 async def import_documents(file: UploadFile = File(...)):
     """上传文件（支持 md/txt/json/csv/pdf/docx/xlsx/zip），解析并入库"""

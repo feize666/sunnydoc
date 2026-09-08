@@ -2,7 +2,7 @@
 # ============================================================
 # sunnydoc 一键部署 + 推送脚本
 # 用法：./deploy.sh "commit 信息"
-# 流程：本机文件 scp → 服务器 git commit/push → GitHub
+# 流程：本机构建前端 → 打包源码 scp 服务器 → 服务器 git commit/push + 重启后端
 # ============================================================
 set -e
 
@@ -13,17 +13,23 @@ MSG="${1:-chore: 更新 sunnydoc}"
 
 cd "$LOCAL_DIR"
 
-echo "==> [1/3] 上传文件到服务器临时目录..."
-ssh -o StrictHostKeyChecking=no "$SERVER" "mkdir -p /tmp/sunnydoc_upload/mvp-ui"
-scp -o StrictHostKeyChecking=no -q README.md .gitignore "$SERVER:/tmp/sunnydoc_upload/"
-scp -o StrictHostKeyChecking=no -q mvp-ui/index.html "$SERVER:/tmp/sunnydoc_upload/mvp-ui/"
+echo "==> [1/4] 构建前端静态产物..."
+(cd web && env -u NODE_OPTIONS -u NEXT_PUBLIC_API_BASE npm run build)
 
-echo "==> [2/3] 放置文件 + git commit + push 到 GitHub..."
+echo "==> [2/4] 打包源码并上传服务器..."
+tar --exclude='web/node_modules' --exclude='web/.next' --exclude='api/.venv' \
+    --exclude='api/data' --exclude='api/__pycache__' --exclude='.workbuddy' \
+    --exclude='.git' -czf /tmp/sunnydoc_src.tgz README.md .gitignore deploy.sh web/ api/
+scp -o StrictHostKeyChecking=no -q /tmp/sunnydoc_src.tgz "$SERVER:/tmp/"
+
+echo "==> [3/4] 服务器解压 + 更新部署产物 + 重启后端 + git 推送..."
 ssh -o StrictHostKeyChecking=no "$SERVER" "cd $DEPLOY_DIR && \
-  cp /tmp/sunnydoc_upload/README.md /tmp/sunnydoc_upload/.gitignore . && \
-  cp /tmp/sunnydoc_upload/mvp-ui/index.html mvp-ui/ && \
+  tar -xzf /tmp/sunnydoc_src.tgz -C $DEPLOY_DIR 2>/dev/null; \
+  find . -name '._*' -delete; \
+  cp -r web/out/* mvp-ui/ 2>/dev/null || true; \
+  systemctl restart sunnydoc-api; \
   git add -A && \
   git -c user.name='Feize' -c user.email='fei2210ze@163.com' commit -m \"$MSG\" && \
   GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=no' git push origin main"
 
-echo "==> [3/3] 完成。访问：http://180.184.86.246:85"
+echo "==> [4/4] 完成。访问：http://180.184.86.246:85"

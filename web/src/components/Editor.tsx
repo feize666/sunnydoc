@@ -1,14 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { renderMarkdown } from "@/lib/markdown";
 import type { Doc } from "@/data/docs";
 
 type Mode = "preview" | "edit";
 
-export function Editor({ doc }: { doc: Doc | null }) {
+export function Editor({ doc, loading }: { doc: Doc | null; loading?: boolean }) {
   const [mode, setMode] = useState<Mode>("preview");
   const [draft, setDraft] = useState("");
+
+  // 切换文档时重置为预览模式
+  useEffect(() => {
+    setMode("preview");
+  }, [doc?.key]);
+
+  if (loading && !doc) {
+    return (
+      <main className="flex flex-1 items-center justify-center bg-background text-muted">
+        <p className="text-sm">正在加载文档…</p>
+      </main>
+    );
+  }
 
   if (!doc) {
     return (

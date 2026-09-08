@@ -1,8 +1,13 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { importFiles, type ImportedDoc, type SkippedFile } from "@/lib/importer";
+import { importDocument } from "@/lib/api";
 import { CloseIcon } from "./icons";
+
+interface ImportResult {
+  success: string[];
+  failed: { name: string; reason: string }[];
+}
 
 export function ImportDialog({
   open,
@@ -11,14 +16,11 @@ export function ImportDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  onImported: (docs: ImportedDoc[]) => void;
+  onImported: () => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [result, setResult] = useState<{
-    imported: ImportedDoc[];
-    skipped: SkippedFile[];
-  } | null>(null);
+  const [result, setResult] = useState<ImportResult | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFiles = useCallback(
@@ -26,12 +28,25 @@ export function ImportDialog({
       if (files.length === 0) return;
       setProcessing(true);
       setResult(null);
-      const res = await importFiles(Array.from(files));
-      setResult(res);
-      setProcessing(false);
-      if (res.imported.length > 0) {
-        onImported(res.imported);
+
+      const success: string[] = [];
+      const failed: { name: string; reason: string }[] = [];
+
+      for (const file of Array.from(files)) {
+        try {
+          const res = await importDocument(file);
+          success.push(...res.documents.map((d) => d.title));
+        } catch (e) {
+          failed.push({
+            name: file.name,
+            reason: e instanceof Error ? e.message : "上传失败",
+          });
+        }
       }
+
+      setResult({ success, failed });
+      setProcessing(false);
+      if (success.length > 0) onImported();
     },
     [onImported],
   );
@@ -97,20 +112,20 @@ export function ImportDialog({
                 {dragOver ? "松开以导入文件" : "拖拽文件到此处，或点击选择"}
               </div>
               <div className="text-xs text-faint">
-                支持 .md .txt .json .csv .zip · PDF/Word/Excel 待后端解析
+                支持 .md .txt .json .csv .zip .pdf .docx .xlsx
               </div>
             </div>
             <input
               ref={inputRef}
               type="file"
               multiple
-              accept=".md,.markdown,.txt,.text,.json,.csv,.tsv,.zip,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+              accept=".md,.markdown,.txt,.text,.json,.csv,.tsv,.zip,.pdf,.doc,.docx,.xls,.xlsx"
               className="hidden"
               onChange={(e) => e.target.files && handleFiles(e.target.files)}
             />
             {processing && (
               <div className="mt-3 text-center text-xs text-faint">
-                正在解析文件…
+                正在上传并解析文件…
               </div>
             )}
           </div>
@@ -118,36 +133,33 @@ export function ImportDialog({
           <div className="p-4">
             <div className="space-y-3">
               <div className="rounded-lg bg-accent-soft px-3 py-2.5 text-sm text-accent">
-                ✅ 成功导入 {result.imported.length} 篇文档
+                成功导入 {result.success.length} 篇文档
               </div>
-              {result.imported.length > 0 && (
+              {result.success.length > 0 && (
                 <div className="max-h-40 overflow-y-auto rounded-lg border border-line">
-                  {result.imported.map((d, i) => (
+                  {result.success.map((t, i) => (
                     <div
                       key={i}
                       className="border-b border-line px-3 py-1.5 text-[13px] last:border-0"
                     >
-                      {d.title}
-                      <span className="ml-2 text-[11px] text-faint">
-                        {d.ext}
-                      </span>
+                      {t}
                     </div>
                   ))}
                 </div>
               )}
-              {result.skipped.length > 0 && (
+              {result.failed.length > 0 && (
                 <div>
                   <div className="mb-1 text-xs font-medium text-muted">
-                    已跳过 {result.skipped.length} 个文件：
+                    导入失败 {result.failed.length} 个文件：
                   </div>
                   <div className="max-h-32 overflow-y-auto rounded-lg border border-line">
-                    {result.skipped.map((s, i) => (
+                    {result.failed.map((f, i) => (
                       <div
                         key={i}
                         className="flex items-center justify-between border-b border-line px-3 py-1.5 text-[12px] last:border-0"
                       >
-                        <span className="truncate">{s.name}</span>
-                        <span className="ml-2 shrink-0 text-faint">{s.reason}</span>
+                        <span className="truncate">{f.name}</span>
+                        <span className="ml-2 shrink-0 text-faint">{f.reason}</span>
                       </div>
                     ))}
                   </div>

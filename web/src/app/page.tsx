@@ -8,23 +8,31 @@ import { AiPanel } from "@/components/AiPanel";
 import { StatusBar } from "@/components/StatusBar";
 import { CommandPalette, type Command } from "@/components/CommandPalette";
 import { ImportDialog } from "@/components/ImportDialog";
-import { docs as seedDocs, treeData as seedTree, type Doc, type TreeNode } from "@/data/docs";
+import type { Doc, TreeNode } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
-import type { ImportedDoc } from "@/lib/importer";
+import {
+  listDocuments,
+  getDocument,
+  type DocMeta,
+} from "@/lib/api";
 
-function buildDocKey(): string {
-  return `doc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+function formatTime(ts: number): string {
+  const d = new Date(ts * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export default function Home() {
-  const [docs, setDocs] = useState<Record<string, Doc>>(seedDocs);
-  const [tree, setTree] = useState<TreeNode[]>(seedTree);
-  const [openKeys, setOpenKeys] = useState<string[]>(["quickstart"]);
-  const [activeKey, setActiveKey] = useState<string | null>("quickstart");
+  const [docs, setDocs] = useState<Record<string, Doc>>({});
+  const [metas, setMetas] = useState<DocMeta[]>([]);
+  const [openKeys, setOpenKeys] = useState<string[]>([]);
+  const [activeKey, setActiveKey] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [loadingDoc, setLoadingDoc] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -41,10 +49,49 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const openDoc = useCallback((key: string) => {
-    setOpenKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
-    setActiveKey(key);
+  // 拉取文档列表
+  const refreshList = useCallback(async () => {
+    try {
+      setListError(null);
+      const list = await listDocuments();
+      setMetas(list);
+    } catch (e) {
+      setListError(e instanceof Error ? e.message : "加载文档列表失败");
+    }
   }, []);
+
+  useEffect(() => {
+    refreshList();
+  }, [refreshList]);
+
+  // 打开文档：设置 active，若未加载全文则拉取
+  const openDoc = useCallback(
+    async (key: string) => {
+      setOpenKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
+      setActiveKey(key);
+      if (!docs[key]) {
+        setLoadingDoc(true);
+        try {
+          const detail = await getDocument(key);
+          setDocs((prev) => ({
+            ...prev,
+            [key]: {
+              key: detail.id,
+              title: detail.title,
+              path: detail.source,
+              updated: formatTime(detail.created_at),
+              body: detail.text,
+            },
+          }));
+        } catch {
+          // 加载失败，保持空
+        } finally {
+          setLoadingDoc(false);
+        }
+      }
+    },
+    [docs],
+  );
 
   const closeDoc = useCallback(
     (key: string) => {
@@ -61,40 +108,12 @@ export default function Home() {
     [activeKey],
   );
 
-  // 导入回调：把新文档加入 docs 和树（归入「导入的文档」文件夹）
-  const handleImported = useCallback((imported: ImportedDoc[]) => {
-    const newKeys: string[] = [];
-    const addedDocs: Record<string, Doc> = {};
-    const addedNodes: TreeNode[] = [];
-
-    for (const d of imported) {
-      const key = buildDocKey();
-      newKeys.push(key);
-      addedDocs[key] = {
-        key,
-        title: d.title,
-        path: `导入的文档 / ${d.title}`,
-        updated: new Date().toLocaleString("zh-CN", { hour12: false }),
-        body: d.body,
-      };
-      addedNodes.push({ type: "file", name: d.title, key });
-    }
-
-    setDocs((prev) => ({ ...prev, ...addedDocs }));
-    setTree((prev) => {
-      const folderName = "导入的文档";
-      const existing = prev.find((n) => n.type === "folder" && n.name === folderName);
-      if (existing && existing.children) {
-        return prev.map((n) =>
-          n.name === folderName
-            ? { ...n, children: [...(n.children ?? []), ...addedNodes] }
-            : n,
-        );
-      }
-      return [...prev, { type: "folder", name: folderName, children: addedNodes }];
-    });
-    if (newKeys.length > 0) openDoc(newKeys[0]);
-  }, [openDoc]);
+  // 构建文件树：按 source 的文件名分组
+  const tree: TreeNode[] = metas.map((m) => ({
+    type: "file",
+    name: m.title,
+    key: m.id,
+  }));
 
   const activeDoc = activeKey ? docs[activeKey] ?? null : null;
   const wordCount = activeDoc ? countWords(activeDoc.body) : 0;
@@ -108,13 +127,12 @@ export default function Home() {
       action: () => setImportOpen(true),
     },
     {
-      icon: "📄",
-      label: "新建文档",
-      hint: "Ctrl+N",
-      action: () => setImportOpen(true),
+      icon: "🔄",
+      label: "刷新文档列表",
+      hint: "",
+      action: () => refreshList(),
     },
     { icon: "🔍", label: "全文搜索", hint: "Ctrl+F" },
-    { icon: "💬", label: "打开 AI 问答", hint: "Ctrl+J" },
     {
       icon: theme === "light" ? "🌙" : "☀️",
       label: "切换主题",
@@ -149,8 +167,10 @@ export default function Home() {
           docs={allDocs}
           activeDoc={activeDoc}
           onImport={() => setImportOpen(true)}
+          onRefresh={refreshList}
+          listError={listError}
         />
-        <Editor doc={activeDoc} />
+        <Editor doc={activeDoc} loading={loadingDoc} />
         <AiPanel />
       </div>
 
@@ -165,7 +185,9 @@ export default function Home() {
       <ImportDialog
         open={importOpen}
         onClose={() => setImportOpen(false)}
-        onImported={handleImported}
+        onImported={() => {
+          refreshList();
+        }}
       />
     </div>
   );

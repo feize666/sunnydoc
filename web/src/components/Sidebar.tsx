@@ -19,6 +19,8 @@ export function Sidebar({
   docs,
   activeDoc,
   onImport,
+  onRefresh,
+  listError,
 }: {
   data: TreeNode[];
   activeKey: string | null;
@@ -28,6 +30,8 @@ export function Sidebar({
   docs: Doc[];
   activeDoc: Doc | null;
   onImport: () => void;
+  onRefresh?: () => void;
+  listError?: string | null;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -65,6 +69,13 @@ export function Sidebar({
       disabled: false,
       hint: "",
       action: () => onImport(),
+    },
+    {
+      label: "刷新文档列表",
+      icon: "M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15",
+      disabled: !onRefresh,
+      hint: "",
+      action: () => onRefresh?.(),
     },
   ];
 
@@ -161,6 +172,16 @@ export function Sidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto px-1.5 py-2">
+        {listError && (
+          <div className="mx-1 mb-2 rounded-md border border-red-300 bg-red-50 px-2 py-1.5 text-[11px] text-red-600">
+            {listError}（后端服务未启动？）
+          </div>
+        )}
+        {data.length === 0 && !listError && (
+          <div className="px-2 py-4 text-center text-[12px] text-faint">
+            暂无文档，点击右上角「+」导入
+          </div>
+        )}
         <FileTree data={data} activeKey={activeKey} onSelect={onSelect} />
       </div>
     </aside>
