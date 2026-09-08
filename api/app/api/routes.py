@@ -59,6 +59,10 @@ class CreateFolderRequest(BaseModel):
     kb_id: str | None = None
 
 
+class UpdateFolderRequest(BaseModel):
+    name: str
+
+
 class CreateKBRequest(BaseModel):
     name: str
     description: str | None = None
@@ -524,6 +528,18 @@ def create_folder(req: CreateFolderRequest):
     if not name:
         raise HTTPException(status_code=400, detail="文件夹名称不能为空")
     folder = store.create_folder(name=name, parent_id=req.parent_id, kb_id=req.kb_id)
+    return folder
+
+
+@router.put("/folders/{folder_id}")
+def rename_folder(folder_id: str, req: UpdateFolderRequest):
+    """重命名文件夹。"""
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="文件夹名称不能为空")
+    folder = store.rename_folder(folder_id, name)
+    if not folder:
+        raise HTTPException(status_code=404, detail="文件夹不存在")
     return folder
 
 

@@ -246,6 +246,17 @@ class DocStore:
             self._save()
         return folder
 
+    def rename_folder(self, folder_id: str, name: str) -> dict[str, Any] | None:
+        """重命名文件夹，不存在返回 None。"""
+        if self._backend == "db":
+            return db.rename_folder(folder_id, name)
+        for f in self._folders:
+            if f["id"] == folder_id:
+                f["name"] = name
+                self._save()
+                return dict(f)
+        return None
+
     def delete_folder(self, folder_id: str) -> bool:
         """删除文件夹：级联删除子文件夹，其下文档 folder_id 置空（移回根目录）。"""
         if self._backend == "db":

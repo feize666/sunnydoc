@@ -86,9 +86,6 @@ export function NewFolderDialog({
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleCreate();
-            }}
             placeholder="输入文件夹名称"
             className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
           />

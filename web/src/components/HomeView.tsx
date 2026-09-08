@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { Kb, RecentDoc } from "@/lib/api";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { PlusIcon, TrashIcon, HistoryIcon, FolderIcon } from "./icons";
+import { PlusIcon, TrashIcon, HistoryIcon, FolderIcon, EditIcon } from "./icons";
 
 function formatTime(ts: number): string {
   const ms = ts && ts < 1e12 ? ts * 1000 : ts;
@@ -27,6 +27,7 @@ export function HomeView({
   onOpenPalette,
   onOpenKb,
   onCreateKb,
+  onEditKb,
   onDeleteKb,
   onOpenRecent,
 }: {
@@ -39,6 +40,7 @@ export function HomeView({
   onOpenPalette: () => void;
   onOpenKb: (id: string) => void;
   onCreateKb: () => void;
+  onEditKb: (kb: Kb) => void;
   onDeleteKb: (id: string) => void;
   onOpenRecent: (docId: string, kbId: string | null) => void;
 }) {
@@ -161,24 +163,44 @@ export function HomeView({
                       <span className="grid h-9 w-9 place-items-center rounded-lg bg-accent-soft text-sm font-semibold text-accent">
                         {(kb.name || "知").slice(0, 1)}
                       </span>
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPendingDelete(kb);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
+                      <div className="flex items-center gap-0.5">
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEditKb(kb);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.stopPropagation();
+                              onEditKb(kb);
+                            }
+                          }}
+                          className="grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-hover hover:text-accent group-hover:opacity-100"
+                          title="编辑知识库"
+                        >
+                          <EditIcon size={13} />
+                        </span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
                             e.stopPropagation();
                             setPendingDelete(kb);
-                          }
-                        }}
-                        className="grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
-                        title="删除知识库"
-                      >
-                        <TrashIcon size={13} />
-                      </span>
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.stopPropagation();
+                              setPendingDelete(kb);
+                            }
+                          }}
+                          className="grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+                          title="删除知识库"
+                        >
+                          <TrashIcon size={13} />
+                        </span>
+                      </div>
                     </div>
                     <div className="min-w-0">
                       <div className="truncate text-sm font-semibold text-text">

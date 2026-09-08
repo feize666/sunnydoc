@@ -20,6 +20,7 @@ export function Sidebar({
   onRefresh,
   onDeleteDoc,
   onDeleteFolder,
+  onRenameFolder,
   onMoveDoc,
   listError,
   kbName,
@@ -38,6 +39,7 @@ export function Sidebar({
   onRefresh?: () => void;
   onDeleteDoc?: (key: string) => void;
   onDeleteFolder?: (id: string) => void;
+  onRenameFolder?: () => void;
   onMoveDoc?: (docId: string, folderId: string | null) => void;
   listError?: string | null;
   kbName?: string;
@@ -230,6 +232,7 @@ export function Sidebar({
           folders={folders}
           onDeleteDoc={onDeleteDoc}
           onDeleteFolder={onDeleteFolder}
+          onRenameFolder={onRenameFolder}
           onMoveDoc={onMoveDoc}
         />
       </div>

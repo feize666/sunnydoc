@@ -317,6 +317,28 @@ def list_folders(kb_id: str | None = None) -> list[dict[str, Any]]:
         ]
 
 
+def rename_folder(folder_id: str, name: str) -> dict[str, Any] | None:
+    """重命名文件夹，不存在返回 None。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute("UPDATE folders SET name = %s WHERE id = %s", (name, folder_id))
+        if cur.rowcount == 0:
+            return None
+        cur.execute(
+            "SELECT id, name, parent_id, created_at, kb_id FROM folders WHERE id = %s",
+            (folder_id,),
+        )
+        row = cur.fetchone()
+    conn.commit()
+    return {
+        "id": row[0],
+        "name": row[1],
+        "parent_id": row[2],
+        "created_at": row[3],
+        "kb_id": row[4],
+    }
+
+
 def delete_folder(folder_id: str) -> bool:
     """删除文件夹：级联删除其子文件夹，子级/本级文档 folder_id 置空（移回根目录）。"""
     conn = _connect()

@@ -10,8 +10,10 @@ import {
   CloseIcon,
   MoveIcon,
   TrashIcon,
+  EditIcon,
 } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { RenameFolderDialog } from "./RenameFolderDialog";
 
 function FileTreeNode({
   node,
@@ -20,6 +22,7 @@ function FileTreeNode({
   folders,
   onRequestDeleteDoc,
   onRequestDeleteFolder,
+  onRequestRenameFolder,
   onMoveDoc,
   depth = 0,
 }: {
@@ -29,6 +32,7 @@ function FileTreeNode({
   folders: Folder[];
   onRequestDeleteDoc?: (node: TreeNode) => void;
   onRequestDeleteFolder?: (node: TreeNode) => void;
+  onRequestRenameFolder?: (node: TreeNode) => void;
   onMoveDoc?: (docId: string, folderId: string | null) => void;
   depth?: number;
 }) {
@@ -53,6 +57,18 @@ function FileTreeNode({
             <FolderIcon size={15} className="shrink-0 text-faint" />
             <span className="truncate">{node.name}</span>
           </button>
+          {onRequestRenameFolder && node.key && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onRequestRenameFolder(node);
+              }}
+              className="mr-1 grid h-4 w-4 shrink-0 place-items-center rounded text-faint opacity-0 transition-opacity hover:bg-hover hover:text-accent group-hover:opacity-100"
+              title="重命名文件夹"
+            >
+              <EditIcon size={12} />
+            </button>
+          )}
           {onRequestDeleteFolder && node.key && (
             <button
               onClick={(e) => {
@@ -77,6 +93,7 @@ function FileTreeNode({
                 folders={folders}
                 onRequestDeleteDoc={onRequestDeleteDoc}
                 onRequestDeleteFolder={onRequestDeleteFolder}
+                onRequestRenameFolder={onRequestRenameFolder}
                 onMoveDoc={onMoveDoc}
                 depth={depth + 1}
               />
@@ -172,6 +189,7 @@ export function FileTree({
   folders = [],
   onDeleteDoc,
   onDeleteFolder,
+  onRenameFolder,
   onMoveDoc,
 }: {
   data: TreeNode[];
@@ -180,10 +198,14 @@ export function FileTree({
   folders?: Folder[];
   onDeleteDoc?: (key: string) => void;
   onDeleteFolder?: (id: string) => void;
+  onRenameFolder?: () => void;
   onMoveDoc?: (docId: string, folderId: string | null) => void;
 }) {
   const [pendingDeleteDoc, setPendingDeleteDoc] = useState<TreeNode | null>(null);
   const [pendingDeleteFolder, setPendingDeleteFolder] = useState<TreeNode | null>(
+    null,
+  );
+  const [pendingRenameFolder, setPendingRenameFolder] = useState<Folder | null>(
     null,
   );
 
@@ -200,6 +222,14 @@ export function FileTree({
             onRequestDeleteDoc={onDeleteDoc ? setPendingDeleteDoc : undefined}
             onRequestDeleteFolder={
               onDeleteFolder ? setPendingDeleteFolder : undefined
+            }
+            onRequestRenameFolder={
+              onRenameFolder
+                ? (node) => {
+                    const f = folders.find((x) => x.id === node.key);
+                    if (f) setPendingRenameFolder(f);
+                  }
+                : undefined
             }
             onMoveDoc={onMoveDoc}
           />
@@ -234,6 +264,14 @@ export function FileTree({
           setPendingDeleteFolder(null);
         }}
         onCancel={() => setPendingDeleteFolder(null)}
+      />
+
+      <RenameFolderDialog
+        folder={pendingRenameFolder}
+        onClose={() => setPendingRenameFolder(null)}
+        onRenamed={() => {
+          onRenameFolder?.();
+        }}
       />
     </>
   );

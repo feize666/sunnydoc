@@ -76,6 +76,7 @@ export default function Home() {
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [newKbOpen, setNewKbOpen] = useState(false);
+  const [editingKb, setEditingKb] = useState<Kb | null>(null);
   const [loadingDoc, setLoadingDoc] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
 
@@ -307,6 +308,12 @@ export default function Home() {
     [openDoc],
   );
 
+  // 编辑知识库
+  const handleEditKb = useCallback((kb: Kb) => {
+    setEditingKb(kb);
+    setNewKbOpen(true);
+  }, []);
+
   // 删除知识库
   const handleDeleteKb = useCallback(
     async (id: string) => {
@@ -399,6 +406,7 @@ export default function Home() {
               onRefresh={refreshList}
               onDeleteDoc={handleDelete}
               onDeleteFolder={handleDeleteFolder}
+              onRenameFolder={refreshList}
               onMoveDoc={handleMoveDoc}
               listError={listError}
               kbName={currentKb?.name}
@@ -423,6 +431,7 @@ export default function Home() {
           onOpenPalette={() => setPaletteOpen(true)}
           onOpenKb={enterKb}
           onCreateKb={() => setNewKbOpen(true)}
+          onEditKb={handleEditKb}
           onDeleteKb={handleDeleteKb}
           onOpenRecent={openRecent}
         />
@@ -471,10 +480,15 @@ export default function Home() {
 
       <NewKbDialog
         open={newKbOpen}
-        onClose={() => setNewKbOpen(false)}
-        onCreated={() => {
-          refreshKbs();
+        onClose={() => {
+          setNewKbOpen(false);
+          setEditingKb(null);
         }}
+        onSaved={() => {
+          refreshKbs();
+          setEditingKb(null);
+        }}
+        kb={editingKb}
       />
     </div>
   );
