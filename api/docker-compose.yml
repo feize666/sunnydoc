@@ -2,12 +2,13 @@ services:
   db:
     image: pgvector/pgvector:pg16
     container_name: sunnydoc-pg
+    restart: unless-stopped
     environment:
       POSTGRES_USER: sunnydoc
-      POSTGRES_PASSWORD: sunnydoc
+      POSTGRES_PASSWORD: Sunnydoc@PG2026
       POSTGRES_DB: sunnydoc
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
