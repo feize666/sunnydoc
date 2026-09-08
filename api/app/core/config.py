@@ -1,7 +1,8 @@
 """应用配置"""
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+# app/core/config.py -> app/core -> app -> (项目根 api/)
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # 文档存储目录
 DATA_DIR = BASE_DIR / "data"
