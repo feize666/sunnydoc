@@ -55,6 +55,15 @@ function isSession(value: unknown): value is ChatSession {
   );
 }
 
+function isMessage(value: unknown): value is Message {
+  if (!value || typeof value !== "object") return false;
+  const o = value as Record<string, unknown>;
+  return (
+    (o.role === "user" || o.role === "ai") &&
+    typeof o.content === "string"
+  );
+}
+
 export function loadSessions(): ChatSession[] {
   if (typeof localStorage === "undefined") return [];
   try {
@@ -62,7 +71,10 @@ export function loadSessions(): ChatSession[] {
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isSession).sort((a, b) => b.updatedAt - a.updatedAt);
+    return parsed
+      .filter(isSession)
+      .map((s) => ({ ...s, messages: s.messages.filter(isMessage) }))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
   } catch {
     return [];
   }

@@ -219,7 +219,7 @@ export function ImportDialog({
               </div>
               {result.titles.length > 0 && (
                 <div className="max-h-40 overflow-y-auto rounded-lg border border-line">
-                  {result.titles.map((t, i) => (
+                  {(result.titles ?? []).map((t, i) => (
                     <div
                       key={i}
                       className="border-b border-line px-3 py-1.5 text-[13px] last:border-0"

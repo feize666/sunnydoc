@@ -54,7 +54,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function listDocuments(): Promise<DocMeta[]> {
   const data = await request<{ total: number; documents: DocMeta[] }>("/documents");
-  return data.documents;
+  return Array.isArray(data?.documents) ? data.documents : [];
 }
 
 export async function listFolders(): Promise<Folder[]> {

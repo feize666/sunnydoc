@@ -8,11 +8,14 @@ import type { DocMeta, Folder } from "@/lib/api";
  * - 每个节点按「文件夹在前、文档在后、名称排序」排序
  */
 export function buildTree(docs: DocMeta[], folders: Folder[]): TreeNode[] {
+  const docList = Array.isArray(docs) ? docs : [];
+  const folderList = Array.isArray(folders) ? folders : [];
+
   const folderMap = new Map<string, Folder>();
-  for (const f of folders) folderMap.set(f.id, f);
+  for (const f of folderList) folderMap.set(f.id, f);
 
   const folderNodes = new Map<string, TreeNode>();
-  for (const f of folders) {
+  for (const f of folderList) {
     folderNodes.set(f.id, {
       type: "folder",
       name: f.name,
@@ -24,7 +27,7 @@ export function buildTree(docs: DocMeta[], folders: Folder[]): TreeNode[] {
   const roots: TreeNode[] = [];
 
   // 挂接文件夹层级
-  for (const f of folders) {
+  for (const f of folderList) {
     const node = folderNodes.get(f.id)!;
     const parent = f.parent_id ? folderNodes.get(f.parent_id) : undefined;
     if (parent) {
@@ -35,7 +38,7 @@ export function buildTree(docs: DocMeta[], folders: Folder[]): TreeNode[] {
   }
 
   // 挂接文档
-  for (const d of docs) {
+  for (const d of docList) {
     const fileNode: TreeNode = { type: "file", name: d.title, key: d.id };
     const parent = d.folder_id ? folderNodes.get(d.folder_id) : undefined;
     if (parent) {

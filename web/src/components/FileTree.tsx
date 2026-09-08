@@ -68,7 +68,7 @@ function FileTreeNode({
         </div>
         {open && node.children && (
           <div>
-            {node.children.map((child) => (
+            {(node.children ?? []).map((child) => (
               <FileTreeNode
                 key={child.key ?? child.name}
                 node={child}
@@ -127,7 +127,7 @@ function FileTreeNode({
                 <FolderIcon size={13} className="shrink-0 text-faint" />
                 根目录
               </button>
-              {folders.map((f) => (
+              {(folders ?? []).map((f) => (
                 <button
                   key={f.id}
                   onClick={() => {
@@ -190,7 +190,7 @@ export function FileTree({
   return (
     <>
       <nav className="flex flex-col gap-0.5">
-        {data.map((node) => (
+        {(data ?? []).map((node) => (
           <FileTreeNode
             key={node.key ?? node.name}
             node={node}

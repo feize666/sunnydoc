@@ -81,7 +81,7 @@ export function AiPanel() {
       setCurrentId(active.id);
       saveCurrentId(active.id);
       skipSyncRef.current = true;
-      setMessages([...initialMessages.map((m) => ({ ...m })), ...active.messages]);
+      setMessages([...initialMessages.map((m) => ({ ...m })), ...(active.messages ?? [])]);
     } else {
       const fresh = createSession();
       const list = [fresh];
@@ -189,7 +189,7 @@ export function AiPanel() {
     currentIdRef.current = id;
     setCurrentId(id);
     saveCurrentId(id);
-    setMessages([...initialMessages.map((m) => ({ ...m })), ...target.messages]);
+    setMessages([...initialMessages.map((m) => ({ ...m })), ...(target.messages ?? [])]);
     setCopiedIndex(null);
   };
 
@@ -250,7 +250,7 @@ export function AiPanel() {
         setCurrentId(target.id);
         saveCurrentId(target.id);
         saveSessions(remaining);
-        setMessages([...initialMessages.map((m) => ({ ...m })), ...target.messages]);
+        setMessages([...initialMessages.map((m) => ({ ...m })), ...(target.messages ?? [])]);
       }
     } else {
       sessionsRef.current = remaining;
@@ -431,7 +431,7 @@ export function AiPanel() {
               }
             >
               {msg.content}
-              {msg.citations && msg.citations.length > 0 && (
+              {Array.isArray(msg.citations) && msg.citations.length > 0 && (
                 <div className="mt-1.5 space-y-0.5 border-t border-line pt-1.5 text-[11px]">
                   <div className="mb-0.5 text-[10px] text-faint">知识库引用</div>
                   {msg.citations.map((c, j) => (
@@ -446,7 +446,7 @@ export function AiPanel() {
                   ))}
                 </div>
               )}
-              {msg.webSources && msg.webSources.length > 0 && (
+              {Array.isArray(msg.webSources) && msg.webSources.length > 0 && (
                 <div className="mt-1.5 space-y-0.5 border-t border-line pt-1.5 text-[11px]">
                   <div className="mb-0.5 text-[10px] text-faint">联网搜索来源</div>
                   {msg.webSources.map((s, j) => (
