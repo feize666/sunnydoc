@@ -119,16 +119,7 @@ export function HomeView({
         <div className="mx-auto max-w-4xl px-6 py-8">
           {/* 知识库 */}
           <section>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-text">知识库</h2>
-              <button
-                onClick={onCreateKb}
-                className="btn-accent flex items-center gap-1 rounded-lg px-3 py-1.5 text-[13px] font-medium text-white"
-              >
-                <PlusIcon size={14} />
-                新建知识库
-              </button>
-            </div>
+            <h2 className="mb-4 text-base font-semibold text-text">知识库</h2>
 
             {error && (
               <div className="mb-4 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-600">
@@ -202,6 +193,15 @@ export function HomeView({
                     </div>
                   </button>
                 ))}
+
+                {/* 新建知识库卡片 */}
+                <button
+                  onClick={onCreateKb}
+                  className="flex min-h-[7.5rem] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line text-faint transition-all hover:border-accent/50 hover:bg-accent-soft/40 hover:text-accent"
+                >
+                  <PlusIcon size={22} />
+                  <span className="text-xs">新建知识库</span>
+                </button>
               </div>
             )}
           </section>
