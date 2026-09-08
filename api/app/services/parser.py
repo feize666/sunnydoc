@@ -1,16 +1,52 @@
-"""文档解析服务：多格式提取文本"""
+"""文档解析服务：多格式提取文本 + zip 媒体提取"""
 from __future__ import annotations
 
 import io
+import posixpath
+import re
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.config import TEXT_EXTS
+
+# 媒体扩展名集合
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico"}
+VIDEO_EXTS = {".mp4", ".webm", ".mov", ".avi", ".mkv", ".m4v"}
+MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
+
+# markdown 图片引用：![alt](path)
+_MD_IMG_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+
+
+@dataclass
+class MediaFile:
+    """zip 内提取出的媒体文件"""
+    zip_path: str       # zip 内绝对路径（已修复编码、去掉开头 /）
+    filename: str       # 原始文件名（basename）
+    ext: str            # 扩展名（小写，含 .）
+    content_type: str   # MIME 类型
+    data: bytes         # 文件字节
 
 
 def ext_of(name: str) -> str:
     i = name.rfind(".")
     return name[i:].lower() if i >= 0 else ""
+
+
+def _decode_zip_filename(info: zipfile.ZipInfo) -> str:
+    """修复 zip 内中文文件名乱码。
+
+    macOS/Windows 部分 zip 工具用 UTF-8 存文件名但不设置 0x800 flag，
+    Python zipfile 误按 cp437 解码导致乱码。未设置 flag 时尝试反向恢复。
+    """
+    name = info.filename
+    if not (info.flag_bits & 0x800):
+        try:
+            name = name.encode("cp437").decode("utf-8")
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            pass
+    return name
 
 
 def parse_pdf(data: bytes) -> str:
@@ -65,18 +101,72 @@ def parse_zip(data: bytes) -> list[dict]:
         for info in zf.infolist():
             if info.is_dir():
                 continue
-            ext = ext_of(info.filename)
-            raw = zf.read(info.filename)
+            name = _decode_zip_filename(info)
+            ext = ext_of(name)
+            raw = zf.read(info)
             if ext in TEXT_EXTS:
                 text = raw.decode("utf-8", errors="replace")
-                results.append({"name": info.filename, "ext": ext, "text": text})
+                results.append({"name": name, "ext": ext, "text": text})
             elif ext == ".pdf":
-                results.append({"name": info.filename, "ext": ext, "text": parse_pdf(raw)})
+                results.append({"name": name, "ext": ext, "text": parse_pdf(raw)})
             elif ext == ".docx":
-                results.append({"name": info.filename, "ext": ext, "text": parse_docx(raw)})
+                results.append({"name": name, "ext": ext, "text": parse_docx(raw)})
             elif ext == ".xlsx":
-                results.append({"name": info.filename, "ext": ext, "text": parse_xlsx(raw)})
+                results.append({"name": name, "ext": ext, "text": parse_xlsx(raw)})
     return results
+
+
+def extract_media(filename: str, data: bytes) -> list[MediaFile]:
+    """提取 zip 内的图片/动图/视频文件；非 zip 返回空列表。"""
+    if ext_of(filename) != ".zip":
+        return []
+
+    from app.services import media
+
+    results: list[MediaFile] = []
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            name = _decode_zip_filename(info)
+            ext = ext_of(name)
+            if ext not in MEDIA_EXTS:
+                continue
+            raw = zf.read(info)
+            zip_path = name.lstrip("/")
+            results.append(
+                MediaFile(
+                    zip_path=zip_path,
+                    filename=name.rsplit("/", 1)[-1],
+                    ext=ext,
+                    content_type=media.content_type(ext),
+                    data=raw,
+                )
+            )
+    return results
+
+
+def replace_md_image_refs(text: str, md_path: str, path_map: dict[str, str]) -> str:
+    """把 markdown 里的图片引用路径替换为 /api/v1/media/{存储文件名}。
+
+    md_path 为 md 文件在 zip 内的路径（已修复编码），path_map 为
+    zip 内绝对路径 -> 存储文件名 的映射。跳过 http/https 外部链接，
+    未命中映射的引用保持原样。
+    """
+    md_dir = posixpath.dirname(md_path)
+
+    def repl(m: re.Match) -> str:
+        alt = m.group(1)
+        ref = m.group(2).strip()
+        if not ref or ref.startswith(("http://", "https://")):
+            return m.group(0)
+        abs_path = posixpath.normpath(posixpath.join(md_dir, ref)).lstrip("/")
+        stored = path_map.get(abs_path)
+        if stored:
+            return f"![{alt}](/api/v1/media/{stored})"
+        return m.group(0)
+
+    return _MD_IMG_RE.sub(repl, text)
 
 
 def parse_file(filename: str, data: bytes) -> list[dict]:

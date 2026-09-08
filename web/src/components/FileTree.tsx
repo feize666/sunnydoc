@@ -3,18 +3,19 @@
 import { useState } from "react";
 import type { TreeNode } from "@/data/docs";
 import { FileIcon, FolderIcon, ChevronIcon, CloseIcon } from "./icons";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 function FileTreeNode({
   node,
   activeKey,
   onSelect,
-  onDelete,
+  onRequestDelete,
   depth = 0,
 }: {
   node: TreeNode;
   activeKey: string | null;
   onSelect: (key: string) => void;
-  onDelete?: (key: string) => void;
+  onRequestDelete?: (node: TreeNode) => void;
   depth?: number;
 }) {
   const [open, setOpen] = useState(depth === 0);
@@ -44,7 +45,7 @@ function FileTreeNode({
                 node={child}
                 activeKey={activeKey}
                 onSelect={onSelect}
-                onDelete={onDelete}
+                onRequestDelete={onRequestDelete}
                 depth={depth + 1}
               />
             ))}
@@ -67,13 +68,11 @@ function FileTreeNode({
     >
       <FileIcon size={15} className={`shrink-0 ${active ? "text-accent" : "text-faint"}`} />
       <span className="flex-1 truncate">{node.name}</span>
-      {onDelete && node.key && (
+      {onRequestDelete && node.key && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (node.key && window.confirm(`确定删除「${node.name}」吗？`)) {
-              onDelete(node.key);
-            }
+            onRequestDelete(node);
           }}
           className="grid h-4 w-4 shrink-0 place-items-center rounded text-faint opacity-0 transition-opacity hover:bg-hover hover:text-red-500 group-hover:opacity-100"
           title="删除文档"
@@ -96,17 +95,36 @@ export function FileTree({
   onSelect: (key: string) => void;
   onDelete?: (key: string) => void;
 }) {
+  const [pendingDelete, setPendingDelete] = useState<TreeNode | null>(null);
+
   return (
-    <nav className="flex flex-col gap-0.5">
-      {data.map((node) => (
-        <FileTreeNode
-          key={node.key ?? node.name}
-          node={node}
-          activeKey={activeKey}
-          onSelect={onSelect}
-          onDelete={onDelete}
-        />
-      ))}
-    </nav>
+    <>
+      <nav className="flex flex-col gap-0.5">
+        {data.map((node) => (
+          <FileTreeNode
+            key={node.key ?? node.name}
+            node={node}
+            activeKey={activeKey}
+            onSelect={onSelect}
+            onRequestDelete={setPendingDelete}
+          />
+        ))}
+      </nav>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="删除文档"
+        message={`确定要删除「${pendingDelete?.name ?? ""}」吗？此操作不可恢复。`}
+        confirmText="删除"
+        cancelText="取消"
+        onConfirm={() => {
+          if (pendingDelete?.key && onDelete) {
+            onDelete(pendingDelete.key);
+          }
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
+    </>
   );
 }

@@ -4,11 +4,11 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from app.core.config import DEFAULT_TOP_K
-from app.services import parser, qa, llm, web_search
+from app.core.config import DEFAULT_TOP_K, MEDIA_DIR
+from app.services import media, parser, qa, llm, web_search
 from app.services.store import store
 
 router = APIRouter(prefix="/api/v1")
@@ -107,22 +107,50 @@ async def import_documents(file: UploadFile = File(...)):
 
     try:
         parsed = parser.parse_file(filename, data)
+        media_files = parser.extract_media(filename, data)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=422, detail=f"解析失败：{e}") from e
 
     if not parsed:
         raise HTTPException(status_code=415, detail="不支持的文件类型")
 
+    # 保存媒体文件，建立 zip 内路径 -> 存储文件名 映射
+    path_map: dict[str, str] = {}
+    for mf in media_files:
+        stored = media.save(mf.data, mf.ext)
+        path_map[mf.zip_path] = stored
+
     imported = []
     for p in parsed:
+        text = p["text"]
+        # 仅对 markdown 做图片引用路径替换
+        if path_map and p["ext"] in {".md", ".markdown"}:
+            text = parser.replace_md_image_refs(text, p["name"], path_map)
         # 用文件名（去扩展名）作为标题
         title = p["name"].rsplit("/", 1)[-1]
         title = title.rsplit(".", 1)[0] if "." in title else title
         title = _dedupe_title(store, title)
-        doc = store.add(title=title, text=p["text"], source=filename, ext=p["ext"])
+        doc = store.add(title=title, text=text, source=filename, ext=p["ext"])
         imported.append({"id": doc["id"], "title": doc["title"]})
 
-    return {"imported": len(imported), "documents": imported}
+    return {"imported": len(imported), "documents": imported, "media_count": len(media_files)}
+
+
+@router.get("/media/{filename}")
+def get_media(filename: str):
+    """返回媒体文件（图片/动图/视频），带路径穿越防护"""
+    if not filename or "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    path = (MEDIA_DIR / filename).resolve()
+    media_root = MEDIA_DIR.resolve()
+    if path.parent != media_root:
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    return FileResponse(path, media_type=media.content_type(parser.ext_of(filename)))
 
 
 @router.post("/chat")

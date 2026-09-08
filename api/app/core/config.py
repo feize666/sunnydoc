@@ -13,6 +13,7 @@ load_dotenv(BASE_DIR / ".env")
 # 文档存储目录
 DATA_DIR = BASE_DIR / "data"
 DOCS_DIR = DATA_DIR / "docs"
+MEDIA_DIR = DATA_DIR / "media"
 
 # PostgreSQL + pgvector（未配置则降级为 JSON 文件存储）
 DATABASE_URL = os.getenv("DATABASE_URL", "")
