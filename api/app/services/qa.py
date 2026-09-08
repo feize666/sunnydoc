@@ -1,8 +1,9 @@
-"""检索问答服务：MVP 版基于关键词检索 + 规则式回答（后续可接 LLM）"""
+"""检索问答服务：检索 + LLM 生成（降级为规则式回答）"""
 from __future__ import annotations
 
 from typing import Any
 
+from app.services import llm
 from app.services.store import search
 
 
@@ -21,8 +22,15 @@ def answer(query: str, top_k: int = 5) -> dict[str, Any]:
 
     if not hits:
         answer_text = "未能从知识库中找到与问题相关的内容，请尝试换一种问法或补充更多文档。"
+        return {"answer": answer_text, "citations": citations}
+
+    # 优先用 LLM 生成
+    contexts = [h["text"] for h in hits]
+    llm_answer = llm.generate(query, contexts)
+    if llm_answer:
+        answer_text = llm_answer
     else:
-        # MVP：用命中片段拼接一个基础回答（后续替换为 LLM 生成）
+        # 降级：规则式拼接
         top = hits[0]
         answer_text = (
             f"根据知识库中的「{top['title']}」，找到以下相关内容：\n\n"

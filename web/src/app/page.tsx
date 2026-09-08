@@ -13,6 +13,7 @@ import { countWords } from "@/lib/markdown";
 import {
   listDocuments,
   getDocument,
+  deleteDocument,
   type DocMeta,
 } from "@/lib/api";
 
@@ -108,6 +109,27 @@ export default function Home() {
     [activeKey],
   );
 
+  // 删除文档
+  const handleDelete = useCallback(
+    async (key: string) => {
+      try {
+        await deleteDocument(key);
+        // 从缓存移除
+        setDocs((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+        // 关闭标签并刷新列表
+        closeDoc(key);
+        refreshList();
+      } catch (e) {
+        alert(`删除失败：${e instanceof Error ? e.message : "未知错误"}`);
+      }
+    },
+    [closeDoc, refreshList],
+  );
+
   // 构建文件树：按 source 的文件名分组
   const tree: TreeNode[] = metas.map((m) => ({
     type: "file",
@@ -168,6 +190,7 @@ export default function Home() {
           activeDoc={activeDoc}
           onImport={() => setImportOpen(true)}
           onRefresh={refreshList}
+          onDelete={handleDelete}
           listError={listError}
         />
         <Editor doc={activeDoc} loading={loadingDoc} />

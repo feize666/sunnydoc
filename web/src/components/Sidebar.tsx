@@ -20,6 +20,7 @@ export function Sidebar({
   activeDoc,
   onImport,
   onRefresh,
+  onDelete,
   listError,
 }: {
   data: TreeNode[];
@@ -31,6 +32,7 @@ export function Sidebar({
   activeDoc: Doc | null;
   onImport: () => void;
   onRefresh?: () => void;
+  onDelete?: (key: string) => void;
   listError?: string | null;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -182,7 +184,7 @@ export function Sidebar({
             暂无文档，点击右上角「+」导入
           </div>
         )}
-        <FileTree data={data} activeKey={activeKey} onSelect={onSelect} />
+        <FileTree data={data} activeKey={activeKey} onSelect={onSelect} onDelete={onDelete} />
       </div>
     </aside>
   );

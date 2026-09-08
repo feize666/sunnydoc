@@ -11,6 +11,7 @@ from typing import Any
 import jieba
 
 from app.core.config import DATA_DIR
+from app.services import embedding
 
 STORE_FILE = DATA_DIR / "store.json"
 
@@ -56,6 +57,10 @@ class DocStore:
         )
 
     def add(self, title: str, text: str, source: str, ext: str) -> dict[str, Any]:
+        chunks = _segment(text)
+        # 尝试向量化（无 embedding 服务时为 None）
+        vectors = embedding.embed(chunks) if embedding.available() else None
+
         doc = {
             "id": uuid.uuid4().hex,
             "title": title,
@@ -63,6 +68,10 @@ class DocStore:
             "source": source,
             "ext": ext,
             "created_at": time.time(),
+            "chunks": [
+                {"text": c, "vector": vectors[i] if vectors else None}
+                for i, c in enumerate(chunks)
+            ],
         }
         self._docs.append(doc)
         self._save()
@@ -119,29 +128,57 @@ def _segment(text: str, size: int = 400) -> list[str]:
     return chunks
 
 
+def _cosine(a: list[float], b: list[float]) -> float:
+    """余弦相似度"""
+    dot = sum(x * y for x, y in zip(a, b))
+    na = sum(x * x for x in a) ** 0.5
+    nb = sum(x * x for x in b) ** 0.5
+    if na == 0 or nb == 0:
+        return 0.0
+    return dot / (na * nb)
+
+
 def search(query: str, top_k: int = 5) -> list[dict[str, Any]]:
-    """关键词检索（MVP 版）：jieba 分词 + 命中打分，返回带来源片段的结果"""
+    """混合检索（MVP 版）：jieba 关键词打分 + 向量相似度（若可用）"""
     keywords = _tokenize(query)
     if not keywords:
-        # 分词后无有效词，退化为整句子串匹配
         keywords = [query.strip().lower()]
+
+    # query 向量（若 embedding 可用）
+    query_vec = embedding.embed([query])[0] if embedding.available() else None
 
     results: list[dict[str, Any]] = []
     for doc in store.all():
-        chunks = _segment(doc["text"])
+        # 优先用入库时存的分片，兼容旧数据（无 chunks 则重新分片）
+        chunks = doc.get("chunks")
+        if not chunks:
+            chunks = [{"text": c, "vector": None} for c in _segment(doc["text"])]
+
         for i, chunk in enumerate(chunks):
-            lower_chunk = chunk.lower()
-            score = 0
+            text = chunk["text"]
+            lower_text = text.lower()
+
+            # 关键词分数
+            kw_score = 0.0
             for kw in keywords:
-                if kw in lower_chunk:
-                    score += 1 + (0.5 if kw in _tokenize(chunk) else 0)
-            if score > 0:
+                if kw in lower_text:
+                    kw_score += 1.0 + (0.5 if kw in _tokenize(text) else 0.0)
+
+            # 向量相似度
+            vec_score = 0.0
+            if query_vec is not None and chunk.get("vector"):
+                vec_score = _cosine(query_vec, chunk["vector"])
+
+            # 混合：关键词归一 + 向量加权（向量权重 0.7）
+            score = kw_score / max(1, len(keywords)) * 0.3 + vec_score * 0.7
+
+            if kw_score > 0 or vec_score > 0.3:
                 results.append(
                     {
                         "doc_id": doc["id"],
                         "title": doc["title"],
                         "source": doc["source"],
-                        "text": chunk[:500],
+                        "text": text[:500],
                         "segment_index": i,
                         "score": score,
                     }
