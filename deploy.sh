@@ -14,7 +14,9 @@ MSG="${1:-chore: 更新 sunnydoc}"
 cd "$LOCAL_DIR"
 
 echo "==> [1/4] 构建前端静态产物..."
-(cd web && env -u NODE_OPTIONS -u NEXT_PUBLIC_API_BASE npm run build)
+# NEXT_PUBLIC_API_BASE 置空 → api.ts 走相对路径 /api/v1，由 nginx 反代到后端
+# （.env.local 里写的是本地开发用的 http://localhost:8000，绝不能被带进生产构建）
+(cd web && env -u NODE_OPTIONS NEXT_PUBLIC_API_BASE= npm run build)
 
 echo "==> [2/4] 打包源码并上传服务器..."
 tar --exclude='web/node_modules' --exclude='web/.next' --exclude='api/.venv' \
