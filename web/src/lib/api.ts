@@ -144,10 +144,45 @@ export interface ImportTaskStatus {
 
 export async function importDocumentAsync(
   file: File,
+  onUploadProgress?: (percent: number) => void,
 ): Promise<{ task_id: string; status: string }> {
   const form = new FormData();
   form.append("file", file);
-  return request("/documents/import", { method: "POST", body: form });
+
+  return new Promise<{ task_id: string; status: string }>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${BASE}/documents/import`);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) {
+        const percent = (e.loaded / e.total) * 100;
+        onUploadProgress?.(Math.max(0, Math.min(100, percent)));
+      }
+    };
+
+    xhr.onload = () => {
+      let data: { task_id?: string; status?: string; detail?: string };
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        reject(new Error(`请求失败（${xhr.status}）`));
+        return;
+      }
+
+      if (xhr.status >= 200 && xhr.status < 300) {
+        if (data.task_id) {
+          resolve({ task_id: data.task_id, status: data.status ?? "" });
+        } else {
+          reject(new Error("服务器未返回 task_id"));
+        }
+      } else {
+        reject(new Error(data.detail || `请求失败（${xhr.status}）`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("上传失败"));
+    xhr.send(form);
+  });
 }
 
 export async function getImportTask(taskId: string): Promise<ImportTaskStatus> {

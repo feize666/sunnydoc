@@ -91,6 +91,16 @@ export function PlusIcon(p: IconProps) {
   );
 }
 
+export function HistoryIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
 export function LinkIcon(p: IconProps) {
   return (
     <svg {...base(p)}>

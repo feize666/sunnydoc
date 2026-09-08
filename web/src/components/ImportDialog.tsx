@@ -52,7 +52,7 @@ export function ImportDialog({
       setErrorMsg(null);
 
       try {
-        const { task_id } = await importDocumentAsync(file);
+        const { task_id } = await importDocumentAsync(file, (p) => setProgress(p));
         setPhase("parsing");
         pollRef.current = window.setInterval(async () => {
           try {
@@ -169,12 +169,15 @@ export function ImportDialog({
 
         {phase === "uploading" && (
           <div className="p-6">
-            <div className="flex items-center gap-3">
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm text-text">上传中…</div>
-                <div className="truncate text-xs text-faint">{current}</div>
-              </div>
+            <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+              <span className="shrink-0 text-muted">上传中 {progress}%</span>
+              <span className="truncate text-faint">{current}</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
+              <div
+                className="h-full rounded-full bg-accent transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
             </div>
           </div>
         )}

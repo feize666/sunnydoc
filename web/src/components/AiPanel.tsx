@@ -1,16 +1,28 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { SendIcon, LinkIcon, CopyIcon, CheckIcon, TrashIcon } from "./icons";
+import { useState, useRef, useEffect, useCallback } from "react";
+import {
+  SendIcon,
+  LinkIcon,
+  CopyIcon,
+  CheckIcon,
+  TrashIcon,
+  PlusIcon,
+  HistoryIcon,
+} from "./icons";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { chatStream, type Citation, type ChatMessage, type WebSource } from "@/lib/api";
-
-interface Message {
-  role: "user" | "ai";
-  content: string;
-  citations?: Citation[];
-  webSources?: WebSource[];
-  error?: boolean;
-}
+import {
+  createSession,
+  deriveTitle,
+  loadCurrentId,
+  loadSessions,
+  saveCurrentId,
+  saveSessions,
+  uid,
+  type ChatSession,
+  type Message,
+} from "@/lib/chatHistory";
 
 const initialMessages: Message[] = [
   {
@@ -20,13 +32,119 @@ const initialMessages: Message[] = [
   },
 ];
 
+function formatTime(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const time = d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  if (d.toDateString() === now.toDateString()) return time;
+  return `${d.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })} ${time}`;
+}
+
 export function AiPanel() {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [enableWeb, setEnableWeb] = useState(true);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [currentId, setCurrentId] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+
   const chatRef = useRef<HTMLDivElement>(null);
+  const initedRef = useRef(false);
+  const skipSyncRef = useRef(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 供 debounce 回调读取最新值，避免闭包过期
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  const currentIdRef = useRef(currentId);
+  currentIdRef.current = currentId;
+
+  // 首次挂载：从 localStorage 恢复当前会话
+  useEffect(() => {
+    if (initedRef.current) return;
+    initedRef.current = true;
+
+    const loaded = loadSessions();
+    const curId = loadCurrentId();
+    const active = loaded.find((s) => s.id === curId) ?? loaded[0] ?? null;
+
+    if (active) {
+      sessionsRef.current = loaded;
+      setSessions(loaded);
+      currentIdRef.current = active.id;
+      setCurrentId(active.id);
+      saveCurrentId(active.id);
+      skipSyncRef.current = true;
+      setMessages([...initialMessages.map((m) => ({ ...m })), ...active.messages]);
+    } else {
+      const fresh = createSession();
+      const list = [fresh];
+      sessionsRef.current = list;
+      setSessions(list);
+      currentIdRef.current = fresh.id;
+      setCurrentId(fresh.id);
+      saveCurrentId(fresh.id);
+      saveSessions(list);
+      skipSyncRef.current = true;
+      setMessages(initialMessages.map((m) => ({ ...m })));
+    }
+  }, []);
+
+  // 立即把当前会话写回 state + localStorage（同步标题与更新时间）
+  const flushSave = useCallback(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const id = currentIdRef.current;
+    if (!id) return;
+    const real = messagesRef.current.slice(1);
+    const list = sessionsRef.current;
+    const idx = list.findIndex((s) => s.id === id);
+    if (idx === -1) return;
+    const next = [...list];
+    next[idx] = {
+      ...next[idx],
+      messages: real,
+      title: deriveTitle(real),
+      updatedAt: Date.now(),
+    };
+    sessionsRef.current = next;
+    setSessions(next);
+    saveSessions(next);
+  }, []);
+
+  const scheduleSave = useCallback(() => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(flushSave, 300);
+  }, [flushSave]);
+
+  // messages 变化时 debounce 保存（跳过恢复/切换会话引起的首次变化）
+  useEffect(() => {
+    if (!initedRef.current || currentId == null) return;
+    if (skipSyncRef.current) {
+      skipSyncRef.current = false;
+      return;
+    }
+    scheduleSave();
+  }, [messages, currentId, scheduleSave]);
+
+  // 组件卸载时立即落盘
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+        flushSave();
+      }
+    };
+  }, [flushSave]);
 
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
@@ -59,6 +177,87 @@ export function AiPanel() {
       setMessages(initialMessages.map((m) => ({ ...m })));
       setCopiedIndex(null);
     }
+  };
+
+  const switchSession = (id: string) => {
+    setShowHistory(false);
+    if (loading || id === currentId) return;
+    const target = sessions.find((s) => s.id === id);
+    if (!target) return;
+    flushSave();
+    skipSyncRef.current = true;
+    currentIdRef.current = id;
+    setCurrentId(id);
+    saveCurrentId(id);
+    setMessages([...initialMessages.map((m) => ({ ...m })), ...target.messages]);
+    setCopiedIndex(null);
+  };
+
+  const newSession = () => {
+    if (loading) return;
+    flushSave();
+    const cur = sessions.find((s) => s.id === currentId);
+    let next: ChatSession[];
+    let fresh: ChatSession;
+    if (cur && cur.messages.length === 0) {
+      // 当前会话为空：复用该条目，避免堆积空会话
+      fresh = { ...cur, id: uid(), createdAt: Date.now(), updatedAt: Date.now() };
+      next = sessions.map((s) => (s.id === cur.id ? fresh : s));
+    } else {
+      fresh = createSession();
+      next = [fresh, ...sessions];
+    }
+    sessionsRef.current = next;
+    setSessions(next);
+    currentIdRef.current = fresh.id;
+    setCurrentId(fresh.id);
+    saveCurrentId(fresh.id);
+    saveSessions(next);
+    skipSyncRef.current = true;
+    setMessages(initialMessages.map((m) => ({ ...m })));
+    setCopiedIndex(null);
+    setShowHistory(false);
+  };
+
+  const requestDelete = (id: string) => {
+    if (loading && id === currentId) return;
+    setDeleteTargetId(id);
+  };
+
+  const confirmDelete = () => {
+    const id = deleteTargetId;
+    setDeleteTargetId(null);
+    if (!id) return;
+
+    const remaining = sessions.filter((s) => s.id !== id);
+
+    if (id === currentId) {
+      if (remaining.length === 0) {
+        const fresh = createSession();
+        const list = [fresh];
+        sessionsRef.current = list;
+        setSessions(list);
+        currentIdRef.current = fresh.id;
+        setCurrentId(fresh.id);
+        saveCurrentId(fresh.id);
+        saveSessions(list);
+        setMessages(initialMessages.map((m) => ({ ...m })));
+      } else {
+        const target = remaining.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a));
+        sessionsRef.current = remaining;
+        setSessions(remaining);
+        currentIdRef.current = target.id;
+        setCurrentId(target.id);
+        saveCurrentId(target.id);
+        saveSessions(remaining);
+        setMessages([...initialMessages.map((m) => ({ ...m })), ...target.messages]);
+      }
+    } else {
+      sessionsRef.current = remaining;
+      setSessions(remaining);
+      saveSessions(remaining);
+    }
+    setCopiedIndex(null);
   };
 
   const ask = async () => {
@@ -98,11 +297,20 @@ export function AiPanel() {
     }
   };
 
+  const sortedSessions = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
+
   return (
-    <aside className="flex w-[320px] shrink-0 flex-col border-l border-line bg-surface">
+    <aside className="relative flex w-[320px] shrink-0 flex-col border-l border-line bg-surface">
       <div className="flex items-center justify-between border-b border-line px-3.5 py-3 text-[13px] font-semibold">
         AI 问答
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => setShowHistory((v) => !v)}
+            className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-muted"
+            title="历史会话"
+          >
+            <HistoryIcon size={14} />
+          </button>
           <button
             onClick={clearChat}
             disabled={loading}
@@ -129,6 +337,62 @@ export function AiPanel() {
           </button>
         </div>
       </div>
+
+      {showHistory && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setShowHistory(false)} />
+          <div className="absolute left-3 right-3 top-11 z-20 overflow-hidden rounded-xl border border-line bg-background shadow-2xl">
+            <div className="flex items-center justify-between border-b border-line px-3 py-2">
+              <span className="text-[12px] font-semibold text-text">历史会话</span>
+              <button
+                onClick={newSession}
+                disabled={loading}
+                className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-accent transition-colors hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <PlusIcon size={12} />
+                新建
+              </button>
+            </div>
+            {sortedSessions.length === 0 ? (
+              <div className="px-3 py-5 text-center text-[12px] text-faint">暂无历史会话</div>
+            ) : (
+              <ul className="max-h-[260px] overflow-y-auto p-1">
+                {sortedSessions.map((s) => (
+                  <li
+                    key={s.id}
+                    className={`group flex items-center gap-1 rounded-lg px-2 py-1.5 ${
+                      s.id === currentId ? "bg-accent-soft" : "hover:bg-hover"
+                    }`}
+                  >
+                    <button
+                      onClick={() => switchSession(s.id)}
+                      disabled={loading}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <div
+                        className={`truncate text-[13px] ${
+                          s.id === currentId ? "text-accent" : "text-text"
+                        }`}
+                      >
+                        {s.title}
+                      </div>
+                      <div className="text-[11px] text-faint">{formatTime(s.updatedAt)}</div>
+                    </button>
+                    <button
+                      onClick={() => requestDelete(s.id)}
+                      disabled={loading && s.id === currentId}
+                      title="删除会话"
+                      className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 disabled:opacity-0"
+                    >
+                      <TrashIcon size={12} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </>
+      )}
 
       <div ref={chatRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-3.5">
         {messages.map((msg, i) => (
@@ -234,6 +498,16 @@ export function AiPanel() {
           <SendIcon size={16} />
         </button>
       </div>
+
+      <ConfirmDialog
+        open={deleteTargetId !== null}
+        title="删除会话"
+        message="删除后该会话的对话记录将无法恢复，确定删除吗？"
+        confirmText="删除"
+        cancelText="取消"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTargetId(null)}
+      />
     </aside>
   );
 }
