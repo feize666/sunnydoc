@@ -72,3 +72,59 @@ export async function chat(query: string, topK = 5): Promise<ChatResponse> {
 export async function deleteDocument(id: string): Promise<void> {
   await request(`/documents/${id}`, { method: "DELETE" });
 }
+
+export interface StreamEvent {
+  type: "citations" | "delta" | "done";
+  citations?: Citation[];
+  content?: string;
+}
+
+/**
+ * 流式问答（SSE）。回调接收事件：
+ * - citations: 携带引用列表
+ * - delta: 携带增量文本
+ * - done: 结束
+ */
+export async function chatStream(
+  query: string,
+  topK: number,
+  onEvent: (e: StreamEvent) => void,
+): Promise<void> {
+  const res = await fetch(`${BASE}/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, top_k: topK }),
+  });
+
+  if (!res.ok || !res.body) {
+    throw new Error(`请求失败（${res.status}）`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // SSE 事件以 \n\n 分隔
+    let idx;
+    while ((idx = buffer.indexOf("\n\n")) !== -1) {
+      const rawEvent = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      for (const line of rawEvent.split("\n")) {
+        if (line.startsWith("data: ")) {
+          try {
+            const event = JSON.parse(line.slice(6)) as StreamEvent;
+            onEvent(event);
+          } catch {
+            /* ignore malformed */
+          }
+        }
+      }
+    }
+  }
+}
+

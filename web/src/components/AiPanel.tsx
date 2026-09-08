@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { SendIcon, LinkIcon } from "./icons";
-import { chat, type Citation } from "@/lib/api";
+import { chatStream, type Citation } from "@/lib/api";
 
 interface Message {
   role: "user" | "ai";
@@ -32,25 +32,31 @@ export function AiPanel() {
   const ask = async () => {
     const q = input.trim();
     if (!q || loading) return;
-    setMessages((m) => [...m, { role: "user", content: q }]);
     setInput("");
     setLoading(true);
 
+    // 先加用户消息，再加空的 AI 占位消息
+    setMessages((m) => [...m, { role: "user", content: q }, { role: "ai", content: "" }]);
+    const aiIndex = messages.length + 1; // user 在 index=len，ai 在 len+1
+
+    const updateAi = (updater: (msg: Message) => Message) => {
+      setMessages((m) => m.map((msg, i) => (i === aiIndex ? updater(msg) : msg)));
+    };
+
     try {
-      const res = await chat(q);
-      setMessages((m) => [
-        ...m,
-        { role: "ai", content: res.answer, citations: res.citations },
-      ]);
+      await chatStream(q, 5, (e) => {
+        if (e.type === "citations") {
+          updateAi((msg) => ({ ...msg, citations: e.citations ?? [] }));
+        } else if (e.type === "delta") {
+          updateAi((msg) => ({ ...msg, content: msg.content + (e.content ?? "") }));
+        }
+      });
     } catch (e) {
-      setMessages((m) => [
-        ...m,
-        {
-          role: "ai",
-          content: `请求失败：${e instanceof Error ? e.message : "未知错误"}，请确认后端服务已启动。`,
-          error: true,
-        },
-      ]);
+      updateAi((msg) => ({
+        ...msg,
+        content: `请求失败：${e instanceof Error ? e.message : "未知错误"}，请确认后端服务已启动。`,
+        error: true,
+      }));
     } finally {
       setLoading(false);
     }
@@ -104,7 +110,10 @@ export function AiPanel() {
           </div>
         ))}
         {loading && (
-          <div className="text-[12px] text-faint">正在检索知识库…</div>
+          <div className="flex items-center gap-1.5 text-[12px] text-faint">
+            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+            正在生成回答…
+          </div>
         )}
       </div>
 

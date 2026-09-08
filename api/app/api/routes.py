@@ -1,11 +1,14 @@
 """API 路由"""
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.core.config import DEFAULT_TOP_K
-from app.services import parser, qa
+from app.services import parser, qa, llm
 from app.services.store import store
 
 router = APIRouter(prefix="/api/v1")
@@ -91,6 +94,55 @@ def chat(req: ChatRequest):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="问题不能为空")
     return qa.answer(req.query, req.top_k)
+
+
+@router.post("/chat/stream")
+def chat_stream(req: ChatRequest):
+    """流式问答（SSE）：先发 citations，再逐段发 answer 增量，最后发 done"""
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="问题不能为空")
+
+    from app.services.store import search
+
+    hits = search(req.query, req.top_k)
+    citations = [
+        {
+            "doc_id": h["doc_id"],
+            "title": h["title"],
+            "source": h["source"],
+            "segment_index": h["segment_index"],
+            "snippet": h["text"][:200],
+        }
+        for h in hits
+    ]
+
+    def event_stream():
+        # 1. 先发引用
+        yield f"data: {json.dumps({'type': 'citations', 'citations': citations}, ensure_ascii=False)}\n\n"
+
+        # 2. 流式生成回答
+        if hits and llm.available():
+            contexts = [h["text"] for h in hits]
+            got = False
+            for piece in llm.generate_stream(req.query, contexts):
+                got = True
+                yield f"data: {json.dumps({'type': 'delta', 'content': piece}, ensure_ascii=False)}\n\n"
+            if not got:
+                # 流式失败，降级为规则回答
+                answer = qa.answer(req.query, req.top_k)["answer"]
+                yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
+        else:
+            answer = qa.answer(req.query, req.top_k)["answer"]
+            yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
+
+        # 3. 结束标记
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.delete("/documents/{doc_id}")
