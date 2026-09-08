@@ -172,7 +172,7 @@ export function ImportDialog({
         {phase === "uploading" && (
           <div className="p-6">
             <div className="mb-2 flex items-center justify-between gap-3 text-xs">
-              <span className="shrink-0 text-muted">上传中 {progress}%</span>
+              <span className="shrink-0 text-muted">上传中 {progress.toFixed(2)}%</span>
               <span className="truncate text-faint">{current}</span>
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
@@ -188,7 +188,7 @@ export function ImportDialog({
           <div className="p-6">
             <div className="mb-2 flex items-center justify-between text-xs">
               <span className="text-muted">解析中…</span>
-              <span className="font-medium text-accent">{progress}%</span>
+              <span className="font-medium text-accent">{progress.toFixed(2)}%</span>
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
               <div
