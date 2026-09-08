@@ -98,7 +98,7 @@ export function Sidebar({
           <div className="relative flex-1" ref={menuRef}>
             <button
               onClick={() => setMenuOpen((v) => !v)}
-              className="flex w-full items-center justify-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-white transition-colors hover:bg-accent-hover"
+              className="btn-accent flex w-full items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-[13px] font-medium text-white"
             >
               <PlusIcon size={14} />
               新建

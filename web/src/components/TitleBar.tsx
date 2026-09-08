@@ -24,7 +24,7 @@ export function TitleBar({
   return (
     <header className="flex h-11 items-center gap-2 border-b border-line bg-background px-2.5 select-none">
       <div className="flex items-center gap-1.5 px-1 text-sm font-semibold">
-        <span className="grid h-[18px] w-[18px] place-items-center rounded-md bg-gradient-to-br from-blue-400 to-accent text-[11px] font-bold text-white">
+        <span className="grid h-[18px] w-[18px] place-items-center rounded-md bg-gradient-to-br from-[#5b8dff] to-[#2b5ce6] text-[11px] font-bold text-white">
           知
         </span>
         知库

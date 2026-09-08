@@ -424,7 +424,7 @@ export function AiPanel() {
             <div
               className={
                 msg.role === "user"
-                  ? "max-w-[90%] rounded-xl rounded-br-sm bg-accent px-3 py-2 text-white"
+                  ? "bubble-accent max-w-[90%] rounded-xl rounded-br-sm px-3 py-2 text-white"
                   : `max-w-full rounded-xl rounded-bl-sm border px-3 py-2.5 whitespace-pre-wrap ${
                       msg.error ? "border-red-400 bg-red-50 text-red-600" : "border-line bg-background"
                     }`
@@ -492,7 +492,7 @@ export function AiPanel() {
         <button
           onClick={ask}
           disabled={loading}
-          className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg bg-accent text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+          className="btn-accent grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg text-white disabled:opacity-50"
           title="发送"
         >
           <SendIcon size={16} />

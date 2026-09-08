@@ -340,7 +340,7 @@ export function Editor({
           <div className="flex-1" />
           <button
             onClick={() => handleSwitch("edit")}
-            className="rounded-md bg-accent px-3.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent-hover"
+            className="btn-accent rounded-md px-3.5 py-1.5 text-xs font-medium text-white"
           >
             编辑
           </button>
@@ -360,7 +360,7 @@ export function Editor({
             <button
               onClick={handleSave}
               disabled={saving}
-              className="rounded-md bg-accent px-3.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-50"
+              className="btn-accent rounded-md px-3.5 py-1.5 text-xs font-medium text-white disabled:opacity-50"
             >
               {saving ? "保存中…" : "保存"}
             </button>

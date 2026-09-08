@@ -104,7 +104,7 @@ export function NewDocDialog({
             <button
               onClick={handleCreate}
               disabled={submitting}
-              className="rounded-lg bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn-accent rounded-lg px-4 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "创建中…" : "创建"}
             </button>

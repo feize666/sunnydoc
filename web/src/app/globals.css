@@ -2,32 +2,38 @@
 
 :root {
   --background: #ffffff;
-  --surface: #f6f6f6;
-  --surface-2: #f1f1f1;
-  --hover: #eaeaea;
+  --surface: #f8fafc;
+  --surface-2: #eef2f7;
+  --hover: #eef4ff;
   --active: #dbeafe;
-  --text: #2e2e2e;
-  --muted: #6b6b6b;
-  --faint: #9a9a9a;
-  --line: #e4e4e4;
-  --accent: #2563eb;
-  --accent-soft: #eff6ff;
+  --text: #0f172a;
+  --muted: #475569;
+  --faint: #94a3b8;
+  --line: #e2e8f0;
+  --accent: #2f6bff;
+  --accent-soft: #eaf1ff;
   --accent-hover: #1d4ed8;
+  --accent-grad: linear-gradient(135deg, #5b8dff 0%, #2f6bff 50%, #2b5ce6 100%);
+  --scrollbar: #cbd5e1;
+  --scrollbar-hover: #94a3b8;
 }
 
 [data-theme="dark"] {
-  --background: #1e1e1e;
-  --surface: #252526;
-  --surface-2: #2a2a2a;
-  --hover: #333333;
-  --active: #1e3a5f;
-  --text: #d6d6d6;
-  --muted: #a0a0a0;
-  --faint: #757575;
-  --line: #3a3a3a;
-  --accent: #60a5fa;
-  --accent-soft: #1e3a5f;
-  --accent-hover: #3b82f6;
+  --background: #0b1120;
+  --surface: #111827;
+  --surface-2: #1e293b;
+  --hover: #24324a;
+  --active: #1e3a8a;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --faint: #64748b;
+  --line: #273549;
+  --accent: #4f8bff;
+  --accent-soft: #172554;
+  --accent-hover: #6ea0ff;
+  --accent-grad: linear-gradient(135deg, #7aa7ff 0%, #4f8bff 50%, #3b82f6 100%);
+  --scrollbar: #334155;
+  --scrollbar-hover: #475569;
 }
 
 @theme inline {
@@ -67,12 +73,42 @@ body {
   width: 8px;
   height: 8px;
 }
+::-webkit-scrollbar-track {
+  background: transparent;
+}
 ::-webkit-scrollbar-thumb {
-  background: var(--line);
-  border-radius: 4px;
+  background: var(--scrollbar);
+  border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--faint);
+  background: var(--scrollbar-hover);
+}
+
+/* 科技感主按钮：蓝→靛蓝渐变 + 微光 */
+.btn-accent {
+  background-image: var(--accent-grad);
+  box-shadow: 0 1px 2px rgba(47, 107, 255, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transition: filter 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+.btn-accent:hover {
+  filter: brightness(1.06) saturate(1.08);
+  box-shadow: 0 6px 16px rgba(47, 107, 255, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+.btn-accent:active {
+  transform: translateY(0.5px);
+  filter: brightness(0.97);
+}
+.btn-accent:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 用户消息气泡：同款渐变 */
+.bubble-accent {
+  background-image: var(--accent-grad);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 /* Markdown 正文样式 */

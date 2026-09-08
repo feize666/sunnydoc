@@ -239,7 +239,7 @@ export function ImportDialog({
               </button>
               <button
                 onClick={onClose}
-                className="rounded-lg bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover"
+                className="btn-accent rounded-lg px-4 py-2 text-sm text-white"
               >
                 完成
               </button>
@@ -261,7 +261,7 @@ export function ImportDialog({
               </button>
               <button
                 onClick={onClose}
-                className="rounded-lg bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover"
+                className="btn-accent rounded-lg px-4 py-2 text-sm text-white"
               >
                 关闭
               </button>
