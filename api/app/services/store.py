@@ -50,6 +50,8 @@ class DocStore:
     def __init__(self) -> None:
         self._docs: list[dict[str, Any]] = []
         self._folders: list[dict[str, Any]] = []
+        self._kbs: list[dict[str, Any]] = []
+        self._recent: list[dict[str, Any]] = []
         # 启动时判定存储后端：PostgreSQL 可用则用库，否则 JSON 降级
         if db.available():
             self._backend = "db"
@@ -68,18 +70,30 @@ class DocStore:
             if isinstance(data, list):
                 self._docs = data
                 self._folders = []
+                self._kbs = []
+                self._recent = []
             else:
                 self._docs = data.get("documents", [])
                 self._folders = data.get("folders", [])
-        # 补齐旧数据缺失的 folder_id 字段，保证 all() 返回结构一致
+                self._kbs = data.get("kbs", [])
+                self._recent = data.get("recent", [])
+        # 补齐旧数据缺失的 folder_id/kb_id 字段，保证 all() 返回结构一致
         for d in self._docs:
             d.setdefault("folder_id", None)
+            d.setdefault("kb_id", None)
+        for f in self._folders:
+            f.setdefault("kb_id", None)
 
     def _save(self) -> None:
         STORE_FILE.parent.mkdir(parents=True, exist_ok=True)
         STORE_FILE.write_text(
             json.dumps(
-                {"documents": self._docs, "folders": self._folders},
+                {
+                    "documents": self._docs,
+                    "folders": self._folders,
+                    "kbs": self._kbs,
+                    "recent": self._recent,
+                },
                 ensure_ascii=False,
                 indent=2,
             ),
@@ -103,6 +117,7 @@ class DocStore:
         source: str,
         ext: str,
         folder_id: str | None = None,
+        kb_id: str | None = None,
     ) -> dict[str, Any]:
         doc = {
             "id": uuid.uuid4().hex,
@@ -112,6 +127,7 @@ class DocStore:
             "ext": ext,
             "created_at": time.time(),
             "folder_id": folder_id,
+            "kb_id": kb_id,
             "chunks": self._build_chunks(text),
         }
         if self._backend == "db":
@@ -127,8 +143,9 @@ class DocStore:
         title: Any = _UNSET,
         text: Any = _UNSET,
         folder_id: Any = _UNSET,
+        kb_id: Any = _UNSET,
     ) -> dict[str, Any] | None:
-        """更新文档字段。title/text 提供时更新并重建分片 + 向量；folder_id 提供时移动。找不到返回 None。"""
+        """更新文档字段。title/text 提供时更新并重建分片 + 向量；folder_id/kb_id 提供时移动。找不到返回 None。"""
         if self._backend == "db":
             doc = db.get_document(doc_id)
             if doc is None:
@@ -140,6 +157,8 @@ class DocStore:
                 doc["chunks"] = self._build_chunks(text)
             if folder_id is not _UNSET:
                 doc["folder_id"] = folder_id
+            if kb_id is not _UNSET:
+                doc["kb_id"] = kb_id
             return db.update_document(doc_id, doc)
         for d in self._docs:
             if d["id"] == doc_id:
@@ -150,6 +169,8 @@ class DocStore:
                     d["chunks"] = self._build_chunks(text)
                 if folder_id is not _UNSET:
                     d["folder_id"] = folder_id
+                if kb_id is not _UNSET:
+                    d["kb_id"] = kb_id
                 self._save()
                 return d
         return None
@@ -164,14 +185,18 @@ class DocStore:
                     item["source"],
                     item["ext"],
                     item.get("folder_id"),
+                    item.get("kb_id"),
                 )
             )
         return docs
 
-    def all(self) -> list[dict[str, Any]]:
+    def all(self, kb_id: str | None = None) -> list[dict[str, Any]]:
+        """返回全部文档；kb_id 提供时仅返回该知识库下的文档。"""
         if self._backend == "db":
-            return db.all_documents()
-        return list(self._docs)
+            return db.all_documents(kb_id)
+        if kb_id is None:
+            return list(self._docs)
+        return [d for d in self._docs if d.get("kb_id") == kb_id]
 
     def get(self, doc_id: str) -> dict[str, Any] | None:
         if self._backend == "db":
@@ -193,18 +218,26 @@ class DocStore:
 
     # ---------- 文件夹 ----------
 
-    def list_folders(self) -> list[dict[str, Any]]:
-        """返回全部文件夹（扁平列表，含 parent_id，供前端组装树）。"""
-        if self._backend == "db":
-            return db.list_folders()
-        return list(self._folders)
+    def list_folders(self, kb_id: str | None = None) -> list[dict[str, Any]]:
+        """返回全部文件夹（扁平列表，含 parent_id，供前端组装树）。
 
-    def create_folder(self, name: str, parent_id: str | None = None) -> dict[str, Any]:
+        kb_id 提供时仅返回该知识库下的文件夹。
+        """
+        if self._backend == "db":
+            return db.list_folders(kb_id)
+        if kb_id is None:
+            return list(self._folders)
+        return [f for f in self._folders if f.get("kb_id") == kb_id]
+
+    def create_folder(
+        self, name: str, parent_id: str | None = None, kb_id: str | None = None
+    ) -> dict[str, Any]:
         folder = {
             "id": uuid.uuid4().hex,
             "name": name,
             "parent_id": parent_id,
             "created_at": time.time(),
+            "kb_id": kb_id,
         }
         if self._backend == "db":
             db.create_folder(folder)
@@ -237,6 +270,118 @@ class DocStore:
                 d["folder_id"] = None
         self._save()
         return True
+
+    # ---------- 知识库 ----------
+
+    def list_kbs(self) -> list[dict[str, Any]]:
+        """返回全部知识库（不含 doc_count，由调用方补齐）。"""
+        if self._backend == "db":
+            return db.list_kbs()
+        return [dict(k) for k in self._kbs]
+
+    def create_kb(self, name: str, description: str | None = None) -> dict[str, Any]:
+        kb = {
+            "id": uuid.uuid4().hex,
+            "name": name,
+            "description": description,
+            "created_at": time.time(),
+        }
+        if self._backend == "db":
+            db.create_kb(kb)
+        else:
+            self._kbs.append(kb)
+            self._save()
+        return kb
+
+    def get_kb(self, kb_id: str) -> dict[str, Any] | None:
+        if self._backend == "db":
+            return db.get_kb(kb_id)
+        for k in self._kbs:
+            if k["id"] == kb_id:
+                return dict(k)
+        return None
+
+    def update_kb(
+        self,
+        kb_id: str,
+        name: Any = _UNSET,
+        description: Any = _UNSET,
+    ) -> dict[str, Any] | None:
+        """更新知识库字段，_UNSET 表示不修改。不存在返回 None。"""
+        if self._backend == "db":
+            return db.update_kb(kb_id, name, description)
+        for k in self._kbs:
+            if k["id"] == kb_id:
+                if name is not _UNSET:
+                    k["name"] = name
+                if description is not _UNSET:
+                    k["description"] = description
+                self._save()
+                return dict(k)
+        return None
+
+    def count_docs(self, kb_id: str) -> int:
+        if self._backend == "db":
+            return db.count_docs(kb_id)
+        return sum(1 for d in self._docs if d.get("kb_id") == kb_id)
+
+    def delete_kb(self, kb_id: str) -> bool:
+        """级联删除知识库：删除其下所有文档、文件夹与最近浏览记录。
+
+        媒体文件采用内容寻址去重（可能被其它知识库/文档共享），此处不物理删除。
+        """
+        if self._backend == "db":
+            return db.delete_kb(kb_id)
+        existed = any(k["id"] == kb_id for k in self._kbs)
+        if not existed:
+            return False
+        self._kbs = [k for k in self._kbs if k["id"] != kb_id]
+        self._docs = [d for d in self._docs if d.get("kb_id") != kb_id]
+        self._folders = [f for f in self._folders if f.get("kb_id") != kb_id]
+        self._recent = [r for r in self._recent if r.get("kb_id") != kb_id]
+        self._save()
+        return True
+
+    # ---------- 最近浏览 ----------
+
+    def record_recent(self, doc_id: str) -> dict[str, Any] | None:
+        """记录一次浏览（同 doc_id 去重只保留最新）。文档不存在返回 None。"""
+        doc = self.get(doc_id)
+        if doc is None:
+            return None
+        kb_id = doc.get("kb_id")
+        if self._backend == "db":
+            return db.record_recent(doc_id, kb_id)
+        self._recent = [r for r in self._recent if r.get("doc_id") != doc_id]
+        rec = {
+            "id": uuid.uuid4().hex,
+            "doc_id": doc_id,
+            "kb_id": kb_id,
+            "viewed_at": time.time(),
+        }
+        self._recent.append(rec)
+        self._save()
+        return rec
+
+    def list_recent(self, limit: int = 20) -> list[dict[str, Any]]:
+        """按 viewed_at 倒序返回最近浏览，join 文档 title/source。"""
+        if self._backend == "db":
+            return db.list_recent(limit)
+        # 按 viewed_at 倒序
+        recs = sorted(self._recent, key=lambda r: r.get("viewed_at", 0), reverse=True)
+        out: list[dict[str, Any]] = []
+        for r in recs[:limit]:
+            doc = next((d for d in self._docs if d["id"] == r["doc_id"]), None)
+            out.append(
+                {
+                    "doc_id": r["doc_id"],
+                    "kb_id": r.get("kb_id"),
+                    "viewed_at": r["viewed_at"],
+                    "title": doc["title"] if doc else None,
+                    "source": doc["source"] if doc else None,
+                }
+            )
+        return out
 
 
 store = DocStore()

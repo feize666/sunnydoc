@@ -16,10 +16,12 @@ export function ImportDialog({
   open,
   onClose,
   onImported,
+  kbId,
 }: {
   open: boolean;
   onClose: () => void;
   onImported: () => void;
+  kbId?: string | null;
 }) {
   const [dragOver, setDragOver] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -52,7 +54,7 @@ export function ImportDialog({
       setErrorMsg(null);
 
       try {
-        const { task_id } = await importDocumentAsync(file, (p) => setProgress(p));
+        const { task_id } = await importDocumentAsync(file, kbId, (p) => setProgress(p));
         setPhase("parsing");
         pollRef.current = window.setInterval(async () => {
           try {
@@ -85,7 +87,7 @@ export function ImportDialog({
         setErrorMsg(e instanceof Error ? e.message : "上传失败");
       }
     },
-    [onImported, stopPolling],
+    [onImported, stopPolling, kbId],
   );
 
   if (!open) return null;

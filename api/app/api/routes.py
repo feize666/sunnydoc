@@ -10,7 +10,7 @@ import uuid
 import zipfile
 from urllib.parse import quote
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -43,17 +43,34 @@ class DeleteRequest(BaseModel):
 class CreateDocumentRequest(BaseModel):
     title: str
     content: str = ""
+    kb_id: str | None = None
 
 
 class UpdateDocumentRequest(BaseModel):
     title: str
     content: str = ""
     folder_id: str | None = None
+    kb_id: str | None = None
 
 
 class CreateFolderRequest(BaseModel):
     name: str
     parent_id: str | None = None
+    kb_id: str | None = None
+
+
+class CreateKBRequest(BaseModel):
+    name: str
+    description: str | None = None
+
+
+class UpdateKBRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+
+class RecordRecentRequest(BaseModel):
+    doc_id: str
 
 
 class ExportRequest(BaseModel):
@@ -141,11 +158,12 @@ def _iter_parse_zip(data: bytes, progress_cb):
     return parsed, media_files
 
 
-def _ensure_folder_path(store, path_parts: list[str]) -> str | None:
+def _ensure_folder_path(store, path_parts: list[str], kb_id: str | None = None) -> str | None:
     """按目录层级逐级查找/创建文件夹，返回最深层 folder_id；空路径返回 None。
 
     逐级匹配：在现有 list_folders() 中按 parent_id + name 找同名子文件夹，
     找不到才 create_folder（避免 create_folder 无去重导致重复创建）。
+    kb_id 提供时，查找与创建均限定在该知识库内。
     """
     if not path_parts:
         return None
@@ -154,18 +172,18 @@ def _ensure_folder_path(store, path_parts: list[str]) -> str | None:
         child = next(
             (
                 f
-                for f in store.list_folders()
+                for f in store.list_folders(kb_id)
                 if f["parent_id"] == parent_id and f["name"] == name
             ),
             None,
         )
         if child is None:
-            child = store.create_folder(name=name, parent_id=parent_id)
+            child = store.create_folder(name=name, parent_id=parent_id, kb_id=kb_id)
         parent_id = child["id"]
     return parent_id
 
 
-def _run_import_task(task_id: str, tmp_path: str, filename: str) -> None:
+def _run_import_task(task_id: str, tmp_path: str, filename: str, kb_id: str | None = None) -> None:
     """后台线程：读临时文件 → 解析 + 提取媒体 → 保存媒体 → 逐文档入库 + 向量化。
 
     进度分配：解析 0-40（按 zip 文件数）、媒体保存 40-50、入库 + 向量化 50-100。
@@ -219,13 +237,13 @@ def _run_import_task(task_id: str, tmp_path: str, filename: str) -> None:
             # 拆出目录层级与文件名，逐级创建/复用文件夹
             dir_part, _, file_part = name.rpartition("/")
             path_parts = [s for s in dir_part.split("/") if s] if dir_part else []
-            folder_id = _ensure_folder_path(store, path_parts)
+            folder_id = _ensure_folder_path(store, path_parts, kb_id)
             # 用文件名（去扩展名）作为标题
             title = file_part
             title = title.rsplit(".", 1)[0] if "." in title else title
             title = _dedupe_title(store, title)
             doc = store.add(
-                title=title, text=text, source=filename, ext=p["ext"], folder_id=folder_id
+                title=title, text=text, source=filename, ext=p["ext"], folder_id=folder_id, kb_id=kb_id
             )
             imported.append({"id": doc["id"], "title": doc["title"]})
             progress = 50 + int(50 * i / n) if n else 100
@@ -263,8 +281,8 @@ def health():
 
 
 @router.get("/documents")
-def list_documents():
-    docs = store.all()
+def list_documents(kb_id: str | None = None):
+    docs = store.all(kb_id)
     return {
         "total": len(docs),
         "documents": [
@@ -275,6 +293,7 @@ def list_documents():
                 "ext": d["ext"],
                 "created_at": d["created_at"],
                 "folder_id": d.get("folder_id"),
+                "kb_id": d.get("kb_id"),
             }
             for d in docs
         ],
@@ -289,8 +308,10 @@ def create_document(req: CreateDocumentRequest):
         raise HTTPException(status_code=400, detail="标题不能为空")
 
     title = _dedupe_title(store, title)
-    doc = store.add(title=title, text=req.content, source="手动创建", ext=".md")
-    return {"id": doc["id"], "title": doc["title"]}
+    doc = store.add(
+        title=title, text=req.content, source="手动创建", ext=".md", kb_id=req.kb_id
+    )
+    return {"id": doc["id"], "title": doc["title"], "kb_id": doc.get("kb_id")}
 
 
 @router.get("/documents/{doc_id}")
@@ -306,11 +327,12 @@ def get_document(doc_id: str):
         "ext": doc["ext"],
         "created_at": doc["created_at"],
         "folder_id": doc.get("folder_id"),
+        "kb_id": doc.get("kb_id"),
     }
 
 
 @router.post("/documents/import")
-async def import_documents(file: UploadFile = File(...)):
+async def import_documents(file: UploadFile = File(...), kb_id: str | None = Form(None)):
     """上传文件（支持 md/txt/json/csv/pdf/docx/xlsx/zip），异步解析并入库。
 
     文件先流式写入临时文件（避免整读进内存），随后返回 task_id，
@@ -345,7 +367,7 @@ async def import_documents(file: UploadFile = File(...)):
     task_id = uuid.uuid4().hex
     _set_task(task_id, status="queued")
     thread = threading.Thread(
-        target=_run_import_task, args=(task_id, tmp_path, filename), daemon=True
+        target=_run_import_task, args=(task_id, tmp_path, filename, kb_id), daemon=True
     )
     thread.start()
 
@@ -458,7 +480,7 @@ def chat_stream(req: ChatRequest):
 
 @router.put("/documents/{doc_id}")
 def update_document(doc_id: str, req: UpdateDocumentRequest):
-    """更新文档标题与正文（重新分片 + 向量化），可选移动文件夹。"""
+    """更新文档标题与正文（重新分片 + 向量化），可选移动文件夹/知识库。"""
     title = req.title.strip()
     if not title:
         raise HTTPException(status_code=400, detail="标题不能为空")
@@ -467,11 +489,18 @@ def update_document(doc_id: str, req: UpdateDocumentRequest):
     # 仅当请求体显式携带 folder_id 时才移动（null 表示移回根目录）
     if "folder_id" in req.model_fields_set:
         kwargs["folder_id"] = req.folder_id
+    if "kb_id" in req.model_fields_set:
+        kwargs["kb_id"] = req.kb_id
 
     doc = store.update(doc_id, **kwargs)
     if not doc:
         raise HTTPException(status_code=404, detail="文档不存在")
-    return {"id": doc["id"], "title": doc["title"], "folder_id": doc.get("folder_id")}
+    return {
+        "id": doc["id"],
+        "title": doc["title"],
+        "folder_id": doc.get("folder_id"),
+        "kb_id": doc.get("kb_id"),
+    }
 
 
 @router.delete("/documents/{doc_id}")
@@ -484,9 +513,9 @@ def delete_document(doc_id: str):
 # ---------- 文件夹 ----------
 
 @router.get("/folders")
-def list_folders():
+def list_folders(kb_id: str | None = None):
     """文件夹列表（扁平，含 parent_id，供前端组装树）。"""
-    return {"folders": store.list_folders()}
+    return {"folders": store.list_folders(kb_id)}
 
 
 @router.post("/folders")
@@ -494,7 +523,7 @@ def create_folder(req: CreateFolderRequest):
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="文件夹名称不能为空")
-    folder = store.create_folder(name=name, parent_id=req.parent_id)
+    folder = store.create_folder(name=name, parent_id=req.parent_id, kb_id=req.kb_id)
     return folder
 
 
@@ -503,6 +532,86 @@ def delete_folder(folder_id: str):
     if store.delete_folder(folder_id):
         return {"deleted": folder_id}
     raise HTTPException(status_code=404, detail="文件夹不存在")
+
+
+# ---------- 知识库 ----------
+
+@router.get("/kbs")
+def list_kbs():
+    """知识库列表，含各自文档数。"""
+    kbs = store.list_kbs()
+    return {
+        "kbs": [
+            {
+                "id": k["id"],
+                "name": k["name"],
+                "description": k.get("description"),
+                "created_at": k["created_at"],
+                "doc_count": store.count_docs(k["id"]),
+            }
+            for k in kbs
+        ]
+    }
+
+
+@router.post("/kbs")
+def create_kb(req: CreateKBRequest):
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="名称不能为空")
+    kb = store.create_kb(name=name, description=req.description)
+    return {
+        "id": kb["id"],
+        "name": kb["name"],
+        "description": kb.get("description"),
+        "created_at": kb["created_at"],
+    }
+
+
+@router.get("/kbs/{kb_id}")
+def get_kb(kb_id: str):
+    kb = store.get_kb(kb_id)
+    if not kb:
+        raise HTTPException(status_code=404, detail="知识库不存在")
+    return kb
+
+
+@router.put("/kbs/{kb_id}")
+def update_kb(kb_id: str, req: UpdateKBRequest):
+    kwargs: dict = {}
+    if "name" in req.model_fields_set:
+        name = (req.name or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="名称不能为空")
+        kwargs["name"] = name
+    if "description" in req.model_fields_set:
+        kwargs["description"] = req.description
+    kb = store.update_kb(kb_id, **kwargs)
+    if not kb:
+        raise HTTPException(status_code=404, detail="知识库不存在")
+    return kb
+
+
+@router.delete("/kbs/{kb_id}")
+def delete_kb(kb_id: str):
+    if store.delete_kb(kb_id):
+        return {"deleted": kb_id}
+    raise HTTPException(status_code=404, detail="知识库不存在")
+
+
+# ---------- 最近浏览 ----------
+
+@router.post("/recent")
+def record_recent(req: RecordRecentRequest):
+    rec = store.record_recent(req.doc_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    return rec
+
+
+@router.get("/recent")
+def list_recent(limit: int = 20):
+    return {"recent": store.list_recent(limit)}
 
 
 # ---------- 导出 ----------

@@ -22,6 +22,8 @@ export function Sidebar({
   onDeleteFolder,
   onMoveDoc,
   listError,
+  kbName,
+  onBackHome,
 }: {
   data: TreeNode[];
   activeKey: string | null;
@@ -38,6 +40,8 @@ export function Sidebar({
   onDeleteFolder?: (id: string) => void;
   onMoveDoc?: (docId: string, folderId: string | null) => void;
   listError?: string | null;
+  kbName?: string;
+  onBackHome?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -71,7 +75,31 @@ export function Sidebar({
     <aside className="flex w-[260px] min-w-[180px] max-w-[420px] shrink-0 flex-col border-r border-line bg-surface">
       <div className="border-b border-line px-3 pb-2.5 pt-2.5">
         <div className="mb-2 flex items-center justify-between">
-          <span className="text-xs text-faint">知识库 · 全部文档</span>
+          <div className="flex min-w-0 items-center gap-1">
+            {onBackHome && (
+              <button
+                onClick={onBackHome}
+                className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
+                title="返回首页"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M19 12H5M12 19l-7-7 7-7" />
+                </svg>
+              </button>
+            )}
+            <span className="truncate text-xs text-faint">
+              {kbName ?? "知识库 · 全部文档"}
+            </span>
+          </div>
           {onRefresh && (
             <button
               onClick={onRefresh}

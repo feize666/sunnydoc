@@ -11,6 +11,7 @@ export function TitleBar({
   onOpenPalette,
   theme,
   onToggleTheme,
+  onBackHome,
 }: {
   openDocs: { key: string; title: string }[];
   activeKey: string | null;
@@ -20,9 +21,31 @@ export function TitleBar({
   onOpenPalette: () => void;
   theme: "light" | "dark";
   onToggleTheme: () => void;
+  onBackHome?: () => void;
 }) {
   return (
     <header className="flex h-11 items-center gap-2 border-b border-line bg-background px-2.5 select-none">
+      {onBackHome && (
+        <button
+          onClick={onBackHome}
+          className="grid h-[30px] w-[30px] place-items-center rounded-md text-muted hover:bg-hover hover:text-text"
+          title="返回首页"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M19 12H5M12 19l-7-7 7-7" />
+          </svg>
+        </button>
+      )}
+
       <div className="flex items-center gap-1.5 px-1 text-sm font-semibold">
         <span className="grid h-[18px] w-[18px] place-items-center rounded-md bg-gradient-to-br from-[#5b8dff] to-[#2b5ce6] text-[11px] font-bold text-white">
           知

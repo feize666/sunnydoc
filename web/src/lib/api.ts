@@ -11,6 +11,23 @@ export interface DocMeta {
   ext: string;
   created_at: number;
   folder_id?: string | null;
+  kb_id?: string | null;
+}
+
+export interface Kb {
+  id: string;
+  name: string;
+  description?: string;
+  created_at?: number;
+  doc_count?: number;
+}
+
+export interface RecentDoc {
+  doc_id: string;
+  kb_id: string | null;
+  title: string;
+  source?: string;
+  viewed_at: number;
 }
 
 export interface Folder {
@@ -52,13 +69,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function listDocuments(): Promise<DocMeta[]> {
-  const data = await request<{ total: number; documents: DocMeta[] }>("/documents");
+export async function listDocuments(kbId?: string | null): Promise<DocMeta[]> {
+  const qs = kbId ? `?kb_id=${encodeURIComponent(kbId)}` : "";
+  const data = await request<{ total: number; documents: DocMeta[] }>(
+    `/documents${qs}`,
+  );
   return Array.isArray(data?.documents) ? data.documents : [];
 }
 
-export async function listFolders(): Promise<Folder[]> {
-  const data = await request<unknown>("/folders");
+export async function listFolders(kbId?: string | null): Promise<Folder[]> {
+  const qs = kbId ? `?kb_id=${encodeURIComponent(kbId)}` : "";
+  const data = await request<unknown>(`/folders${qs}`);
   if (Array.isArray(data)) return data as Folder[];
   if (
     data &&
@@ -77,11 +98,12 @@ export async function getDocument(id: string): Promise<DocDetail> {
 export async function createDocument(
   title: string,
   content: string,
+  kbId?: string | null,
 ): Promise<{ id: string; title: string }> {
   return request("/documents", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, content }),
+    body: JSON.stringify({ title, content, kb_id: kbId ?? undefined }),
   });
 }
 
@@ -111,11 +133,12 @@ export async function moveDocument(
 export async function createFolder(
   name: string,
   parentId?: string | null,
+  kbId?: string | null,
 ): Promise<Folder> {
   return request("/folders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, parent_id: parentId ?? null }),
+    body: JSON.stringify({ name, parent_id: parentId ?? null, kb_id: kbId ?? undefined }),
   });
 }
 
@@ -125,9 +148,11 @@ export async function deleteFolder(id: string): Promise<void> {
 
 export async function importDocument(
   file: File,
+  kbId?: string | null,
 ): Promise<{ imported: number; documents: { id: string; title: string }[] }> {
   const form = new FormData();
   form.append("file", file);
+  if (kbId) form.append("kb_id", kbId);
   return request("/documents/import", { method: "POST", body: form });
 }
 
@@ -144,10 +169,12 @@ export interface ImportTaskStatus {
 
 export async function importDocumentAsync(
   file: File,
+  kbId?: string | null,
   onUploadProgress?: (percent: number) => void,
 ): Promise<{ task_id: string; status: string }> {
   const form = new FormData();
   form.append("file", file);
+  if (kbId) form.append("kb_id", kbId);
 
   return new Promise<{ task_id: string; status: string }>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -194,11 +221,12 @@ export type ExportFormat = "md" | "docx" | "pdf" | "html" | "json" | "zip";
 export async function exportDocuments(
   format: ExportFormat,
   docIds?: string[],
+  kbId?: string | null,
 ): Promise<{ filename: string; blob: Blob }> {
   const res = await fetch(`${BASE}/export`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ format, doc_ids: docIds }),
+    body: JSON.stringify({ format, doc_ids: docIds, kb_id: kbId ?? undefined }),
   });
 
   if (!res.ok) {
@@ -247,6 +275,55 @@ export async function chat(
 
 export async function deleteDocument(id: string): Promise<void> {
   await request(`/documents/${id}`, { method: "DELETE" });
+}
+
+// —— 知识库 ——
+
+export async function listKbs(): Promise<Kb[]> {
+  const data = await request<{ kbs?: Kb[] }>("/kbs");
+  return Array.isArray(data?.kbs) ? data.kbs : [];
+}
+
+export async function createKb(name: string, description?: string): Promise<Kb> {
+  return request("/kbs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, description: description?.trim() || undefined }),
+  });
+}
+
+export async function updateKb(
+  id: string,
+  patch: { name?: string; description?: string },
+): Promise<Kb> {
+  return request(`/kbs/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function deleteKb(id: string): Promise<void> {
+  await request(`/kbs/${id}`, { method: "DELETE" });
+}
+
+// —— 最近浏览 ——
+
+export async function recordRecent(docId: string): Promise<void> {
+  try {
+    await request("/recent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ doc_id: docId }),
+    });
+  } catch {
+    /* 最近浏览记录失败不阻塞打开文档 */
+  }
+}
+
+export async function listRecent(limit = 20): Promise<RecentDoc[]> {
+  const data = await request<{ recent?: RecentDoc[] }>(`/recent?limit=${limit}`);
+  return Array.isArray(data?.recent) ? data.recent : [];
 }
 
 export interface WebSource {

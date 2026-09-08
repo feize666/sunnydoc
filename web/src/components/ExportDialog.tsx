@@ -52,10 +52,12 @@ export function ExportDialog({
   open,
   onClose,
   activeDocId,
+  kbId,
 }: {
   open: boolean;
   onClose: () => void;
   activeDocId: string | null;
+  kbId?: string | null;
 }) {
   const [format, setFormat] = useState<ExportFormat>("md");
   const [scope, setScope] = useState<"current" | "all">("current");
@@ -73,7 +75,7 @@ export function ExportDialog({
     setError(null);
     try {
       const docIds = scope === "current" && activeDocId ? [activeDocId] : undefined;
-      const { filename, blob } = await exportDocuments(format, docIds);
+      const { filename, blob } = await exportDocuments(format, docIds, kbId);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;

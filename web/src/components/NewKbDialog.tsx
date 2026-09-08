@@ -1,56 +1,40 @@
 "use client";
 
 import { useState } from "react";
-import { createFolder, type Folder } from "@/lib/api";
+import { createKb } from "@/lib/api";
 import { CloseIcon } from "./icons";
 
-function depthOf(id: string, map: Map<string, Folder>): number {
-  let depth = 0;
-  let cur: string | undefined = id;
-  while (cur) {
-    depth++;
-    cur = map.get(cur)?.parent_id ?? undefined;
-  }
-  return depth;
-}
-
-export function NewFolderDialog({
+export function NewKbDialog({
   open,
   onClose,
   onCreated,
-  folders,
-  kbId,
 }: {
   open: boolean;
   onClose: () => void;
   onCreated: () => void;
-  folders: Folder[];
-  kbId?: string | null;
 }) {
   const [name, setName] = useState("");
-  const [parentId, setParentId] = useState("");
+  const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!open) return null;
 
-  const map = new Map<string, Folder>(folders.map((f) => [f.id, f]));
-
   const reset = () => {
     setName("");
-    setParentId("");
+    setDescription("");
     setError(null);
   };
 
   const handleCreate = async () => {
     if (!name.trim()) {
-      setError("文件夹名不能为空");
+      setError("知识库名称不能为空");
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
-      await createFolder(name.trim(), parentId || null, kbId);
+      await createKb(name.trim(), description);
       reset();
       onCreated();
       onClose();
@@ -67,11 +51,11 @@ export function NewFolderDialog({
       onClick={onClose}
     >
       <div
-        className="w-[420px] max-w-[92vw] overflow-hidden rounded-xl border border-line bg-background shadow-2xl"
+        className="w-[460px] max-w-[92vw] overflow-hidden rounded-xl border border-line bg-background shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
-          <span className="text-sm font-semibold">新建文件夹</span>
+          <span className="text-sm font-semibold">新建知识库</span>
           <button
             onClick={onClose}
             className="grid h-7 w-7 place-items-center rounded-md text-muted hover:bg-hover"
@@ -81,7 +65,7 @@ export function NewFolderDialog({
         </div>
 
         <div className="p-4">
-          <label className="mb-1 block text-xs text-muted">文件夹名</label>
+          <label className="mb-1 block text-xs text-muted">名称</label>
           <input
             autoFocus
             value={name}
@@ -89,26 +73,20 @@ export function NewFolderDialog({
             onKeyDown={(e) => {
               if (e.key === "Enter") handleCreate();
             }}
-            placeholder="输入文件夹名称"
+            placeholder="输入知识库名称"
             className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
           />
 
           <label className="mb-1 mt-3 block text-xs text-muted">
-            上级文件夹（可选）
+            描述（可选）
           </label>
-          <select
-            value={parentId}
-            onChange={(e) => setParentId(e.target.value)}
-            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
-          >
-            <option value="">根目录</option>
-            {folders.map((f) => (
-              <option key={f.id} value={f.id}>
-                {"　".repeat(depthOf(f.id, map) - 1)}
-                {f.name}
-              </option>
-            ))}
-          </select>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="一句话说明这个知识库的用途"
+            rows={3}
+            className="w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
+          />
 
           {error && (
             <div className="mt-2 rounded-md border border-red-300 bg-red-50 px-2 py-1.5 text-xs text-red-600">

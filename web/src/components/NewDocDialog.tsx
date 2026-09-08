@@ -8,10 +8,12 @@ export function NewDocDialog({
   open,
   onClose,
   onCreated,
+  kbId,
 }: {
   open: boolean;
   onClose: () => void;
   onCreated: () => void;
+  kbId?: string | null;
 }) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -34,7 +36,7 @@ export function NewDocDialog({
     setSubmitting(true);
     setError(null);
     try {
-      await createDocument(title.trim(), content);
+      await createDocument(title.trim(), content, kbId);
       reset();
       onCreated();
       onClose();
