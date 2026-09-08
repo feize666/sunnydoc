@@ -13,6 +13,11 @@ __pycache__/
 .venv/
 venv/
 
+# 后端数据
+api/data/
+
+# 部署产物（服务器上 nginx 托管目录）
+mvp-ui/
+
 # WorkBuddy 工作区数据
 .workbuddy/
-mvp-ui/

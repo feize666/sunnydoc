@@ -8,7 +8,6 @@ import { AiPanel } from "@/components/AiPanel";
 import { StatusBar } from "@/components/StatusBar";
 import { CommandPalette, type Command } from "@/components/CommandPalette";
 import { ImportDialog } from "@/components/ImportDialog";
-import { ExportMenu } from "@/components/ExportMenu";
 import { docs as seedDocs, treeData as seedTree, type Doc, type TreeNode } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
 import type { ImportedDoc } from "@/lib/importer";
@@ -138,8 +137,6 @@ export default function Home() {
         onOpenPalette={() => setPaletteOpen(true)}
         theme={theme}
         onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
-        onImport={() => setImportOpen(true)}
-        exportMenu={<ExportMenu docs={allDocs} activeDoc={activeDoc} />}
       />
 
       <div className="flex min-h-0 flex-1">
@@ -149,6 +146,9 @@ export default function Home() {
           onSelect={openDoc}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(false)}
+          docs={allDocs}
+          activeDoc={activeDoc}
+          onImport={() => setImportOpen(true)}
         />
         <Editor doc={activeDoc} />
         <AiPanel />
