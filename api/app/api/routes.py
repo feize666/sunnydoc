@@ -141,6 +141,30 @@ def _iter_parse_zip(data: bytes, progress_cb):
     return parsed, media_files
 
 
+def _ensure_folder_path(store, path_parts: list[str]) -> str | None:
+    """按目录层级逐级查找/创建文件夹，返回最深层 folder_id；空路径返回 None。
+
+    逐级匹配：在现有 list_folders() 中按 parent_id + name 找同名子文件夹，
+    找不到才 create_folder（避免 create_folder 无去重导致重复创建）。
+    """
+    if not path_parts:
+        return None
+    parent_id: str | None = None
+    for name in path_parts:
+        child = next(
+            (
+                f
+                for f in store.list_folders()
+                if f["parent_id"] == parent_id and f["name"] == name
+            ),
+            None,
+        )
+        if child is None:
+            child = store.create_folder(name=name, parent_id=parent_id)
+        parent_id = child["id"]
+    return parent_id
+
+
 def _run_import_task(task_id: str, tmp_path: str, filename: str) -> None:
     """后台线程：读临时文件 → 解析 + 提取媒体 → 保存媒体 → 逐文档入库 + 向量化。
 
@@ -190,18 +214,26 @@ def _run_import_task(task_id: str, tmp_path: str, filename: str) -> None:
             # 仅对 markdown 做图片引用路径替换
             if path_map and p["ext"] in {".md", ".markdown"}:
                 text = parser.replace_md_image_refs(text, p["name"], path_map)
+            # 归一化 zip 内路径分隔符，去掉前导斜杠
+            name = p["name"].replace("\\", "/").lstrip("/")
+            # 拆出目录层级与文件名，逐级创建/复用文件夹
+            dir_part, _, file_part = name.rpartition("/")
+            path_parts = [s for s in dir_part.split("/") if s] if dir_part else []
+            folder_id = _ensure_folder_path(store, path_parts)
             # 用文件名（去扩展名）作为标题
-            title = p["name"].rsplit("/", 1)[-1]
+            title = file_part
             title = title.rsplit(".", 1)[0] if "." in title else title
             title = _dedupe_title(store, title)
-            doc = store.add(title=title, text=text, source=filename, ext=p["ext"])
+            doc = store.add(
+                title=title, text=text, source=filename, ext=p["ext"], folder_id=folder_id
+            )
             imported.append({"id": doc["id"], "title": doc["title"]})
             progress = 50 + int(50 * i / n) if n else 100
             _set_task(
                 task_id,
                 progress=progress,
                 done=total_files,
-                current=title,
+                current=name,
                 imported=imported,
                 media_count=len(media_files),
             )
