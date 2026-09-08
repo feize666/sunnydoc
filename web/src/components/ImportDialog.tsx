@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
-import { importDocument } from "@/lib/api";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { importDocumentAsync, getImportTask } from "@/lib/api";
 import { CloseIcon } from "./icons";
 
+type Phase = "idle" | "uploading" | "parsing" | "done" | "failed";
+
 interface ImportResult {
-  success: string[];
-  failed: { name: string; reason: string }[];
+  count: number;
+  media: number;
+  titles: string[];
 }
 
 export function ImportDialog({
@@ -19,42 +22,81 @@ export function ImportDialog({
   onImported: () => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
-  const [processing, setProcessing] = useState(false);
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [progress, setProgress] = useState(0);
+  const [current, setCurrent] = useState("");
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const pollRef = useRef<number | null>(null);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => stopPolling(), [stopPolling]);
 
   const handleFiles = useCallback(
     async (files: FileList | File[]) => {
-      if (files.length === 0) return;
-      setProcessing(true);
+      const arr = Array.from(files);
+      if (arr.length === 0) return;
+      const file = arr[0];
+
+      setPhase("uploading");
+      setProgress(0);
+      setCurrent(file.name);
       setResult(null);
+      setErrorMsg(null);
 
-      const success: string[] = [];
-      const failed: { name: string; reason: string }[] = [];
-
-      for (const file of Array.from(files)) {
-        try {
-          const res = await importDocument(file);
-          success.push(...res.documents.map((d) => d.title));
-        } catch (e) {
-          failed.push({
-            name: file.name,
-            reason: e instanceof Error ? e.message : "上传失败",
-          });
-        }
+      try {
+        const { task_id } = await importDocumentAsync(file);
+        setPhase("parsing");
+        pollRef.current = window.setInterval(async () => {
+          try {
+            const s = await getImportTask(task_id);
+            setProgress(Math.max(0, Math.min(100, s.progress)));
+            if (s.current) setCurrent(s.current);
+            if (s.status === "done") {
+              stopPolling();
+              setProgress(100);
+              setPhase("done");
+              setResult({
+                count: s.imported?.length ?? s.done ?? 0,
+                media: s.media_count ?? 0,
+                titles: s.imported?.map((i) => i.title) ?? [],
+              });
+              onImported();
+            } else if (s.status === "failed") {
+              stopPolling();
+              setPhase("failed");
+              setErrorMsg(s.message || "导入失败");
+            }
+          } catch (e) {
+            stopPolling();
+            setPhase("failed");
+            setErrorMsg(e instanceof Error ? e.message : "查询任务状态失败");
+          }
+        }, 900);
+      } catch (e) {
+        setPhase("failed");
+        setErrorMsg(e instanceof Error ? e.message : "上传失败");
       }
-
-      setResult({ success, failed });
-      setProcessing(false);
-      if (success.length > 0) onImported();
     },
-    [onImported],
+    [onImported, stopPolling],
   );
 
   if (!open) return null;
 
   const reset = () => {
+    stopPolling();
+    setPhase("idle");
+    setProgress(0);
+    setCurrent("");
     setResult(null);
+    setErrorMsg(null);
     if (inputRef.current) inputRef.current.value = "";
   };
 
@@ -77,7 +119,7 @@ export function ImportDialog({
           </button>
         </div>
 
-        {!result ? (
+        {phase === "idle" && (
           <div className="p-4">
             <div
               onDragOver={(e) => {
@@ -118,26 +160,63 @@ export function ImportDialog({
             <input
               ref={inputRef}
               type="file"
-              multiple
               accept=".md,.markdown,.txt,.text,.json,.csv,.tsv,.zip,.pdf,.doc,.docx,.xls,.xlsx"
               className="hidden"
               onChange={(e) => e.target.files && handleFiles(e.target.files)}
             />
-            {processing && (
-              <div className="mt-3 text-center text-xs text-faint">
-                正在上传并解析文件…
-              </div>
-            )}
           </div>
-        ) : (
+        )}
+
+        {phase === "uploading" && (
+          <div className="p-6">
+            <div className="flex items-center gap-3">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm text-text">上传中…</div>
+                <div className="truncate text-xs text-faint">{current}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {phase === "parsing" && (
+          <div className="p-6">
+            <div className="mb-2 flex items-center justify-between text-xs">
+              <span className="text-muted">解析中…</span>
+              <span className="font-medium text-accent">{progress}%</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
+              <div
+                className="h-full rounded-full bg-accent transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <div className="mt-2 truncate text-xs text-faint">
+              {current || "正在解析…"}
+            </div>
+          </div>
+        )}
+
+        {phase === "done" && result && (
           <div className="p-4">
             <div className="space-y-3">
-              <div className="rounded-lg bg-accent-soft px-3 py-2.5 text-sm text-accent">
-                成功导入 {result.success.length} 篇文档
+              <div className="flex items-center gap-2 rounded-lg bg-accent-soft px-3 py-2.5 text-sm text-accent">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+                导入完成：共 {result.count} 篇文档
+                {result.media > 0 && `、媒体 ${result.media} 个`}
               </div>
-              {result.success.length > 0 && (
+              {result.titles.length > 0 && (
                 <div className="max-h-40 overflow-y-auto rounded-lg border border-line">
-                  {result.success.map((t, i) => (
+                  {result.titles.map((t, i) => (
                     <div
                       key={i}
                       className="border-b border-line px-3 py-1.5 text-[13px] last:border-0"
@@ -145,24 +224,6 @@ export function ImportDialog({
                       {t}
                     </div>
                   ))}
-                </div>
-              )}
-              {result.failed.length > 0 && (
-                <div>
-                  <div className="mb-1 text-xs font-medium text-muted">
-                    导入失败 {result.failed.length} 个文件：
-                  </div>
-                  <div className="max-h-32 overflow-y-auto rounded-lg border border-line">
-                    {result.failed.map((f, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center justify-between border-b border-line px-3 py-1.5 text-[12px] last:border-0"
-                      >
-                        <span className="truncate">{f.name}</span>
-                        <span className="ml-2 shrink-0 text-faint">{f.reason}</span>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               )}
             </div>
@@ -178,6 +239,28 @@ export function ImportDialog({
                 className="rounded-lg bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover"
               >
                 完成
+              </button>
+            </div>
+          </div>
+        )}
+
+        {phase === "failed" && (
+          <div className="p-4">
+            <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2.5 text-sm text-red-600">
+              {errorMsg || "导入失败"}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={reset}
+                className="rounded-lg border border-line px-4 py-2 text-sm text-text hover:bg-hover"
+              >
+                重新导入
+              </button>
+              <button
+                onClick={onClose}
+                className="rounded-lg bg-accent px-4 py-2 text-sm text-white hover:bg-accent-hover"
+              >
+                关闭
               </button>
             </div>
           </div>

@@ -2,50 +2,82 @@
 
 import { useState } from "react";
 import type { TreeNode } from "@/data/docs";
-import { FileIcon, FolderIcon, ChevronIcon, CloseIcon } from "./icons";
+import type { Folder } from "@/lib/api";
+import {
+  FileIcon,
+  FolderIcon,
+  ChevronIcon,
+  CloseIcon,
+  MoveIcon,
+  TrashIcon,
+} from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 function FileTreeNode({
   node,
   activeKey,
   onSelect,
-  onRequestDelete,
+  folders,
+  onRequestDeleteDoc,
+  onRequestDeleteFolder,
+  onMoveDoc,
   depth = 0,
 }: {
   node: TreeNode;
   activeKey: string | null;
   onSelect: (key: string) => void;
-  onRequestDelete?: (node: TreeNode) => void;
+  folders: Folder[];
+  onRequestDeleteDoc?: (node: TreeNode) => void;
+  onRequestDeleteFolder?: (node: TreeNode) => void;
+  onMoveDoc?: (docId: string, folderId: string | null) => void;
   depth?: number;
 }) {
   const [open, setOpen] = useState(depth === 0);
+  const [moveOpen, setMoveOpen] = useState(false);
 
   if (node.type === "folder") {
     return (
       <div>
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="group flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] text-muted hover:bg-hover"
-          style={{ paddingLeft: 8 + depth * 12 }}
-        >
-          <ChevronIcon
-            size={13}
-            className={`shrink-0 text-faint transition-transform ${
-              open ? "rotate-90" : ""
-            }`}
-          />
-          <FolderIcon size={15} className="shrink-0 text-faint" />
-          <span className="truncate">{node.name}</span>
-        </button>
+        <div className="group flex w-full items-center gap-1.5 rounded-md py-1 text-left text-[13px] text-muted hover:bg-hover">
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="flex min-w-0 flex-1 items-center gap-1.5"
+            style={{ paddingLeft: 8 + depth * 12 }}
+          >
+            <ChevronIcon
+              size={13}
+              className={`shrink-0 text-faint transition-transform ${
+                open ? "rotate-90" : ""
+              }`}
+            />
+            <FolderIcon size={15} className="shrink-0 text-faint" />
+            <span className="truncate">{node.name}</span>
+          </button>
+          {onRequestDeleteFolder && node.key && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onRequestDeleteFolder(node);
+              }}
+              className="mr-1 grid h-4 w-4 shrink-0 place-items-center rounded text-faint opacity-0 transition-opacity hover:bg-hover hover:text-red-500 group-hover:opacity-100"
+              title="删除文件夹"
+            >
+              <TrashIcon size={12} />
+            </button>
+          )}
+        </div>
         {open && node.children && (
           <div>
             {node.children.map((child) => (
               <FileTreeNode
-                key={child.name}
+                key={child.key ?? child.name}
                 node={child}
                 activeKey={activeKey}
                 onSelect={onSelect}
-                onRequestDelete={onRequestDelete}
+                folders={folders}
+                onRequestDeleteDoc={onRequestDeleteDoc}
+                onRequestDeleteFolder={onRequestDeleteFolder}
+                onMoveDoc={onMoveDoc}
                 depth={depth + 1}
               />
             ))}
@@ -67,12 +99,61 @@ function FileTreeNode({
       style={{ paddingLeft: 8 + depth * 12 + 18 }}
     >
       <FileIcon size={15} className={`shrink-0 ${active ? "text-accent" : "text-faint"}`} />
-      <span className="flex-1 truncate">{node.name}</span>
-      {onRequestDelete && node.key && (
+      <span className="min-w-0 flex-1 truncate">{node.name}</span>
+      {onMoveDoc && node.key && (
+        <div className="relative shrink-0">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setMoveOpen((v) => !v);
+            }}
+            className="grid h-4 w-4 place-items-center rounded text-faint opacity-0 transition-opacity hover:bg-hover hover:text-accent group-hover:opacity-100"
+            title="移动到文件夹"
+          >
+            <MoveIcon size={13} />
+          </button>
+          {moveOpen && (
+            <div
+              className="absolute right-0 top-full z-20 mt-1 max-h-56 w-44 overflow-y-auto rounded-lg border border-line bg-background py-1 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => {
+                  onMoveDoc(node.key!, null);
+                  setMoveOpen(false);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-muted hover:bg-hover hover:text-text"
+              >
+                <FolderIcon size={13} className="shrink-0 text-faint" />
+                根目录
+              </button>
+              {folders.map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => {
+                    onMoveDoc(node.key!, f.id);
+                    setMoveOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-muted hover:bg-hover hover:text-text"
+                >
+                  <FolderIcon size={13} className="shrink-0 text-faint" />
+                  <span className="truncate">{f.name}</span>
+                </button>
+              ))}
+              {folders.length === 0 && (
+                <div className="px-3 py-1.5 text-[11px] text-faint">
+                  暂无文件夹，可先新建
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      {onRequestDeleteDoc && node.key && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            onRequestDelete(node);
+            onRequestDeleteDoc(node);
           }}
           className="grid h-4 w-4 shrink-0 place-items-center rounded text-faint opacity-0 transition-opacity hover:bg-hover hover:text-red-500 group-hover:opacity-100"
           title="删除文档"
@@ -88,14 +169,23 @@ export function FileTree({
   data,
   activeKey,
   onSelect,
-  onDelete,
+  folders = [],
+  onDeleteDoc,
+  onDeleteFolder,
+  onMoveDoc,
 }: {
   data: TreeNode[];
   activeKey: string | null;
   onSelect: (key: string) => void;
-  onDelete?: (key: string) => void;
+  folders?: Folder[];
+  onDeleteDoc?: (key: string) => void;
+  onDeleteFolder?: (id: string) => void;
+  onMoveDoc?: (docId: string, folderId: string | null) => void;
 }) {
-  const [pendingDelete, setPendingDelete] = useState<TreeNode | null>(null);
+  const [pendingDeleteDoc, setPendingDeleteDoc] = useState<TreeNode | null>(null);
+  const [pendingDeleteFolder, setPendingDeleteFolder] = useState<TreeNode | null>(
+    null,
+  );
 
   return (
     <>
@@ -106,24 +196,44 @@ export function FileTree({
             node={node}
             activeKey={activeKey}
             onSelect={onSelect}
-            onRequestDelete={setPendingDelete}
+            folders={folders}
+            onRequestDeleteDoc={onDeleteDoc ? setPendingDeleteDoc : undefined}
+            onRequestDeleteFolder={
+              onDeleteFolder ? setPendingDeleteFolder : undefined
+            }
+            onMoveDoc={onMoveDoc}
           />
         ))}
       </nav>
 
       <ConfirmDialog
-        open={pendingDelete !== null}
+        open={pendingDeleteDoc !== null}
         title="删除文档"
-        message={`确定要删除「${pendingDelete?.name ?? ""}」吗？此操作不可恢复。`}
+        message={`确定要删除「${pendingDeleteDoc?.name ?? ""}」吗？此操作不可恢复。`}
         confirmText="删除"
         cancelText="取消"
         onConfirm={() => {
-          if (pendingDelete?.key && onDelete) {
-            onDelete(pendingDelete.key);
+          if (pendingDeleteDoc?.key && onDeleteDoc) {
+            onDeleteDoc(pendingDeleteDoc.key);
           }
-          setPendingDelete(null);
+          setPendingDeleteDoc(null);
         }}
-        onCancel={() => setPendingDelete(null)}
+        onCancel={() => setPendingDeleteDoc(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingDeleteFolder !== null}
+        title="删除文件夹"
+        message={`确定要删除文件夹「${pendingDeleteFolder?.name ?? ""}」吗？文件夹内的文档不会被删除，将移动到根目录。`}
+        confirmText="删除"
+        cancelText="取消"
+        onConfirm={() => {
+          if (pendingDeleteFolder?.key && onDeleteFolder) {
+            onDeleteFolder(pendingDeleteFolder.key);
+          }
+          setPendingDeleteFolder(null);
+        }}
+        onCancel={() => setPendingDeleteFolder(null)}
       />
     </>
   );

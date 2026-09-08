@@ -10,6 +10,14 @@ export interface DocMeta {
   source: string;
   ext: string;
   created_at: number;
+  folder_id?: string | null;
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  created_at?: number;
 }
 
 export interface DocDetail extends DocMeta {
@@ -49,6 +57,19 @@ export async function listDocuments(): Promise<DocMeta[]> {
   return data.documents;
 }
 
+export async function listFolders(): Promise<Folder[]> {
+  const data = await request<unknown>("/folders");
+  if (Array.isArray(data)) return data as Folder[];
+  if (
+    data &&
+    typeof data === "object" &&
+    Array.isArray((data as { folders?: Folder[] }).folders)
+  ) {
+    return (data as { folders: Folder[] }).folders;
+  }
+  return [];
+}
+
 export async function getDocument(id: string): Promise<DocDetail> {
   return request<DocDetail>(`/documents/${id}`);
 }
@@ -76,12 +97,100 @@ export async function updateDocument(
   });
 }
 
+export async function moveDocument(
+  id: string,
+  folderId: string | null,
+): Promise<{ id: string; title: string }> {
+  return request(`/documents/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ folder_id: folderId }),
+  });
+}
+
+export async function createFolder(
+  name: string,
+  parentId?: string | null,
+): Promise<Folder> {
+  return request("/folders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, parent_id: parentId ?? null }),
+  });
+}
+
+export async function deleteFolder(id: string): Promise<void> {
+  await request(`/folders/${id}`, { method: "DELETE" });
+}
+
 export async function importDocument(
   file: File,
 ): Promise<{ imported: number; documents: { id: string; title: string }[] }> {
   const form = new FormData();
   form.append("file", file);
   return request("/documents/import", { method: "POST", body: form });
+}
+
+export interface ImportTaskStatus {
+  status: "queued" | "running" | "done" | "failed";
+  progress: number;
+  total: number;
+  done: number;
+  current: string;
+  message?: string;
+  imported?: { id: string; title: string }[];
+  media_count?: number;
+}
+
+export async function importDocumentAsync(
+  file: File,
+): Promise<{ task_id: string; status: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  return request("/documents/import", { method: "POST", body: form });
+}
+
+export async function getImportTask(taskId: string): Promise<ImportTaskStatus> {
+  return request(`/documents/import/${taskId}`);
+}
+
+export type ExportFormat = "md" | "docx" | "pdf" | "html" | "json" | "zip";
+
+export async function exportDocuments(
+  format: ExportFormat,
+  docIds?: string[],
+): Promise<{ filename: string; blob: Blob }> {
+  const res = await fetch(`${BASE}/export`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ format, doc_ids: docIds }),
+  });
+
+  if (!res.ok) {
+    let detail = `导出失败（${res.status}）`;
+    try {
+      const body = await res.json();
+      if (body.detail) detail = body.detail;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+
+  const blob = await res.blob();
+  const cd = res.headers.get("Content-Disposition") ?? "";
+  let filename = "";
+  const m = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(cd);
+  if (m) {
+    try {
+      filename = decodeURIComponent(m[1]);
+    } catch {
+      filename = m[1];
+    }
+  }
+  if (!filename) filename = `export.${format === "md" ? "md" : format}`;
+
+  return { filename, blob };
 }
 
 export interface ChatMessage {

@@ -9,13 +9,20 @@ import { StatusBar } from "@/components/StatusBar";
 import { CommandPalette, type Command } from "@/components/CommandPalette";
 import { ImportDialog } from "@/components/ImportDialog";
 import { NewDocDialog } from "@/components/NewDocDialog";
+import { NewFolderDialog } from "@/components/NewFolderDialog";
+import { ExportDialog } from "@/components/ExportDialog";
 import type { Doc, TreeNode } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
+import { buildTree } from "@/lib/buildTree";
 import {
   listDocuments,
+  listFolders,
   getDocument,
   deleteDocument,
+  deleteFolder,
+  moveDocument,
   type DocMeta,
+  type Folder,
 } from "@/lib/api";
 
 function formatTime(ts: number): string {
@@ -27,6 +34,7 @@ function formatTime(ts: number): string {
 export default function Home() {
   const [docs, setDocs] = useState<Record<string, Doc>>({});
   const [metas, setMetas] = useState<DocMeta[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
   const [openKeys, setOpenKeys] = useState<string[]>([]);
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -34,6 +42,8 @@ export default function Home() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [newDocOpen, setNewDocOpen] = useState(false);
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [loadingDoc, setLoadingDoc] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
 
@@ -52,12 +62,16 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // 拉取文档列表
+  // 拉取文档列表 + 文件夹列表
   const refreshList = useCallback(async () => {
     try {
       setListError(null);
-      const list = await listDocuments();
+      const [list, folderList] = await Promise.all([
+        listDocuments(),
+        listFolders(),
+      ]);
       setMetas(list);
+      setFolders(folderList);
     } catch (e) {
       setListError(e instanceof Error ? e.message : "加载文档列表失败");
     }
@@ -137,13 +151,11 @@ export default function Home() {
     async (key: string) => {
       try {
         await deleteDocument(key);
-        // 从缓存移除
         setDocs((prev) => {
           const next = { ...prev };
           delete next[key];
           return next;
         });
-        // 关闭标签并刷新列表
         closeDoc(key);
         refreshList();
       } catch (e) {
@@ -153,16 +165,37 @@ export default function Home() {
     [closeDoc, refreshList],
   );
 
-  // 构建文件树：按 source 的文件名分组
-  const tree: TreeNode[] = metas.map((m) => ({
-    type: "file",
-    name: m.title,
-    key: m.id,
-  }));
+  // 删除文件夹
+  const handleDeleteFolder = useCallback(
+    async (id: string) => {
+      try {
+        await deleteFolder(id);
+        refreshList();
+      } catch (e) {
+        alert(`删除文件夹失败：${e instanceof Error ? e.message : "未知错误"}`);
+      }
+    },
+    [refreshList],
+  );
+
+  // 移动文档到文件夹
+  const handleMoveDoc = useCallback(
+    async (docId: string, folderId: string | null) => {
+      try {
+        await moveDocument(docId, folderId);
+        refreshList();
+      } catch (e) {
+        alert(`移动文档失败：${e instanceof Error ? e.message : "未知错误"}`);
+      }
+    },
+    [refreshList],
+  );
+
+  // 构建多级文件树
+  const tree: TreeNode[] = buildTree(metas, folders);
 
   const activeDoc = activeKey ? docs[activeKey] ?? null : null;
   const wordCount = activeDoc ? countWords(activeDoc.body) : 0;
-  const allDocs = Object.values(docs);
 
   const commands: Command[] = [
     {
@@ -170,6 +203,12 @@ export default function Home() {
       label: "导入文档",
       hint: "Ctrl+I",
       action: () => setImportOpen(true),
+    },
+    {
+      icon: "📁",
+      label: "新建文件夹",
+      hint: "",
+      action: () => setNewFolderOpen(true),
     },
     {
       icon: "🔄",
@@ -209,12 +248,15 @@ export default function Home() {
           onSelect={openDoc}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(false)}
-          docs={allDocs}
-          activeDoc={activeDoc}
+          folders={folders}
           onImport={() => setImportOpen(true)}
           onNewDoc={() => setNewDocOpen(true)}
+          onNewFolder={() => setNewFolderOpen(true)}
+          onExport={() => setExportOpen(true)}
           onRefresh={refreshList}
-          onDelete={handleDelete}
+          onDeleteDoc={handleDelete}
+          onDeleteFolder={handleDeleteFolder}
+          onMoveDoc={handleMoveDoc}
           listError={listError}
         />
         <Editor doc={activeDoc} loading={loadingDoc} onSaved={handleSaved} />
@@ -243,6 +285,21 @@ export default function Home() {
         onCreated={() => {
           refreshList();
         }}
+      />
+
+      <NewFolderDialog
+        open={newFolderOpen}
+        onClose={() => setNewFolderOpen(false)}
+        onCreated={() => {
+          refreshList();
+        }}
+        folders={folders}
+      />
+
+      <ExportDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        activeDocId={activeKey}
       />
     </div>
   );

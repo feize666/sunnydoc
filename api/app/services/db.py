@@ -71,6 +71,18 @@ def init() -> None:
             )
             """
         )
+        # 兼容已有生产数据：为 documents 表补充 folder_id 列
+        cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS folder_id varchar")
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS folders (
+                id varchar PRIMARY KEY,
+                name text,
+                parent_id varchar,
+                created_at double precision
+            )
+            """
+        )
         # vector 不固定维度，维度由实际 embedding 决定
         cur.execute(
             """
@@ -114,6 +126,7 @@ def _doc_from_row(row: Any) -> dict[str, Any]:
         "source": row[3],
         "ext": row[4],
         "created_at": row[5],
+        "folder_id": row[6],
     }
 
 
@@ -133,8 +146,8 @@ def add_document(doc: dict[str, Any]) -> dict[str, Any]:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO documents (id, title, text, source, ext, created_at)"
-            " VALUES (%s, %s, %s, %s, %s, %s)",
+            "INSERT INTO documents (id, title, text, source, ext, created_at, folder_id)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 doc["id"],
                 doc["title"],
@@ -142,6 +155,7 @@ def add_document(doc: dict[str, Any]) -> dict[str, Any]:
                 doc["source"],
                 doc["ext"],
                 doc["created_at"],
+                doc.get("folder_id"),
             ),
         )
         for i, chunk in enumerate(doc["chunks"]):
@@ -159,7 +173,7 @@ def all_documents() -> list[dict[str, Any]]:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, title, text, source, ext, created_at"
+            "SELECT id, title, text, source, ext, created_at, folder_id"
             " FROM documents ORDER BY created_at DESC"
         )
         docs = [_doc_from_row(r) for r in cur.fetchall()]
@@ -172,7 +186,7 @@ def get_document(doc_id: str) -> dict[str, Any] | None:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, title, text, source, ext, created_at FROM documents WHERE id = %s",
+            "SELECT id, title, text, source, ext, created_at, folder_id FROM documents WHERE id = %s",
             (doc_id,),
         )
         row = cur.fetchone()
@@ -188,8 +202,8 @@ def update_document(doc_id: str, doc: dict[str, Any]) -> dict[str, Any] | None:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE documents SET title = %s, text = %s WHERE id = %s",
-            (doc["title"], doc["text"], doc_id),
+            "UPDATE documents SET title = %s, text = %s, folder_id = %s WHERE id = %s",
+            (doc["title"], doc["text"], doc.get("folder_id"), doc_id),
         )
         if cur.rowcount == 0:
             return None
@@ -209,6 +223,71 @@ def delete_document(doc_id: str) -> bool:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute("DELETE FROM documents WHERE id = %s", (doc_id,))
+        deleted = cur.rowcount > 0
+    conn.commit()
+    return deleted
+
+
+def create_folder(folder: dict[str, Any]) -> dict[str, Any]:
+    """写入文件夹记录。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO folders (id, name, parent_id, created_at)"
+            " VALUES (%s, %s, %s, %s)",
+            (
+                folder["id"],
+                folder["name"],
+                folder["parent_id"],
+                folder["created_at"],
+            ),
+        )
+    conn.commit()
+    return folder
+
+
+def list_folders() -> list[dict[str, Any]]:
+    """返回全部文件夹（扁平列表，含 parent_id，供前端组装树）。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, name, parent_id, created_at FROM folders ORDER BY created_at"
+        )
+        return [
+            {
+                "id": r[0],
+                "name": r[1],
+                "parent_id": r[2],
+                "created_at": r[3],
+            }
+            for r in cur.fetchall()
+        ]
+
+
+def delete_folder(folder_id: str) -> bool:
+    """删除文件夹：级联删除其子文件夹，子级/本级文档 folder_id 置空（移回根目录）。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        # 收集自身 + 所有后代文件夹 id
+        ids = [folder_id]
+        idx = 0
+        while idx < len(ids):
+            cur.execute(
+                "SELECT id FROM folders WHERE parent_id = %s", (ids[idx],)
+            )
+            for (child_id,) in cur.fetchall():
+                if child_id not in ids:
+                    ids.append(child_id)
+            idx += 1
+
+        placeholders = ",".join(["%s"] * len(ids))
+        cur.execute(
+            f"UPDATE documents SET folder_id = NULL WHERE folder_id IN ({placeholders})",
+            ids,
+        )
+        cur.execute(
+            f"DELETE FROM folders WHERE id IN ({placeholders})", ids
+        )
         deleted = cur.rowcount > 0
     conn.commit()
     return deleted

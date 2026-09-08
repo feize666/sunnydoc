@@ -20,6 +20,9 @@ from app.services import db, embedding, rerank
 
 STORE_FILE = DATA_DIR / "store.json"
 
+# 用于区分「未传参」与「显式传 None」的哨兵值
+_UNSET = object()
+
 # 检索时的停用词（常见疑问词/虚词，避免干扰打分）
 STOPWORDS = {
     "如何", "怎么", "什么", "哪些", "哪里", "为什么", "请问", "一下",
@@ -46,6 +49,7 @@ def _tokenize(text: str) -> list[str]:
 class DocStore:
     def __init__(self) -> None:
         self._docs: list[dict[str, Any]] = []
+        self._folders: list[dict[str, Any]] = []
         # 启动时判定存储后端：PostgreSQL 可用则用库，否则 JSON 降级
         if db.available():
             self._backend = "db"
@@ -57,14 +61,29 @@ class DocStore:
     def _load(self) -> None:
         if STORE_FILE.exists():
             try:
-                self._docs = json.loads(STORE_FILE.read_text("utf-8"))
+                data = json.loads(STORE_FILE.read_text("utf-8"))
             except (json.JSONDecodeError, OSError):
-                self._docs = []
+                data = []
+            # 兼容旧版「纯文档数组」结构
+            if isinstance(data, list):
+                self._docs = data
+                self._folders = []
+            else:
+                self._docs = data.get("documents", [])
+                self._folders = data.get("folders", [])
+        # 补齐旧数据缺失的 folder_id 字段，保证 all() 返回结构一致
+        for d in self._docs:
+            d.setdefault("folder_id", None)
 
     def _save(self) -> None:
         STORE_FILE.parent.mkdir(parents=True, exist_ok=True)
         STORE_FILE.write_text(
-            json.dumps(self._docs, ensure_ascii=False, indent=2), "utf-8"
+            json.dumps(
+                {"documents": self._docs, "folders": self._folders},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            "utf-8",
         )
 
     def _build_chunks(self, text: str) -> list[dict[str, Any]]:
@@ -77,7 +96,14 @@ class DocStore:
             for i, c in enumerate(chunks)
         ]
 
-    def add(self, title: str, text: str, source: str, ext: str) -> dict[str, Any]:
+    def add(
+        self,
+        title: str,
+        text: str,
+        source: str,
+        ext: str,
+        folder_id: str | None = None,
+    ) -> dict[str, Any]:
         doc = {
             "id": uuid.uuid4().hex,
             "title": title,
@@ -85,6 +111,7 @@ class DocStore:
             "source": source,
             "ext": ext,
             "created_at": time.time(),
+            "folder_id": folder_id,
             "chunks": self._build_chunks(text),
         }
         if self._backend == "db":
@@ -94,21 +121,35 @@ class DocStore:
             self._save()
         return doc
 
-    def update(self, doc_id: str, title: str, text: str) -> dict[str, Any] | None:
-        """更新文档标题与正文，并重建分片 + 向量。找不到返回 None。"""
+    def update(
+        self,
+        doc_id: str,
+        title: Any = _UNSET,
+        text: Any = _UNSET,
+        folder_id: Any = _UNSET,
+    ) -> dict[str, Any] | None:
+        """更新文档字段。title/text 提供时更新并重建分片 + 向量；folder_id 提供时移动。找不到返回 None。"""
         if self._backend == "db":
             doc = db.get_document(doc_id)
             if doc is None:
                 return None
-            doc["title"] = title
-            doc["text"] = text
-            doc["chunks"] = self._build_chunks(text)
+            if title is not _UNSET:
+                doc["title"] = title
+            if text is not _UNSET:
+                doc["text"] = text
+                doc["chunks"] = self._build_chunks(text)
+            if folder_id is not _UNSET:
+                doc["folder_id"] = folder_id
             return db.update_document(doc_id, doc)
         for d in self._docs:
             if d["id"] == doc_id:
-                d["title"] = title
-                d["text"] = text
-                d["chunks"] = self._build_chunks(text)
+                if title is not _UNSET:
+                    d["title"] = title
+                if text is not _UNSET:
+                    d["text"] = text
+                    d["chunks"] = self._build_chunks(text)
+                if folder_id is not _UNSET:
+                    d["folder_id"] = folder_id
                 self._save()
                 return d
         return None
@@ -116,7 +157,15 @@ class DocStore:
     def add_many(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         docs: list[dict[str, Any]] = []
         for item in items:
-            docs.append(self.add(item["title"], item["text"], item["source"], item["ext"]))
+            docs.append(
+                self.add(
+                    item["title"],
+                    item["text"],
+                    item["source"],
+                    item["ext"],
+                    item.get("folder_id"),
+                )
+            )
         return docs
 
     def all(self) -> list[dict[str, Any]]:
@@ -141,6 +190,53 @@ class DocStore:
             self._save()
             return True
         return False
+
+    # ---------- 文件夹 ----------
+
+    def list_folders(self) -> list[dict[str, Any]]:
+        """返回全部文件夹（扁平列表，含 parent_id，供前端组装树）。"""
+        if self._backend == "db":
+            return db.list_folders()
+        return list(self._folders)
+
+    def create_folder(self, name: str, parent_id: str | None = None) -> dict[str, Any]:
+        folder = {
+            "id": uuid.uuid4().hex,
+            "name": name,
+            "parent_id": parent_id,
+            "created_at": time.time(),
+        }
+        if self._backend == "db":
+            db.create_folder(folder)
+        else:
+            self._folders.append(folder)
+            self._save()
+        return folder
+
+    def delete_folder(self, folder_id: str) -> bool:
+        """删除文件夹：级联删除子文件夹，其下文档 folder_id 置空（移回根目录）。"""
+        if self._backend == "db":
+            return db.delete_folder(folder_id)
+        # 收集自身 + 所有后代文件夹 id
+        ids = [folder_id]
+        idx = 0
+        while idx < len(ids):
+            for f in self._folders:
+                if f["parent_id"] == ids[idx] and f["id"] not in ids:
+                    ids.append(f["id"])
+            idx += 1
+
+        existed = any(f["id"] == folder_id for f in self._folders)
+        if not existed:
+            return False
+
+        self._folders = [f for f in self._folders if f["id"] not in ids]
+        # 文档移回根目录
+        for d in self._docs:
+            if d.get("folder_id") in ids:
+                d["folder_id"] = None
+        self._save()
+        return True
 
 
 store = DocStore()

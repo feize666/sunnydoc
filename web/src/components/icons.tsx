@@ -141,3 +141,20 @@ export function AlertIcon(p: IconProps) {
     </svg>
   );
 }
+
+export function MoveIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+      <path d="M12 11v5M9.5 13.5L12 16l2.5-2.5" />
+    </svg>
+  );
+}
+
+export function DownloadIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+    </svg>
+  );
+}
