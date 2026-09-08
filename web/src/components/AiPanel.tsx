@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { SendIcon, LinkIcon } from "./icons";
+import { SendIcon, LinkIcon, CopyIcon, CheckIcon, TrashIcon } from "./icons";
 import { chatStream, type Citation, type ChatMessage, type WebSource } from "@/lib/api";
 
 interface Message {
@@ -25,6 +25,7 @@ export function AiPanel() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [enableWeb, setEnableWeb] = useState(true);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const chatRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,6 +39,26 @@ export function AiPanel() {
       role: m.role === "user" ? "user" : "assistant",
       content: m.content,
     }));
+  };
+
+  const copyMessage = async (index: number) => {
+    const msg = messages[index];
+    if (!msg || !msg.content) return;
+    try {
+      await navigator.clipboard.writeText(msg.content);
+      setCopiedIndex(index);
+      setTimeout(() => setCopiedIndex((c) => (c === index ? null : c)), 2000);
+    } catch {
+      // 剪贴板不可用时静默降级
+    }
+  };
+
+  const clearChat = () => {
+    if (loading) return;
+    if (window.confirm("确定清空当前对话吗？")) {
+      setMessages(initialMessages.map((m) => ({ ...m })));
+      setCopiedIndex(null);
+    }
   };
 
   const ask = async () => {
@@ -81,34 +102,60 @@ export function AiPanel() {
     <aside className="flex w-[320px] shrink-0 flex-col border-l border-line bg-surface">
       <div className="flex items-center justify-between border-b border-line px-3.5 py-3 text-[13px] font-semibold">
         AI 问答
-        <button
-          onClick={() => setEnableWeb((v) => !v)}
-          className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
-            enableWeb
-              ? "bg-accent-soft text-accent"
-              : "bg-surface-2 text-faint"
-          }`}
-          title={enableWeb ? "联网搜索已开启（点击关闭）" : "联网搜索已关闭（点击开启）"}
-        >
-          <span
-            className={`inline-block h-1.5 w-1.5 rounded-full ${
-              enableWeb ? "bg-accent" : "bg-faint"
+        <div className="flex items-center gap-1">
+          <button
+            onClick={clearChat}
+            disabled={loading}
+            className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-muted disabled:cursor-not-allowed disabled:opacity-40"
+            title="清空对话"
+          >
+            <TrashIcon size={14} />
+          </button>
+          <button
+            onClick={() => setEnableWeb((v) => !v)}
+            className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
+              enableWeb
+                ? "bg-accent-soft text-accent"
+                : "bg-surface-2 text-faint"
             }`}
-          />
-          联网
-        </button>
+            title={enableWeb ? "联网搜索已开启（点击关闭）" : "联网搜索已关闭（点击开启）"}
+          >
+            <span
+              className={`inline-block h-1.5 w-1.5 rounded-full ${
+                enableWeb ? "bg-accent" : "bg-faint"
+              }`}
+            />
+            联网
+          </button>
+        </div>
       </div>
 
       <div ref={chatRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-3.5">
         {messages.map((msg, i) => (
           <div
             key={i}
-            className={`flex flex-col gap-1 text-[13px] leading-relaxed ${
+            className={`group flex flex-col gap-1 text-[13px] leading-relaxed ${
               msg.role === "user" ? "items-end" : ""
             }`}
           >
             {msg.role === "ai" && (
-              <span className="text-[11px] text-faint">知库助手</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-faint">知库助手</span>
+                {msg.content && !msg.error && (
+                  <button
+                    onClick={() => copyMessage(i)}
+                    title={copiedIndex === i ? "已复制" : "复制回答"}
+                    className={`flex items-center gap-0.5 rounded px-1 py-0.5 text-[11px] text-faint transition-opacity hover:text-muted ${
+                      copiedIndex === i
+                        ? "text-accent opacity-100"
+                        : "opacity-0 group-hover:opacity-100"
+                    }`}
+                  >
+                    {copiedIndex === i ? <CheckIcon size={11} /> : <CopyIcon size={11} />}
+                    {copiedIndex === i ? "已复制" : "复制"}
+                  </button>
+                )}
+              </div>
             )}
             <div
               className={

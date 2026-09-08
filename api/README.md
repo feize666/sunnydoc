@@ -61,6 +61,29 @@ CREATE TABLE IF NOT EXISTS chunks (
 文档与分片（含 1024 维向量）在 `add` 时写入；检索时用 pgvector `<=>` 余弦距离
 做候选召回，关键词 + 向量加权打分仍在 Python 层完成。
 
+## 数据迁移（JSON → PostgreSQL）
+
+若已有 JSON 存储的历史数据（`data/store.json`），可按下面步骤迁移到 PostgreSQL：
+
+```bash
+cd api
+
+# 1. 确认已配置 DATABASE_URL（见上文，可写在 api/.env 或环境变量中）
+
+# 2. 启动带 pgvector 的 Postgres（若尚未启动）
+docker compose up -d
+
+# 3. 执行迁移脚本
+.venv/bin/python3 scripts/migrate_json_to_pg.py
+```
+
+脚本行为：
+
+- 读取 `data/store.json`（不存在则提示并退出）
+- 复用 `app/services/db.py` 的 `init()` 自动创建 `vector` 扩展与 `documents`/`chunks` 表
+- 逐条写入文档与 chunks（含向量）；**幂等**：按文档 `id` 先删旧记录再插入，重复执行不会产生重复数据
+- 打印迁移统计（文档数、chunks 数、向量为 null 的 chunk 数），并回读验证 PostgreSQL 条数
+
 ## API 接口
 
 | 方法 | 路径 | 说明 |

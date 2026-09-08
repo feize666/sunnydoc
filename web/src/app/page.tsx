@@ -111,6 +111,27 @@ export default function Home() {
     [activeKey],
   );
 
+  // 保存文档：更新本地缓存并刷新列表（让预览与侧栏立即反映新标题/内容）
+  const handleSaved = useCallback(
+    (doc: Doc, newTitle: string, newBody: string) => {
+      setDocs((prev) => {
+        const existing = prev[doc.key];
+        if (!existing) return prev;
+        return {
+          ...prev,
+          [doc.key]: {
+            ...existing,
+            title: newTitle,
+            body: newBody,
+            updated: formatTime(Date.now() / 1000),
+          },
+        };
+      });
+      refreshList();
+    },
+    [refreshList],
+  );
+
   // 删除文档
   const handleDelete = useCallback(
     async (key: string) => {
@@ -196,7 +217,7 @@ export default function Home() {
           onDelete={handleDelete}
           listError={listError}
         />
-        <Editor doc={activeDoc} loading={loadingDoc} />
+        <Editor doc={activeDoc} loading={loadingDoc} onSaved={handleSaved} />
         <AiPanel />
       </div>
 

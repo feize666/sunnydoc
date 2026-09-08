@@ -64,6 +64,18 @@ export async function createDocument(
   });
 }
 
+export async function updateDocument(
+  id: string,
+  title: string,
+  content: string,
+): Promise<{ id: string; title: string }> {
+  return request(`/documents/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, content }),
+  });
+}
+
 export async function importDocument(
   file: File,
 ): Promise<{ imported: number; documents: { id: string; title: string }[] }> {

@@ -67,11 +67,17 @@ class DocStore:
             json.dumps(self._docs, ensure_ascii=False, indent=2), "utf-8"
         )
 
-    def add(self, title: str, text: str, source: str, ext: str) -> dict[str, Any]:
+    def _build_chunks(self, text: str) -> list[dict[str, Any]]:
+        """分片 + 向量化，供 add / update 共用。"""
         chunks = _segment(text)
         # 尝试向量化（无 embedding 服务时为 None）
         vectors = embedding.embed(chunks) if embedding.available() else None
+        return [
+            {"text": c, "vector": vectors[i] if vectors else None}
+            for i, c in enumerate(chunks)
+        ]
 
+    def add(self, title: str, text: str, source: str, ext: str) -> dict[str, Any]:
         doc = {
             "id": uuid.uuid4().hex,
             "title": title,
@@ -79,10 +85,7 @@ class DocStore:
             "source": source,
             "ext": ext,
             "created_at": time.time(),
-            "chunks": [
-                {"text": c, "vector": vectors[i] if vectors else None}
-                for i, c in enumerate(chunks)
-            ],
+            "chunks": self._build_chunks(text),
         }
         if self._backend == "db":
             db.add_document(doc)
@@ -90,6 +93,25 @@ class DocStore:
             self._docs.append(doc)
             self._save()
         return doc
+
+    def update(self, doc_id: str, title: str, text: str) -> dict[str, Any] | None:
+        """更新文档标题与正文，并重建分片 + 向量。找不到返回 None。"""
+        if self._backend == "db":
+            doc = db.get_document(doc_id)
+            if doc is None:
+                return None
+            doc["title"] = title
+            doc["text"] = text
+            doc["chunks"] = self._build_chunks(text)
+            return db.update_document(doc_id, doc)
+        for d in self._docs:
+            if d["id"] == doc_id:
+                d["title"] = title
+                d["text"] = text
+                d["chunks"] = self._build_chunks(text)
+                self._save()
+                return d
+        return None
 
     def add_many(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         docs: list[dict[str, Any]] = []

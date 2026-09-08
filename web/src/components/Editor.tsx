@@ -2,13 +2,24 @@
 
 import { useState, useEffect } from "react";
 import { renderMarkdown } from "@/lib/markdown";
+import { updateDocument } from "@/lib/api";
 import type { Doc } from "@/data/docs";
 
 type Mode = "preview" | "edit";
 
-export function Editor({ doc, loading }: { doc: Doc | null; loading?: boolean }) {
+export function Editor({
+  doc,
+  loading,
+  onSaved,
+}: {
+  doc: Doc | null;
+  loading?: boolean;
+  onSaved?: (doc: Doc, newTitle: string, newBody: string) => void;
+}) {
   const [mode, setMode] = useState<Mode>("preview");
+  const [draftTitle, setDraftTitle] = useState("");
   const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
 
   // 切换文档时重置为预览模式
   useEffect(() => {
@@ -32,8 +43,30 @@ export function Editor({ doc, loading }: { doc: Doc | null; loading?: boolean })
   }
 
   const handleSwitch = (m: Mode) => {
-    if (m === "edit" && mode !== "edit") setDraft(doc.body);
+    if (m === "edit" && mode !== "edit") {
+      setDraftTitle(doc.title);
+      setDraft(doc.body);
+    }
     setMode(m);
+  };
+
+  const handleSave = async () => {
+    if (!doc) return;
+    const title = draftTitle.trim();
+    if (!title) {
+      alert("标题不能为空");
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateDocument(doc.key, title, draft);
+      onSaved?.(doc, title, draft);
+      setMode("preview");
+    } catch (e) {
+      alert(`保存失败：${e instanceof Error ? e.message : "未知错误"}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -59,6 +92,16 @@ export function Editor({ doc, loading }: { doc: Doc | null; loading?: boolean })
         >
           编辑
         </button>
+        <div className="flex-1" />
+        {mode === "edit" && (
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {saving ? "保存中…" : "保存"}
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto py-7">
@@ -77,12 +120,21 @@ export function Editor({ doc, loading }: { doc: Doc | null; loading?: boolean })
               />
             </>
           ) : (
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              className="h-[calc(100vh-140px)] w-full resize-none bg-transparent font-mono text-[14px] leading-relaxed text-text outline-none"
-              spellCheck={false}
-            />
+            <>
+              <input
+                value={draftTitle}
+                onChange={(e) => setDraftTitle(e.target.value)}
+                className="mb-3 w-full bg-transparent text-[24px] font-bold text-text outline-none"
+                placeholder="标题"
+                spellCheck={false}
+              />
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                className="h-[calc(100vh-200px)] w-full resize-none bg-transparent font-mono text-[14px] leading-relaxed text-text outline-none"
+                spellCheck={false}
+              />
+            </>
           )}
         </div>
       </div>

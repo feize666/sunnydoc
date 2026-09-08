@@ -183,6 +183,28 @@ def get_document(doc_id: str) -> dict[str, Any] | None:
     return doc
 
 
+def update_document(doc_id: str, doc: dict[str, Any]) -> dict[str, Any] | None:
+    """更新 documents 表并重建 chunks（含向量）。文档不存在返回 None。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE documents SET title = %s, text = %s WHERE id = %s",
+            (doc["title"], doc["text"], doc_id),
+        )
+        if cur.rowcount == 0:
+            return None
+        # 重建 chunks：先删旧分片，再写入新分片（含重新计算的向量）
+        cur.execute("DELETE FROM chunks WHERE doc_id = %s", (doc_id,))
+        for i, chunk in enumerate(doc["chunks"]):
+            cur.execute(
+                "INSERT INTO chunks (doc_id, segment_index, text, vector)"
+                " VALUES (%s, %s, %s, %s)",
+                (doc_id, i, chunk["text"], _vec_to_str(chunk.get("vector"))),
+            )
+    conn.commit()
+    return doc
+
+
 def delete_document(doc_id: str) -> bool:
     conn = _connect()
     with conn.cursor() as cur:

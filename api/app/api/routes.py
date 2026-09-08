@@ -30,6 +30,11 @@ class CreateDocumentRequest(BaseModel):
     content: str = ""
 
 
+class UpdateDocumentRequest(BaseModel):
+    title: str
+    content: str = ""
+
+
 def _dedupe_title(store, title: str) -> str:
     """若 title 已存在则自动追加「(2)」「(3)」…后缀，直到不重名"""
     existing = {d["title"] for d in store.all()}
@@ -196,6 +201,19 @@ def chat_stream(req: ChatRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.put("/documents/{doc_id}")
+def update_document(doc_id: str, req: UpdateDocumentRequest):
+    """更新文档标题与正文（重新分片 + 向量化）"""
+    title = req.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="标题不能为空")
+
+    doc = store.update(doc_id, title=title, text=req.content)
+    if not doc:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    return {"id": doc["id"], "title": doc["title"]}
 
 
 @router.delete("/documents/{doc_id}")
