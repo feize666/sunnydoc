@@ -61,11 +61,20 @@ export async function importDocument(
   return request("/documents/import", { method: "POST", body: form });
 }
 
-export async function chat(query: string, topK = 5): Promise<ChatResponse> {
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export async function chat(
+  query: string,
+  topK = 5,
+  history: ChatMessage[] = [],
+): Promise<ChatResponse> {
   return request("/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, top_k: topK }),
+    body: JSON.stringify({ query, top_k: topK, history }),
   });
 }
 
@@ -88,12 +97,13 @@ export interface StreamEvent {
 export async function chatStream(
   query: string,
   topK: number,
+  history: ChatMessage[],
   onEvent: (e: StreamEvent) => void,
 ): Promise<void> {
   const res = await fetch(`${BASE}/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, top_k: topK }),
+    body: JSON.stringify({ query, top_k: topK, history }),
   });
 
   if (!res.ok || !res.body) {

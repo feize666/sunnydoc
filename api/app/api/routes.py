@@ -17,6 +17,7 @@ router = APIRouter(prefix="/api/v1")
 class ChatRequest(BaseModel):
     query: str
     top_k: int = DEFAULT_TOP_K
+    history: list[dict[str, str]] | None = None
 
 
 class DeleteRequest(BaseModel):
@@ -93,7 +94,7 @@ async def import_documents(file: UploadFile = File(...)):
 def chat(req: ChatRequest):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="问题不能为空")
-    return qa.answer(req.query, req.top_k)
+    return qa.answer(req.query, req.top_k, req.history)
 
 
 @router.post("/chat/stream")
@@ -104,6 +105,7 @@ def chat_stream(req: ChatRequest):
 
     from app.services.store import search
 
+    history = req.history or []
     hits = search(req.query, req.top_k)
     citations = [
         {
@@ -120,19 +122,19 @@ def chat_stream(req: ChatRequest):
         # 1. 先发引用
         yield f"data: {json.dumps({'type': 'citations', 'citations': citations}, ensure_ascii=False)}\n\n"
 
-        # 2. 流式生成回答
-        if hits and llm.available():
+        # 2. 流式生成回答（有命中走 RAG，无命中走普通对话）
+        if llm.available():
             contexts = [h["text"] for h in hits]
             got = False
-            for piece in llm.generate_stream(req.query, contexts):
+            for piece in llm.generate_stream(req.query, contexts, history):
                 got = True
                 yield f"data: {json.dumps({'type': 'delta', 'content': piece}, ensure_ascii=False)}\n\n"
             if not got:
-                # 流式失败，降级为规则回答
-                answer = qa.answer(req.query, req.top_k)["answer"]
+                # 流式失败，降级
+                answer = qa.answer(req.query, req.top_k, history)["answer"]
                 yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
         else:
-            answer = qa.answer(req.query, req.top_k)["answer"]
+            answer = qa.answer(req.query, req.top_k, history)["answer"]
             yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
 
         # 3. 结束标记

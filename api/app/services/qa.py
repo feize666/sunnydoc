@@ -7,7 +7,12 @@ from app.services import llm
 from app.services.store import search
 
 
-def answer(query: str, top_k: int = 5) -> dict[str, Any]:
+def answer(
+    query: str,
+    top_k: int = 5,
+    history: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    history = history or []
     hits = search(query, top_k)
     citations = [
         {
@@ -20,16 +25,12 @@ def answer(query: str, top_k: int = 5) -> dict[str, Any]:
         for h in hits
     ]
 
-    if not hits:
-        answer_text = "未能从知识库中找到与问题相关的内容，请尝试换一种问法或补充更多文档。"
-        return {"answer": answer_text, "citations": citations}
-
-    # 优先用 LLM 生成
-    contexts = [h["text"] for h in hits]
-    llm_answer = llm.generate(query, contexts)
-    if llm_answer:
-        answer_text = llm_answer
-    else:
+    # 有命中：RAG 模式，用检索上下文让 LLM 生成
+    if hits:
+        contexts = [h["text"] for h in hits]
+        llm_answer = llm.generate(query, contexts, history)
+        if llm_answer:
+            return {"answer": llm_answer, "citations": citations}
         # 降级：规则式拼接
         top = hits[0]
         answer_text = (
@@ -38,5 +39,15 @@ def answer(query: str, top_k: int = 5) -> dict[str, Any]:
         )
         if len(hits) > 1:
             answer_text += f"\n\n（共命中 {len(hits)} 个相关片段）"
+        return {"answer": answer_text, "citations": citations}
 
-    return {"answer": answer_text, "citations": citations}
+    # 无命中：让 LLM 普通对话回答（寒暄、通用问题等），无 LLM 才返回"未找到"
+    if llm.available():
+        llm_answer = llm.generate(query, [], history)
+        if llm_answer:
+            return {"answer": llm_answer, "citations": []}
+
+    return {
+        "answer": "未能从知识库中找到与问题相关的内容，请尝试换一种问法或补充更多文档。",
+        "citations": [],
+    }

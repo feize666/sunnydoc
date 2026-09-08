@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { SendIcon, LinkIcon } from "./icons";
-import { chatStream, type Citation } from "@/lib/api";
+import { chatStream, type Citation, type ChatMessage } from "@/lib/api";
 
 interface Message {
   role: "user" | "ai";
@@ -15,7 +15,7 @@ const initialMessages: Message[] = [
   {
     role: "ai",
     content:
-      "你好，我可以基于知识库中的文档回答你的问题。试试问我关于「部署」或「导入」相关的内容。",
+      "你好，我可以基于知识库中的文档回答你的问题，也支持多轮追问。试试问我关于「部署」或「导入」相关的内容。",
   },
 ];
 
@@ -29,6 +29,16 @@ export function AiPanel() {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
   }, [messages, loading]);
 
+  // 从消息列表构建对话历史（排除第一条欢迎语，只取最近 8 条）
+  const buildHistory = (msgs: Message[]): ChatMessage[] => {
+    // msgs[0] 是欢迎语，跳过
+    const real = msgs.slice(1).filter((m) => m.content && !m.error);
+    return real.slice(-8).map((m) => ({
+      role: m.role === "user" ? "user" : "assistant",
+      content: m.content,
+    }));
+  };
+
   const ask = async () => {
     const q = input.trim();
     if (!q || loading) return;
@@ -39,12 +49,15 @@ export function AiPanel() {
     setMessages((m) => [...m, { role: "user", content: q }, { role: "ai", content: "" }]);
     const aiIndex = messages.length + 1; // user 在 index=len，ai 在 len+1
 
+    // 历史取当前已有消息（不含刚加的两条）
+    const history = buildHistory(messages);
+
     const updateAi = (updater: (msg: Message) => Message) => {
       setMessages((m) => m.map((msg, i) => (i === aiIndex ? updater(msg) : msg)));
     };
 
     try {
-      await chatStream(q, 5, (e) => {
+      await chatStream(q, 5, history, (e) => {
         if (e.type === "citations") {
           updateAi((msg) => ({ ...msg, citations: e.citations ?? [] }));
         } else if (e.type === "delta") {
