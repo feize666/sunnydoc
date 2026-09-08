@@ -14,6 +14,9 @@ load_dotenv(BASE_DIR / ".env")
 DATA_DIR = BASE_DIR / "data"
 DOCS_DIR = DATA_DIR / "docs"
 
+# PostgreSQL + pgvector（未配置则降级为 JSON 文件存储）
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+
 # 支持的文本格式（扩展名）
 TEXT_EXTS = {".md", ".markdown", ".txt", ".text", ".json", ".csv", ".tsv"}
 BINARY_EXTS = {".pdf", ".docx", ".xlsx"}

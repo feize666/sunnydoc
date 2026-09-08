@@ -53,6 +53,17 @@ export async function getDocument(id: string): Promise<DocDetail> {
   return request<DocDetail>(`/documents/${id}`);
 }
 
+export async function createDocument(
+  title: string,
+  content: string,
+): Promise<{ id: string; title: string }> {
+  return request("/documents", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, content }),
+  });
+}
+
 export async function importDocument(
   file: File,
 ): Promise<{ imported: number; documents: { id: string; title: string }[] }> {

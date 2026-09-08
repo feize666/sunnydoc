@@ -19,6 +19,7 @@ export function Sidebar({
   docs,
   activeDoc,
   onImport,
+  onNewDoc,
   onRefresh,
   onDelete,
   listError,
@@ -31,6 +32,7 @@ export function Sidebar({
   docs: Doc[];
   activeDoc: Doc | null;
   onImport: () => void;
+  onNewDoc: () => void;
   onRefresh?: () => void;
   onDelete?: (key: string) => void;
   listError?: string | null;
@@ -54,9 +56,9 @@ export function Sidebar({
     {
       label: "新建文档",
       icon: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6",
-      disabled: true,
-      hint: "即将支持",
-      action: () => {},
+      disabled: false,
+      hint: "",
+      action: () => onNewDoc(),
     },
     {
       label: "新建文件夹",

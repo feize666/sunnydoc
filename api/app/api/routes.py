@@ -25,6 +25,22 @@ class DeleteRequest(BaseModel):
     doc_id: str
 
 
+class CreateDocumentRequest(BaseModel):
+    title: str
+    content: str = ""
+
+
+def _dedupe_title(store, title: str) -> str:
+    """若 title 已存在则自动追加「(2)」「(3)」…后缀，直到不重名"""
+    existing = {d["title"] for d in store.all()}
+    if title not in existing:
+        return title
+    i = 2
+    while f"{title}({i})" in existing:
+        i += 1
+    return f"{title}({i})"
+
+
 @router.get("/health")
 def health():
     return {"status": "ok"}
@@ -46,6 +62,18 @@ def list_documents():
             for d in docs
         ],
     }
+
+
+@router.post("/documents")
+def create_document(req: CreateDocumentRequest):
+    """新建文档（markdown 文本）"""
+    title = req.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="标题不能为空")
+
+    title = _dedupe_title(store, title)
+    doc = store.add(title=title, text=req.content, source="手动创建", ext=".md")
+    return {"id": doc["id"], "title": doc["title"]}
 
 
 @router.get("/documents/{doc_id}")
@@ -85,6 +113,7 @@ async def import_documents(file: UploadFile = File(...)):
         # 用文件名（去扩展名）作为标题
         title = p["name"].rsplit("/", 1)[-1]
         title = title.rsplit(".", 1)[0] if "." in title else title
+        title = _dedupe_title(store, title)
         doc = store.add(title=title, text=p["text"], source=filename, ext=p["ext"])
         imported.append({"id": doc["id"], "title": doc["title"]})
 

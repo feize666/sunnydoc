@@ -8,6 +8,7 @@ import { AiPanel } from "@/components/AiPanel";
 import { StatusBar } from "@/components/StatusBar";
 import { CommandPalette, type Command } from "@/components/CommandPalette";
 import { ImportDialog } from "@/components/ImportDialog";
+import { NewDocDialog } from "@/components/NewDocDialog";
 import type { Doc, TreeNode } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
 import {
@@ -32,6 +33,7 @@ export default function Home() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [newDocOpen, setNewDocOpen] = useState(false);
   const [loadingDoc, setLoadingDoc] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
 
@@ -189,6 +191,7 @@ export default function Home() {
           docs={allDocs}
           activeDoc={activeDoc}
           onImport={() => setImportOpen(true)}
+          onNewDoc={() => setNewDocOpen(true)}
           onRefresh={refreshList}
           onDelete={handleDelete}
           listError={listError}
@@ -209,6 +212,14 @@ export default function Home() {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         onImported={() => {
+          refreshList();
+        }}
+      />
+
+      <NewDocDialog
+        open={newDocOpen}
+        onClose={() => setNewDocOpen(false)}
+        onCreated={() => {
           refreshList();
         }}
       />
