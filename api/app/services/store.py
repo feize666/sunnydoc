@@ -11,7 +11,7 @@ from typing import Any
 import jieba
 
 from app.core.config import DATA_DIR
-from app.services import embedding
+from app.services import embedding, rerank
 
 STORE_FILE = DATA_DIR / "store.json"
 
@@ -139,7 +139,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
 
 
 def search(query: str, top_k: int = 5) -> list[dict[str, Any]]:
-    """混合检索（MVP 版）：jieba 关键词打分 + 向量相似度（若可用）"""
+    """混合检索：jieba 关键词 + 向量相似度粗召回，再用 rerank 精排（若可用）"""
     keywords = _tokenize(query)
     if not keywords:
         keywords = [query.strip().lower()]
@@ -184,4 +184,17 @@ def search(query: str, top_k: int = 5) -> list[dict[str, Any]]:
                     }
                 )
     results.sort(key=lambda x: x["score"], reverse=True)
+
+    # Rerank 精排：粗召回取 top_k*4 候选，rerank 后取 top_k
+    if rerank.available() and len(results) > top_k:
+        candidates = results[: top_k * 4]
+        ranked = rerank.rerank(query, [c["text"] for c in candidates], top_k)
+        if ranked:
+            reranked = []
+            for idx, rel in ranked:
+                item = dict(candidates[idx])
+                item["score"] = rel  # 用相关分数覆盖，便于排序
+                reranked.append(item)
+            return reranked
+
     return results[:top_k]

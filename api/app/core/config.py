@@ -30,3 +30,7 @@ LLM_MODEL = os.getenv("LLM_MODEL", "qwen3-max")
 EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", "")
 EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-v4")
+
+# Rerank 配置（qwen3-rerank 走 compatible-api 接口）
+RERANK_BASE_URL = os.getenv("RERANK_BASE_URL", "https://dashscope.aliyuncs.com/compatible-api/v1")
+RERANK_MODEL = os.getenv("RERANK_MODEL", "qwen3-rerank")
