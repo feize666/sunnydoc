@@ -4,6 +4,8 @@
 node_modules/
 dist/
 build/
+out/
+.next/
 __pycache__/
 *.pyc
 .env
@@ -13,3 +15,4 @@ venv/
 
 # WorkBuddy 工作区数据
 .workbuddy/
+mvp-ui/

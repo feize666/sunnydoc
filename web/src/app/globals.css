@@ -1,0 +1,173 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --surface: #f6f6f6;
+  --surface-2: #f1f1f1;
+  --hover: #eaeaea;
+  --active: #dbeafe;
+  --text: #2e2e2e;
+  --muted: #6b6b6b;
+  --faint: #9a9a9a;
+  --line: #e4e4e4;
+  --accent: #2563eb;
+  --accent-soft: #eff6ff;
+  --accent-hover: #1d4ed8;
+}
+
+[data-theme="dark"] {
+  --background: #1e1e1e;
+  --surface: #252526;
+  --surface-2: #2a2a2a;
+  --hover: #333333;
+  --active: #1e3a5f;
+  --text: #d6d6d6;
+  --muted: #a0a0a0;
+  --faint: #757575;
+  --line: #3a3a3a;
+  --accent: #60a5fa;
+  --accent-soft: #1e3a5f;
+  --accent-hover: #3b82f6;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-hover: var(--accent-hover);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Cascadia Code", Consolas,
+    "Courier New", monospace;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--background);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--faint);
+}
+
+/* Markdown 正文样式 */
+.md-body {
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--text);
+}
+.md-body h1 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 1.4em 0 0.5em;
+  line-height: 1.3;
+}
+.md-body h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 1.4em 0 0.5em;
+  line-height: 1.3;
+}
+.md-body h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 1.4em 0 0.5em;
+  line-height: 1.3;
+}
+.md-body p {
+  margin: 0.6em 0;
+}
+.md-body ul,
+.md-body ol {
+  margin: 0.6em 0;
+  padding-left: 1.5em;
+  list-style: revert;
+}
+.md-body li {
+  margin: 0.25em 0;
+}
+.md-body code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--surface-2);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+.md-body pre {
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 0.8em 0;
+}
+.md-body pre code {
+  background: none;
+  padding: 0;
+}
+.md-body blockquote {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  padding: 8px 14px;
+  margin: 0.8em 0;
+  border-radius: 0 6px 6px 0;
+  color: var(--muted);
+}
+.md-body blockquote p {
+  margin: 0;
+}
+.md-body a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.md-body a:hover {
+  text-decoration: underline;
+}
+.md-body table {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: 13px;
+  width: 100%;
+}
+.md-body th,
+.md-body td {
+  border: 1px solid var(--line);
+  padding: 6px 12px;
+  text-align: left;
+}
+.md-body th {
+  background: var(--surface);
+}
+.md-body hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 1.5em 0;
+}
+.md-body img {
+  max-width: 100%;
+  border-radius: 8px;
+}
