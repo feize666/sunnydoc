@@ -27,10 +27,10 @@ scp -o StrictHostKeyChecking=no -q /tmp/sunnydoc_src.tgz "$SERVER:/tmp/"
 
 echo "==> [3/4] 服务器解压 + 更新部署产物 + 重启后端 + git 推送..."
 ssh -o StrictHostKeyChecking=no "$SERVER" "cd $DEPLOY_DIR && \
+  rm -rf web/out mvp-ui 2>/dev/null || true; \
   tar -xzf /tmp/sunnydoc_src.tgz -C $DEPLOY_DIR 2>/dev/null; \
   find . -name '._*' -delete; \
-  rm -rf mvp-ui/* 2>/dev/null || true; \
-  cp -r web/out/* mvp-ui/ 2>/dev/null || true; \
+  mkdir -p mvp-ui && cp -r web/out/* mvp-ui/ 2>/dev/null || true; \
   systemctl restart sunnydoc-api; \
   git add -A && \
   git -c user.name='Feize' -c user.email='fei2210ze@163.com' commit -m \"$MSG\" && \
