@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>知库 · 文档知识库</title>
+<style>
+:root{
+  --bg:#ffffff;
+  --bg-secondary:#f6f6f6;
+  --bg-tertiary:#f1f1f1;
+  --bg-hover:#eaeaea;
+  --bg-active:#dbeafe;
+  --text:#2e2e2e;
+  --text-secondary:#6b6b6b;
+  --text-faint:#9a9a9a;
+  --border:#e4e4e4;
+  --accent:#2563eb;
+  --accent-soft:#eff6ff;
+  --accent-hover:#1d4ed8;
+  --nav-h:#44px;
+  --status-h:28px;
+  --radius:6px;
+  --mono:"SF Mono","JetBrains Mono","Cascadia Code",Consolas,"Courier New",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+}
+[data-theme="dark"]{
+  --bg:#1e1e1e;
+  --bg-secondary:#252526;
+  --bg-tertiary:#2a2a2a;
+  --bg-hover:#333333;
+  --bg-active:#1e3a5f;
+  --text:#d6d6d6;
+  --text-secondary:#a0a0a0;
+  --text-faint:#757575;
+  --border:#3a3a3a;
+  --accent:#60a5fa;
+  --accent-soft:#1e3a5f;
+  --accent-hover:#3b82f6;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--sans);font-size:14px;color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+svg{display:block}
+
+/* ===== 顶栏 ===== */
+.titlebar{
+  height:var(--nav-h);display:flex;align-items:center;gap:8px;padding:0 10px;
+  background:var(--bg);border-bottom:1px solid var(--border);user-select:none;
+}
+.titlebar .logo{display:flex;align-items:center;gap:7px;font-weight:600;font-size:14px;padding:0 4px}
+.logo .dot{width:18px;height:18px;border-radius:5px;background:linear-gradient(135deg,#60a5fa,#2563eb);display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700}
+.icon-btn{width:30px;height:30px;border-radius:var(--radius);display:grid;place-items:center;color:var(--text-secondary)}
+.icon-btn:hover{background:var(--bg-hover);color:var(--text)}
+.divider{width:1px;height:20px;background:var(--border);margin:0 4px}
+.tabs{flex:1;display:flex;align-items:center;gap:2px;overflow-x:auto;height:100%}
+.tab{display:flex;align-items:center;gap:6px;padding:0 12px;height:100%;font-size:13px;color:var(--text-secondary);border-bottom:2px solid transparent;white-space:nowrap}
+.tab.active{color:var(--text);border-bottom-color:var(--accent)}
+.tab .close{width:16px;height:16px;border-radius:4px;display:grid;place-items:center;opacity:0}
+.tab:hover .close{opacity:0.7}
+.tab .close:hover{background:var(--bg-hover);opacity:1}
+.searchbox{display:flex;align-items:center;gap:6px;background:var(--bg-tertiary);border-radius:6px;padding:5px 10px;font-size:12px;color:var(--text-faint);cursor:text;min-width:160px}
+.searchbox kbd{font-family:var(--mono);font-size:11px;background:var(--bg-hover);padding:1px 5px;border-radius:4px;border:1px solid var(--border)}
+
+/* ===== 主体布局 ===== */
+.layout{display:flex;height:calc(100% - var(--nav-h) - var(--status-h))}
+
+/* 左侧文件树 */
+.sidebar{width:260px;min-width:180px;max-width:420px;background:var(--bg-secondary);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.sidebar-head{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;font-size:12px;color:var(--text-faint);border-bottom:1px solid var(--border)}
+.sidebar-head .new{display:flex;align-items:center;gap:3px;font-size:12px;color:var(--accent);font-weight:500}
+.sidebar-head .new:hover{color:var(--accent-hover)}
+.tree{flex:1;overflow-y:auto;padding:8px 6px}
+.tree::-webkit-scrollbar{width:8px}
+.tree::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+.tree-item{display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:var(--radius);font-size:13px;color:var(--text-secondary);cursor:pointer;white-space:nowrap;user-select:none}
+.tree-item:hover{background:var(--bg-hover)}
+.tree-item.active{background:var(--bg-active);color:var(--accent)}
+.tree-item .ico{width:16px;height:16px;flex-shrink:0;color:var(--text-faint)}
+.tree-item.active .ico{color:var(--accent)}
+.tree-item .chevron{width:14px;height:14px;color:var(--text-faint);transition:transform .15s;flex-shrink:0}
+.tree-item.folder.open .chevron{transform:rotate(90deg)}
+.tree-children{display:none;margin-left:14px;border-left:1px solid var(--border);padding-left:4px}
+.tree-children.open{display:block}
+
+/* 中间编辑区 */
+.editor-pane{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg)}
+.editor-nav{display:flex;align-items:center;gap:2px;padding:4px 12px;border-bottom:1px solid var(--border);background:var(--bg-secondary)}
+.mode-btn{padding:4px 10px;font-size:12px;border-radius:var(--radius);color:var(--text-secondary)}
+.mode-btn.active{background:var(--bg);color:var(--accent);box-shadow:0 0 0 1px var(--border)}
+.editor-scroll{flex:1;overflow-y:auto;padding:28px 0}
+.doc-wrap{max-width:760px;margin:0 auto;padding:0 40px}
+.doc-title{font-size:28px;font-weight:700;margin-bottom:4px;outline:none}
+.doc-meta{font-size:12px;color:var(--text-faint);margin-bottom:24px}
+.doc-body{font-size:15px;line-height:1.75;color:var(--text)}
+.doc-body h1,.doc-body h2,.doc-body h3{margin:1.4em 0 .5em;font-weight:600;line-height:1.3}
+.doc-body h1{font-size:22px}.doc-body h2{font-size:18px}.doc-body h3{font-size:16px}
+.doc-body p{margin:.6em 0}
+.doc-body ul,.doc-body ol{margin:.6em 0;padding-left:1.5em}
+.doc-body li{margin:.25em 0}
+.doc-body code{font-family:var(--mono);font-size:.85em;background:var(--bg-tertiary);padding:2px 5px;border-radius:4px}
+.doc-body pre{background:var(--bg-tertiary);border-radius:8px;padding:14px 16px;overflow-x:auto;margin:.8em 0}
+.doc-body pre code{background:none;padding:0}
+.doc-body blockquote{border-left:3px solid var(--accent);background:var(--accent-soft);padding:8px 14px;margin:.8em 0;border-radius:0 6px 6px 0;color:var(--text-secondary)}
+.doc-body a{color:var(--accent);text-decoration:none}
+.doc-body a:hover{text-decoration:underline}
+.doc-body table{border-collapse:collapse;margin:.8em 0;font-size:13px}
+.doc-body th,.doc-body td{border:1px solid var(--border);padding:6px 12px;text-align:left}
+.doc-body th{background:var(--bg-secondary)}
+.doc-body hr{border:none;border-top:1px solid var(--border);margin:1.5em 0}
+.doc-body img{max-width:100%;border-radius:8px}
+
+/* 右侧 AI 面板 */
+.aipanel{width:320px;background:var(--bg-secondary);border-left:1px solid var(--border);display:flex;flex-direction:column}
+.aipanel-head{padding:12px 14px;font-size:13px;font-weight:600;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.aipanel-head .badge{font-size:11px;color:var(--accent);background:var(--accent-soft);padding:2px 8px;border-radius:10px;font-weight:500}
+.chat{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
+.chat::-webkit-scrollbar{width:8px}
+.chat::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+.msg{display:flex;flex-direction:column;gap:4px;font-size:13px;line-height:1.6}
+.msg .role{font-size:11px;color:var(--text-faint)}
+.msg.user{align-items:flex-end}
+.msg.user .bubble{background:var(--accent);color:#fff;padding:8px 12px;border-radius:12px 12px 2px 12px;max-width:90%}
+.msg.ai .bubble{background:var(--bg);border:1px solid var(--border);padding:10px 12px;border-radius:12px 12px 12px 2px;max-width:100%}
+.msg.ai .cite{margin-top:6px;font-size:11px}
+.msg.ai .cite a{display:block;color:var(--accent);text-decoration:none;padding:2px 0}
+.msg.ai .cite a:hover{text-decoration:underline}
+.chat-input{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--border);background:var(--bg-secondary)}
+.chat-input textarea{flex:1;resize:none;border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;font-family:inherit;background:var(--bg);color:var(--text);outline:none;height:38px;max-height:120px}
+.chat-input textarea:focus{border-color:var(--accent)}
+.send-btn{width:38px;height:38px;border-radius:8px;background:var(--accent);color:#fff;display:grid;place-items:center;flex-shrink:0}
+.send-btn:hover{background:var(--accent-hover)}
+.send-btn svg{color:#fff}
+
+/* 状态栏 */
+.statusbar{height:var(--status-h);display:flex;align-items:center;gap:16px;padding:0 14px;font-size:11px;color:var(--text-faint);background:var(--bg-secondary);border-top:1px solid var(--border);user-select:none}
+.statusbar .right{margin-left:auto;display:flex;gap:14px}
+
+/* 命令面板 */
+.palette{position:fixed;top:18%;left:50%;transform:translateX(-50%);width:520px;max-width:90vw;background:var(--bg);border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.25);overflow:hidden;display:none;z-index:100}
+.palette.show{display:block}
+.palette input{width:100%;padding:14px 16px;font-size:15px;border:none;outline:none;background:transparent;color:var(--text);border-bottom:1px solid var(--border)}
+.palette-list{padding:6px;max-height:320px;overflow-y:auto}
+.palette-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;font-size:13px;cursor:pointer}
+.palette-item:hover,.palette-item.sel{background:var(--bg-active);color:var(--accent)}
+.palette-item .ico{color:var(--text-faint)}
+.palette-item .label{flex:1}
+.palette-item .hint{font-size:11px;color:var(--text-faint);font-family:var(--mono)}
+.palette-mask{position:fixed;inset:0;background:rgba(0,0,0,.2);display:none;z-index:99}
+.palette-mask.show{display:block}
+
+.hidden{display:none}
+</style>
+</head>
+<body data-theme="light">
+
+<!-- 顶栏 -->
+<header class="titlebar">
+  <div class="logo"><span class="dot">知</span>知库</div>
+  <div class="divider"></div>
+  <button class="icon-btn" id="toggleSidebar" title="折叠侧栏">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+  </button>
+  <div class="tabs" id="tabs"></div>
+  <div class="searchbox" id="openPalette">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+    <span>搜索或执行命令</span>
+    <kbd>⌘K</kbd>
+  </div>
+  <button class="icon-btn" id="toggleTheme" title="切换主题">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+  </button>
+</header>
+
+<div class="layout">
+  <!-- 文件树 -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <span>知识库 · 全部文档</span>
+      <span class="new" id="newDoc">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>新建
+      </span>
+    </div>
+    <div class="tree" id="tree"></div>
+  </aside>
+
+  <!-- 编辑器 -->
+  <main class="editor-pane">
+    <div class="editor-nav">
+      <button class="mode-btn active" data-mode="preview">预览</button>
+      <button class="mode-btn" data-mode="edit">编辑</button>
+    </div>
+    <div class="editor-scroll">
+      <div class="doc-wrap">
+        <div class="doc-title" id="docTitle" contenteditable="true"></div>
+        <div class="doc-meta" id="docMeta"></div>
+        <div class="doc-body" id="docBody"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- AI 问答 -->
+  <aside class="aipanel">
+    <div class="aipanel-head">
+      AI 问答
+      <span class="badge">引用溯源</span>
+    </div>
+    <div class="chat" id="chat">
+      <div class="msg ai">
+        <span class="role">知库助手</span>
+        <div class="bubble">你好，我可以基于知识库中的文档回答你的问题。试试问我关于「部署」或「权限」相关的内容。</div>
+      </div>
+    </div>
+    <div class="chat-input">
+      <textarea id="chatText" placeholder="向知识库提问…（Enter 发送）" rows="1"></textarea>
+      <button class="send-btn" id="sendBtn" title="发送">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+      </button>
+    </div>
+  </aside>
+</div>
+
+<!-- 状态栏 -->
+<footer class="statusbar">
+  <span id="stWord">0 字</span>
+  <span id="stDoc">1 篇文档</span>
+  <span id="stIndex">索引已就绪</span>
+  <div class="right">
+    <span>Markdown</span>
+    <span>UTF-8</span>
+  </div>
+</footer>
+
+<!-- 命令面板 -->
+<div class="palette-mask" id="paletteMask"></div>
+<div class="palette" id="palette">
+  <input type="text" id="paletteInput" placeholder="搜索命令…">
+  <div class="palette-list" id="paletteList"></div>
+</div>
+
+<script>
+/* ============ 数据 ============ */
+const docs = {
+  "quickstart": {
+    title: "快速开始",
+    path: "产品文档 / 快速开始",
+    updated: "2026-09-08 08:30",
+    body: `# 快速开始
+
+欢迎使用 **知库** —— 一个以文档为核心的知识库。
+
+## 三步上手
+
+1. 在左侧点击 **新建**，创建一个 Markdown 文档；
+2. 拖入或上传你的 PDF、Word、Markdown 文件；
+3. 右侧 **AI 问答** 面板中直接提问，回答会附带原文引用。
+
+## 支持的文件类型
+
+| 类型 | 说明 |
+|------|------|
+| Markdown | 原生支持，推荐 |
+| PDF | 含扫描件 OCR |
+| Word / Excel | 表格自动抽取 |
+| 网页 | 输入 URL 抓取 |
+
+## 为什么用 Markdown
+
+> Markdown 是纯文本格式，便于版本管理、迁移和全文检索，也是 AI 处理最友好的格式。
+
+\`\`\`bash
+# 本地预览本项目
+python -m http.server 8080
+\`\`\`
+
+更多用法见 **功能指南**。`
+  },
+  "features": {
+    title: "功能指南",
+    path: "产品文档 / 功能指南",
+    updated: "2026-09-07 19:12",
+    body: `# 功能指南
+
+## 核心能力
+
+- **全文检索**：基于 PostgreSQL + pgvector 的混合检索（BM25 + 向量）。
+- **引用溯源**：每条 AI 回答都会标注来源文档与片段。
+- **权限隔离**：按团队 / 空间划分可见范围。
+- **增量更新**：文档变更后自动重新切片、重建索引。
+
+## 检索流程
+
+\`\`\`text
+用户提问
+   │
+   ▼
+混合检索（关键词 + 向量）
+   │
+   ▼
+Rerank 重排
+   │
+   ▼
+LLM 生成 + 引用标注
+\`\`\`
+
+## 注意事项
+
+1. 扫描件需先 OCR，解析耗时较长；
+2. 表格内容建议用 Excel 导入；
+3. 权限变更后需重建索引缓存。`
+  },
+  "deploy": {
+    title: "部署指南",
+    path: "技术手册 / 部署指南",
+    updated: "2026-09-06 15:40",
+    body: `# 部署指南
+
+## 环境要求
+
+- 服务器：4C 8G 起步
+- 数据库：PostgreSQL 16 + pgvector
+- 队列：Redis
+- 对象存储：MinIO（S3 兼容）
+
+## Docker Compose 一键启动
+
+\`\`\`yaml
+services:
+  db:
+    image: pgvector/pgvector:pg16
+  redis:
+    image: redis:7
+  api:
+    build: ./api
+    ports: ["8000:8000"]
+  web:
+    build: ./web
+    ports: ["3000:3000"]
+\`\`\`
+
+## 常见问题
+
+> **问**：内存不足怎么办？  
+> **答**：关闭 OCR 离线推理，改用云端 OCR 服务。`
+  },
+  "api": {
+    title: "API 参考",
+    path: "技术手册 / API 参考",
+    updated: "2026-09-05 11:20",
+    body: `# API 参考
+
+## 文档上传
+
+\`\`\`http
+POST /api/v1/documents
+Content-Type: multipart/form-data
+\`\`\`
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| file | file | 待上传文件 |
+| collection | string | 所属知识库 ID |
+
+## 问答接口
+
+\`\`\`http
+POST /api/v1/chat
+\`\`\`
+
+\`\`\`json
+{
+  "query": "如何部署？",
+  "collection_id": "kb_001",
+  "top_k": 5
+}
+\`\`\`
+
+返回结果包含 \`answer\` 与 \`citations\`（引用片段）。`
+  },
+  "meeting": {
+    title: "2026-09-01 周会纪要",
+    path: "会议纪要 / 2026-09-01 周会",
+    updated: "2026-09-01 18:00",
+    body: `# 2026-09-01 周会纪要
+
+## 参与人
+
+产品、研发、测试全体。
+
+## 议题
+
+1. MVP 范围确认：优先跑通「上传 → 检索 → 问答」闭环；
+2. 前端 UI 参考 Obsidian，追求简洁；
+3. 检索质量需引入 Rerank 精排。
+
+## 待办
+
+- [x] 技术选型评审
+- [ ] 搭建项目骨架
+- [ ] 接入 Embedding 模型`
+  }
+};
+
+const treeData = [
+  { type: "folder", name: "产品文档", children: [
+    { type: "file", name: "快速开始", key: "quickstart" },
+    { type: "file", name: "功能指南", key: "features" },
+  ]},
+  { type: "folder", name: "技术手册", children: [
+    { type: "file", name: "部署指南", key: "deploy" },
+    { type: "file", name: "API 参考", key: "api" },
+  ]},
+  { type: "folder", name: "会议纪要", children: [
+    { type: "file", name: "2026-09-01 周会", key: "meeting" },
+  ]},
+];
+
+/* ============ 渲染 ============ */
+const $ = s => document.querySelector(s);
+const treeEl = $("#tree"), tabsEl = $("#tabs"),
+      docTitle = $("#docTitle"), docMeta = $("#docMeta"), docBody = $("#docBody");
+
+const fileIco = `<svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>`;
+const folderIco = `<svg class="ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+const chevron = `<svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>`;
+
+function renderTree(){
+  treeEl.innerHTML = "";
+  treeData.forEach(node => {
+    if(node.type === "folder"){
+      const wrap = document.createElement("div");
+      wrap.innerHTML = `<div class="tree-item folder open"><span class="chevron-wrap">${chevron}</span>${folderIco}<span>${node.name}</span></div><div class="tree-children open"></div>`;
+      const head = wrap.querySelector(".tree-item");
+      const children = wrap.querySelector(".tree-children");
+      node.children.forEach(f => {
+        const it = document.createElement("div");
+        it.className = "tree-item file";
+        it.dataset.key = f.key;
+        it.innerHTML = `${fileIco}<span>${f.name}</span>`;
+        it.onclick = () => openDoc(f.key);
+        children.appendChild(it);
+      });
+      head.onclick = () => {
+        head.classList.toggle("open");
+        children.classList.toggle("open");
+      };
+      treeEl.appendChild(wrap);
+    }
+  });
+}
+
+let openTabs = [];
+function openDoc(key){
+  const d = docs[key];
+  if(!d) return;
+  if(!openTabs.includes(key)) openTabs.push(key);
+  renderTabs();
+  docTitle.textContent = d.title;
+  docMeta.textContent = `${d.path} · 更新于 ${d.updated}`;
+  renderBody();
+  highlightTree(key);
+  $("#stWord").textContent = d.body.replace(/\s/g,"").length + " 字";
+  $("#stDoc").textContent = openTabs.length + " 篇已打开";
+}
+function highlightTree(key){
+  document.querySelectorAll(".tree-item.file").forEach(el => el.classList.toggle("active", el.dataset.key === key));
+}
+function renderTabs(){
+  tabsEl.innerHTML = "";
+  openTabs.forEach(key => {
+    const d = docs[key];
+    const t = document.createElement("div");
+    t.className = "tab" + (docTitle.textContent === d.title ? " active" : "");
+    t.innerHTML = `<span>${d.title}</span><span class="close">×</span>`;
+    t.onclick = () => openDoc(key);
+    t.querySelector(".close").onclick = e => { e.stopPropagation(); closeTab(key); };
+    tabsEl.appendChild(t);
+  });
+}
+function closeTab(key){
+  openTabs = openTabs.filter(k => k !== key);
+  if(openTabs.length === 0){ docTitle.textContent=""; docMeta.textContent=""; docBody.innerHTML=""; renderTabs(); return; }
+  const cur = docTitle.textContent === docs[key].title ? openTabs[openTabs.length-1] : null;
+  renderTabs();
+  if(cur) openDoc(cur);
+}
+
+/* Markdown 简易渲染 */
+function renderBody(){
+  const key = openTabs.find(k => docs[k].title === docTitle.textContent);
+  if(!key){ docBody.innerHTML = ""; return; }
+  docBody.innerHTML = md(docs[key].body);
+}
+docTitle.addEventListener("input", () => {
+  const key = openTabs.find(k => docs[k].title === docTitle.textContent);
+  if(key) $("#stWord").textContent = docTitle.textContent.length + " 字";
+});
+
+function md(src){
+  const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const lines = src.split("\n");
+  let html = "", inCode = false, inList = false, listType = "";
+  const closeList = () => { if(inList){ html += `</${listType}>`; inList = false; } };
+  for(const raw of lines){
+    const line = raw;
+    if(line.trim().startsWith("```")){
+      closeList();
+      if(!inCode){ html += `<pre><code>`; inCode = true; }
+      else { html += `</code></pre>`; inCode = false; }
+      continue;
+    }
+    if(inCode){ html += esc(line) + "\n"; continue; }
+    if(/^\s*[-*] \[[ x]\]/.test(line)){
+      closeList();
+      const txt = line.replace(/^\s*[-*] \[[ x]\]\s*/,"");
+      const done = /\[x\]/.test(line);
+      html += `<p style="margin:.3em 0">${done?"✅":"⬜"} ${inline(txt)}</p>`;
+      continue;
+    }
+    if(/^\s*[-*]\s/.test(line)){
+      if(!inList || listType !== "ul"){ closeList(); html += `<ul>`; inList = true; listType = "ul"; }
+      html += `<li>${inline(line.replace(/^\s*[-*]\s/,""))}</li>`;
+      continue;
+    }
+    if(/^\s*\d+\.\s/.test(line)){
+      if(!inList || listType !== "ol"){ closeList(); html += `<ol>`; inList = true; listType = "ol"; }
+      html += `<li>${inline(line.replace(/^\s*\d+\.\s/,""))}</li>`;
+      continue;
+    }
+    closeList();
+    if(/^#{1,3}\s/.test(line)){
+      const lvl = line.match(/^#+/)[0].length;
+      html += `<h${lvl}>${inline(line.replace(/^#+\s/,""))}</h${lvl}>`;
+    } else if(/^\s*---+\s*$/.test(line)){
+      html += `<hr>`;
+    } else if(/^\s*>\s?/.test(line)){
+      html += `<blockquote>${inline(line.replace(/^\s*>\s?/,""))}</blockquote>`;
+    } else if(/^\s*\|/.test(line)){
+      const cells = line.split("|").slice(1,-1);
+      if(/^\s*\|[\s:\-|]+\|\s*$/.test(line)) continue;
+      const isHead = /[-:]/.test(line.replace(/\|/g,""));
+      const tag = isHead ? "th" : "td";
+      html += `<tr>${cells.map(c=>`<${tag}>${inline(c.trim())}</${tag}>`).join("")}</tr>`;
+      if(!html.endsWith("</table>")) html = html.replace(/<tr>(?![\s\S]*<table>)/,"");
+    } else if(line.trim() === ""){
+      html += "";
+    } else {
+      html += `<p>${inline(line)}</p>`;
+    }
+  }
+  closeList();
+  if(inCode) html += "</code></pre>";
+  html = html.replace(/<table>((?:<tr>[\s\S]*?<\/tr>)+)<\/table>/,"");
+  html = html.replace(/((?:<tr>[\s\S]*?<\/tr>)+)/g, m => `<table>${m}</table>`);
+  return html;
+}
+function inline(s){
+  return s
+    .replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>")
+    .replace(/`([^`]+)`/g,"<code>$1</code>")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2">$1</a>');
+}
+
+/* ============ 交互 ============ */
+// 编辑/预览切换
+let editMode = false;
+document.querySelectorAll(".mode-btn").forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll(".mode-btn").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    editMode = btn.dataset.mode === "edit";
+    if(editMode){
+      const key = openTabs.find(k => docs[k].title === docTitle.textContent);
+      if(key){ docBody.textContent = docs[key].body; docBody.style.whiteSpace = "pre-wrap"; docBody.style.fontFamily = "var(--mono)"; docBody.style.fontSize = "14px"; }
+    } else {
+      docBody.style.whiteSpace = ""; docBody.style.fontFamily = ""; docBody.style.fontSize = "";
+      renderBody();
+    }
+  };
+});
+
+// 侧栏折叠
+$("#toggleSidebar").onclick = () => $("#sidebar").classList.toggle("hidden");
+
+// 主题
+$("#toggleTheme").onclick = () => {
+  const b = document.body;
+  b.dataset.theme = b.dataset.theme === "light" ? "dark" : "light";
+};
+
+// 命令面板
+const commands = [
+  { icon:"📄", label:"新建文档", hint:"Ctrl+N" },
+  { icon:"🔍", label:"全文搜索", hint:"Ctrl+F" },
+  { icon:"💬", label:"打开 AI 问答", hint:"Ctrl+J" },
+  { icon:"🌗", label:"切换主题", hint:"Ctrl+Shift+T" },
+  { icon:"📁", label:"新建文件夹", hint:"" },
+  { icon:"⚙️", label:"设置", hint:"Ctrl+," },
+];
+function renderPalette(filter=""){
+  const list = $("#paletteList");
+  list.innerHTML = "";
+  commands.filter(c => c.label.includes(filter)).forEach((c,i) => {
+    const it = document.createElement("div");
+    it.className = "palette-item" + (i===0?" sel":"");
+    it.innerHTML = `<span class="ico">${c.icon}</span><span class="label">${c.label}</span><span class="hint">${c.hint}</span>`;
+    it.onclick = () => { closePalette(); if(c.label==="切换主题") $("#toggleTheme").click(); if(c.label==="打开 AI 问答") $(".aipanel").scrollIntoView(); };
+    list.appendChild(it);
+  });
+}
+function openPalette(){ $("#palette").classList.add("show"); $("#paletteMask").classList.add("show"); $("#paletteInput").value=""; renderPalette(); $("#paletteInput").focus(); }
+function closePalette(){ $("#palette").classList.remove("show"); $("#paletteMask").classList.remove("show"); }
+$("#openPalette").onclick = openPalette;
+$("#paletteMask").onclick = closePalette;
+$("#paletteInput").addEventListener("input", e => renderPalette(e.target.value));
+document.addEventListener("keydown", e => {
+  if((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k"){ e.preventDefault(); openPalette(); }
+  if(e.key === "Escape") closePalette();
+});
+
+// AI 问答（模拟）
+function askAI(q){
+  const chat = $("#chat");
+  const u = document.createElement("div");
+  u.className = "msg user";
+  u.innerHTML = `<div class="bubble">${q.replace(/</g,"&lt;")}</div>`;
+  chat.appendChild(u);
+  const a = document.createElement("div");
+  a.className = "msg ai";
+  a.innerHTML = `<span class="role">知库助手</span>
+    <div class="bubble">正在检索知识库…</div>`;
+  chat.appendChild(a);
+  chat.scrollTop = chat.scrollHeight;
+  setTimeout(() => {
+    const cite = q.includes("部署") ? "部署指南" : (q.includes("权限") ? "功能指南" : "快速开始");
+    a.querySelector(".bubble").innerHTML = `根据知识库中的文档，以下是相关回答：
+
+这是一条基于检索结果的示例回答，实际接入后端后，这里会展示由大模型结合检索片段生成的答案。
+
+<div class="cite">
+  <a href="#">📎 ${cite} · 第 2 段</a>
+  <a href="#">📎 ${cite} · 第 5 段</a>
+</div>`;
+    chat.scrollTop = chat.scrollHeight;
+  }, 600);
+}
+$("#sendBtn").onclick = () => { const v = $("#chatText").value.trim(); if(v){ askAI(v); $("#chatText").value=""; } };
+$("#chatText").addEventListener("keydown", e => { if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); $("#sendBtn").click(); } });
+
+// 新建文档（占位）
+$("#newDoc").onclick = () => alert("「新建文档」将在后续版本接入后端接口");
+
+// 初始化
+renderTree();
+openDoc("quickstart");
+</script>
+</body>
+</html>

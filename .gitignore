@@ -1,0 +1,15 @@
+# 系统与缓存
+.DS_Store
+*.log
+node_modules/
+dist/
+build/
+__pycache__/
+*.pyc
+.env
+.env.local
+.venv/
+venv/
+
+# WorkBuddy 工作区数据
+.workbuddy/
