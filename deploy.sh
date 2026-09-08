@@ -19,7 +19,8 @@ echo "==> [1/4] 构建前端静态产物..."
 echo "==> [2/4] 打包源码并上传服务器..."
 tar --exclude='web/node_modules' --exclude='web/.next' --exclude='api/.venv' \
     --exclude='api/data' --exclude='api/__pycache__' --exclude='.workbuddy' \
-    --exclude='.git' -czf /tmp/sunnydoc_src.tgz README.md .gitignore deploy.sh web/ api/
+    --exclude='api/.env' --exclude='web/.env.local' --exclude='.git' \
+    -czf /tmp/sunnydoc_src.tgz README.md .gitignore deploy.sh web/ api/
 scp -o StrictHostKeyChecking=no -q /tmp/sunnydoc_src.tgz "$SERVER:/tmp/"
 
 echo "==> [3/4] 服务器解压 + 更新部署产物 + 重启后端 + git 推送..."
