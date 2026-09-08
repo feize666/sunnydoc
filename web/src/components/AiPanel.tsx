@@ -10,6 +10,9 @@ import {
   PlusIcon,
   HistoryIcon,
 } from "./icons";
+import { renderMarkdown } from "@/lib/markdown";
+import { handleCodeBlockCopy } from "./CodeBlock";
+import { Tooltip } from "./Tooltip";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { chatStream, type Citation, type ChatMessage, type WebSource } from "@/lib/api";
 import {
@@ -40,7 +43,38 @@ function formatTime(ts: number): string {
   return `${d.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })} ${time}`;
 }
 
-export function AiPanel() {
+/** AI 回答正文：随流式内容增量异步渲染 markdown。 */
+function AiMarkdown({
+  content,
+  theme,
+}: {
+  content: string;
+  theme: "light" | "dark";
+}) {
+  const [html, setHtml] = useState("");
+  const renderId = useRef(0);
+
+  useEffect(() => {
+    const id = ++renderId.current;
+    let cancelled = false;
+    renderMarkdown(content, undefined, theme).then((h) => {
+      if (!cancelled && id === renderId.current) setHtml(h);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [content, theme]);
+
+  return (
+    <div
+      className="md-body"
+      onClick={handleCodeBlockCopy}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
+export function AiPanel({ theme }: { theme: "light" | "dark" }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -304,44 +338,49 @@ export function AiPanel() {
       <div className="flex items-center justify-between border-b border-line px-3.5 py-3 text-[13px] font-semibold">
         AI 问答
         <div className="flex items-center gap-1">
-          <button
-            onClick={() => setShowHistory((v) => !v)}
-            className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-muted"
-            title="历史会话"
+          <Tooltip content="历史会话">
+            <button
+              onClick={() => setShowHistory((v) => !v)}
+              className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-muted"
+            >
+              <HistoryIcon size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip content="清空对话">
+            <button
+              onClick={clearChat}
+              disabled={loading}
+              className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-muted disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <TrashIcon size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip
+            content={enableWeb ? "联网搜索已开启（点击关闭）" : "联网搜索已关闭（点击开启）"}
           >
-            <HistoryIcon size={14} />
-          </button>
-          <button
-            onClick={clearChat}
-            disabled={loading}
-            className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-muted disabled:cursor-not-allowed disabled:opacity-40"
-            title="清空对话"
-          >
-            <TrashIcon size={14} />
-          </button>
-          <button
-            onClick={() => setEnableWeb((v) => !v)}
-            className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
-              enableWeb
-                ? "bg-accent-soft text-accent"
-                : "bg-surface-2 text-faint"
-            }`}
-            title={enableWeb ? "联网搜索已开启（点击关闭）" : "联网搜索已关闭（点击开启）"}
-          >
+            <button
+              onClick={() => setEnableWeb((v) => !v)}
+              className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                enableWeb
+                  ? "bg-accent-soft text-accent"
+                  : "bg-surface-2 text-faint"
+              }`}
+            >
             <span
               className={`inline-block h-1.5 w-1.5 rounded-full ${
                 enableWeb ? "bg-accent" : "bg-faint"
               }`}
             />
-            联网
-          </button>
+              联网
+            </button>
+          </Tooltip>
         </div>
       </div>
 
       {showHistory && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setShowHistory(false)} />
-          <div className="absolute left-3 right-3 top-11 z-20 overflow-hidden rounded-xl border border-line bg-background shadow-2xl">
+          <div className="absolute left-3 right-3 top-11 z-20 overflow-hidden rounded-xl border border-line bg-background shadow-lg">
             <div className="flex items-center justify-between border-b border-line px-3 py-2">
               <span className="text-[12px] font-semibold text-text">历史会话</span>
               <button
@@ -378,14 +417,15 @@ export function AiPanel() {
                       </div>
                       <div className="text-[11px] text-faint">{formatTime(s.updatedAt)}</div>
                     </button>
-                    <button
-                      onClick={() => requestDelete(s.id)}
-                      disabled={loading && s.id === currentId}
-                      title="删除会话"
-                      className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 disabled:opacity-0"
-                    >
-                      <TrashIcon size={12} />
-                    </button>
+                    <Tooltip content="删除会话" className="shrink-0">
+                      <button
+                        onClick={() => requestDelete(s.id)}
+                        disabled={loading && s.id === currentId}
+                        className="grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-danger-soft hover:text-danger group-hover:opacity-100 disabled:opacity-0"
+                      >
+                        <TrashIcon size={12} />
+                      </button>
+                    </Tooltip>
                   </li>
                 ))}
               </ul>
@@ -406,18 +446,19 @@ export function AiPanel() {
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] text-faint">知库助手</span>
                 {msg.content && !msg.error && (
-                  <button
-                    onClick={() => copyMessage(i)}
-                    title={copiedIndex === i ? "已复制" : "复制回答"}
-                    className={`flex items-center gap-0.5 rounded px-1 py-0.5 text-[11px] text-faint transition-opacity hover:text-muted ${
-                      copiedIndex === i
-                        ? "text-accent opacity-100"
-                        : "opacity-0 group-hover:opacity-100"
-                    }`}
-                  >
-                    {copiedIndex === i ? <CheckIcon size={11} /> : <CopyIcon size={11} />}
-                    {copiedIndex === i ? "已复制" : "复制"}
-                  </button>
+                  <Tooltip content={copiedIndex === i ? "已复制" : "复制回答"}>
+                    <button
+                      onClick={() => copyMessage(i)}
+                      className={`flex items-center gap-0.5 rounded px-1 py-0.5 text-[11px] text-faint transition-opacity hover:text-muted ${
+                        copiedIndex === i
+                          ? "text-accent opacity-100"
+                          : "opacity-0 group-hover:opacity-100"
+                      }`}
+                    >
+                      {copiedIndex === i ? <CheckIcon size={11} /> : <CopyIcon size={11} />}
+                      {copiedIndex === i ? "已复制" : "复制"}
+                    </button>
+                  </Tooltip>
                 )}
               </div>
             )}
@@ -425,12 +466,16 @@ export function AiPanel() {
               className={
                 msg.role === "user"
                   ? "bubble-accent max-w-[90%] rounded-xl rounded-br-sm px-3 py-2 text-white"
-                  : `max-w-full rounded-xl rounded-bl-sm border px-3 py-2.5 whitespace-pre-wrap ${
-                      msg.error ? "border-red-400 bg-red-50 text-red-600" : "border-line bg-background"
+                  : `max-w-full rounded-xl rounded-bl-sm border px-3 py-2.5 ${
+                      msg.error ? "border-danger/40 bg-danger-soft text-danger" : "border-line bg-background"
                     }`
               }
             >
-              {msg.content}
+              {msg.role === "user" ? (
+                msg.content
+              ) : (
+                <AiMarkdown content={msg.content} theme={theme} />
+              )}
               {Array.isArray(msg.citations) && msg.citations.length > 0 && (
                 <div className="mt-1.5 space-y-0.5 border-t border-line pt-1.5 text-[11px]">
                   <div className="mb-0.5 text-[10px] text-faint">知识库引用</div>
@@ -456,10 +501,11 @@ export function AiPanel() {
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-1 truncate text-accent hover:underline"
-                      title={s.title}
                     >
                       <LinkIcon size={11} />
-                      <span className="truncate">{s.title}</span>
+                      <Tooltip content={s.title} className="min-w-0 flex-1">
+                        <span className="block truncate">{s.title}</span>
+                      </Tooltip>
                     </a>
                   ))}
                 </div>
@@ -487,16 +533,17 @@ export function AiPanel() {
           }}
           rows={1}
           placeholder="向知识库提问…（Enter 发送）"
-          className="max-h-[120px] flex-1 resize-none rounded-lg border border-line bg-background px-3 py-2 text-[13px] outline-none placeholder:text-faint focus:border-accent"
+          className="max-h-[120px] flex-1 resize-none rounded-lg border border-line bg-background px-3 py-2 text-[13px] outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
         />
-        <button
-          onClick={ask}
-          disabled={loading}
-          className="btn-accent grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg text-white disabled:opacity-50"
-          title="发送"
-        >
-          <SendIcon size={16} />
-        </button>
+        <Tooltip content="发送" className="shrink-0">
+          <button
+            onClick={ask}
+            disabled={loading}
+            className="btn-accent grid h-[38px] w-[38px] place-items-center rounded-lg text-white disabled:opacity-50"
+          >
+            <SendIcon size={16} />
+          </button>
+        </Tooltip>
       </div>
 
       <ConfirmDialog

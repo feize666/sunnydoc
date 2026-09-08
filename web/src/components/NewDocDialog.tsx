@@ -48,12 +48,9 @@ export function NewDocDialog({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/30"
-      onClick={onClose}
-    >
+    <div className="dialog-overlay" onClick={onClose}>
       <div
-        className="w-[560px] max-w-[92vw] overflow-hidden rounded-xl border border-line bg-background shadow-2xl"
+        className="dialog-panel w-[560px] max-w-[92vw]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
@@ -76,7 +73,7 @@ export function NewDocDialog({
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleCreate();
             }}
             placeholder="输入文档标题"
-            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
+            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
           />
 
           <label className="mb-1 mt-3 block text-xs text-muted">
@@ -87,11 +84,11 @@ export function NewDocDialog({
             onChange={(e) => setContent(e.target.value)}
             placeholder="输入文档内容，可留空"
             rows={8}
-            className="w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
+            className="w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
           />
 
           {error && (
-            <div className="mt-2 rounded-md border border-red-300 bg-red-50 px-2 py-1.5 text-xs text-red-600">
+            <div className="mt-2 rounded-md border border-danger/40 bg-danger-soft px-2 py-1.5 text-xs text-danger">
               {error}
             </div>
           )}
@@ -99,7 +96,7 @@ export function NewDocDialog({
           <div className="mt-4 flex justify-end gap-2">
             <button
               onClick={onClose}
-              className="rounded-lg border border-line px-4 py-2 text-sm text-text hover:bg-hover"
+              className="btn-secondary rounded-lg px-4 py-2 text-sm"
             >
               取消
             </button>

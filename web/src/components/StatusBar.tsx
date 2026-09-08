@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { SunIcon, MoonIcon } from "./icons";
+import { Tooltip } from "./Tooltip";
 
 type BackendStatus = "online" | "offline" | "checking";
 
 const backendMeta: Record<BackendStatus, { label: string; dot: string }> = {
-  online: { label: "后端已连接", dot: "bg-green-500" },
-  offline: { label: "后端未连接", dot: "bg-red-400" },
-  checking: { label: "检测中…", dot: "bg-yellow-400 animate-pulse" },
+  online: { label: "后端已连接", dot: "bg-success" },
+  offline: { label: "后端未连接", dot: "bg-danger" },
+  checking: { label: "检测中…", dot: "bg-warning animate-pulse" },
 };
 
 export function StatusBar({
@@ -43,10 +44,12 @@ export function StatusBar({
         {label}
       </span>
       <div className="ml-auto flex items-center gap-3.5">
-        <span className="flex items-center gap-1" title="当前主题">
-          {theme === "light" ? <SunIcon size={11} /> : <MoonIcon size={11} />}
-          {theme === "light" ? "浅色" : "深色"}
-        </span>
+        <Tooltip content="当前主题">
+          <span className="flex items-center gap-1">
+            {theme === "light" ? <SunIcon size={11} /> : <MoonIcon size={11} />}
+            {theme === "light" ? "浅色" : "深色"}
+          </span>
+        </Tooltip>
         <span>Markdown</span>
         <span>UTF-8</span>
       </div>

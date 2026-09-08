@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Kb, RecentDoc } from "@/lib/api";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { Tooltip } from "./Tooltip";
 import { PlusIcon, TrashIcon, HistoryIcon, FolderIcon, EditIcon } from "./icons";
 
 function formatTime(ts: number): string {
@@ -57,7 +58,7 @@ export function HomeView({
     <div className="flex h-full flex-col bg-background">
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-line bg-background px-5 select-none">
         <div className="flex items-center gap-3">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-[#5b8dff] to-[#2b5ce6] text-sm font-bold text-white">
+          <span className="logo-mark grid h-8 w-8 place-items-center rounded-lg text-sm font-bold">
             知
           </span>
           <div className="leading-tight">
@@ -88,11 +89,11 @@ export function HomeView({
             </kbd>
           </button>
 
-          <button
-            onClick={onToggleTheme}
-            className="grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-hover hover:text-text"
-            title="切换主题"
-          >
+          <Tooltip content="切换主题">
+            <button
+              onClick={onToggleTheme}
+              className="grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-hover hover:text-text"
+            >
             {theme === "light" ? (
               <svg
                 width="16"
@@ -117,7 +118,8 @@ export function HomeView({
                 <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
               </svg>
             )}
-          </button>
+            </button>
+          </Tooltip>
 
           {userName && (
             <div className="flex items-center gap-1.5 border-l border-line pl-2">
@@ -127,13 +129,14 @@ export function HomeView({
               <span className="max-w-[100px] truncate text-xs text-muted">
                 {userName}
               </span>
-              <button
-                onClick={onLogout}
-                className="rounded-md px-2 py-1 text-xs text-faint transition-colors hover:bg-hover hover:text-text"
-                title="退出登录"
-              >
-                退出
-              </button>
+              <Tooltip content="退出登录">
+                <button
+                  onClick={onLogout}
+                  className="rounded-md px-2 py-1 text-xs text-faint transition-colors hover:bg-hover hover:text-text"
+                >
+                  退出
+                </button>
+              </Tooltip>
             </div>
           )}
         </div>
@@ -146,7 +149,7 @@ export function HomeView({
             <h2 className="mb-4 text-base font-semibold text-text">知识库</h2>
 
             {error && (
-              <div className="mb-4 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-600">
+              <div className="mb-4 rounded-md border border-danger/40 bg-danger-soft px-3 py-2 text-xs text-danger">
                 {error}（后端服务未启动？）
               </div>
             )}
@@ -179,49 +182,51 @@ export function HomeView({
                   <button
                     key={kb.id}
                     onClick={() => onOpenKb(kb.id)}
-                    className="group relative flex flex-col gap-2 rounded-xl border border-line bg-background p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-lg"
+                    className="group relative flex flex-col gap-2 rounded-xl border border-line bg-background p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-glow"
                   >
                     <div className="flex items-start justify-between">
                       <span className="grid h-9 w-9 place-items-center rounded-lg bg-accent-soft text-sm font-semibold text-accent">
                         {(kb.name || "知").slice(0, 1)}
                       </span>
                       <div className="flex items-center gap-0.5">
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onEditKb(kb);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
+                        <Tooltip content="编辑知识库">
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
                               e.stopPropagation();
                               onEditKb(kb);
-                            }
-                          }}
-                          className="grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-hover hover:text-accent group-hover:opacity-100"
-                          title="编辑知识库"
-                        >
-                          <EditIcon size={13} />
-                        </span>
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPendingDelete(kb);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.stopPropagation();
+                                onEditKb(kb);
+                              }
+                            }}
+                            className="grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-hover hover:text-accent group-hover:opacity-100"
+                          >
+                            <EditIcon size={13} />
+                          </span>
+                        </Tooltip>
+                        <Tooltip content="删除知识库">
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
                               e.stopPropagation();
                               setPendingDelete(kb);
-                            }
-                          }}
-                          className="grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
-                          title="删除知识库"
-                        >
-                          <TrashIcon size={13} />
-                        </span>
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.stopPropagation();
+                                setPendingDelete(kb);
+                              }
+                            }}
+                            className="grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-danger-soft hover:text-danger group-hover:opacity-100"
+                          >
+                            <TrashIcon size={13} />
+                          </span>
+                        </Tooltip>
                       </div>
                     </div>
                     <div className="min-w-0">

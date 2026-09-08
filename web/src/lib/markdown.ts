@@ -1,6 +1,30 @@
 import MarkdownIt from "markdown-it";
 import DOMPurify from "dompurify";
 import type { Config } from "dompurify";
+import anchor from "markdown-it-anchor";
+import taskLists from "markdown-it-task-lists";
+import { createHighlighterCore, type HighlighterCore } from "shiki/core";
+import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
+import javascript from "shiki/langs/javascript.mjs";
+import typescript from "shiki/langs/typescript.mjs";
+import python from "shiki/langs/python.mjs";
+import json from "shiki/langs/json.mjs";
+import bash from "shiki/langs/bash.mjs";
+import shell from "shiki/langs/shell.mjs";
+import sql from "shiki/langs/sql.mjs";
+import css from "shiki/langs/css.mjs";
+import html from "shiki/langs/html.mjs";
+import xml from "shiki/langs/xml.mjs";
+import mdLang from "shiki/langs/markdown.mjs";
+import yaml from "shiki/langs/yaml.mjs";
+import java from "shiki/langs/java.mjs";
+import go from "shiki/langs/go.mjs";
+import rust from "shiki/langs/rust.mjs";
+import oneDarkPro from "shiki/themes/one-dark-pro.mjs";
+import githubLight from "shiki/themes/github-light.mjs";
+
+// markdown-it 实例类型（@types/markdown-it 使用 export =，默认导入只带值）
+type MarkdownItInstance = ReturnType<typeof MarkdownIt>;
 
 // 支持内联 HTML（用于字体颜色 <span style="color:...">），
 // 渲染结果会经 DOMPurify 白名单过滤，杜绝 XSS。
@@ -17,10 +41,18 @@ const mdSafe = new MarkdownIt({
   breaks: false,
 });
 
+// 标题锚点（生成 id）+ GitHub 风格任务列表
+for (const instance of [md, mdSafe]) {
+  instance.use(anchor, { level: [1, 2, 3, 4, 5, 6] });
+  instance.use(taskLists);
+}
+
 const PURIFY_CONFIG: Config = {
   // 默认白名单已涵盖 markdown 输出（p/h1~h6/strong/em/code/pre/blockquote/
   // a/table/ul/ol/li/hr/span 等），并自动剔除 script/iframe、on* 事件属性
   // 与 javascript: 等危险协议。此处再显式禁止一批高危标签，做双保险。
+  // 注意：input 不放行（任务列表复选框需要它），仅依赖 DOMPurify 白名单
+  // 对 input 的属性（type/checked/disabled/class）做过滤。
   FORBID_TAGS: [
     "script",
     "style",
@@ -30,7 +62,6 @@ const PURIFY_CONFIG: Config = {
     "link",
     "meta",
     "form",
-    "input",
     "base",
   ],
   // 搜索命中高亮用 <mark>，加入白名单
@@ -67,27 +98,181 @@ function highlightText(content: string, keyword: string): string {
   return out;
 }
 
-export function renderMarkdown(src: string, highlight?: string): string {
-  const keyword = highlight?.trim();
+// ---------------------------------------------------------------------------
+// shiki 代码高亮（纯 JS 引擎，避免 oniguruma/wasm 在静态导出下的兼容问题）
+// ---------------------------------------------------------------------------
+
+// 常见语言缩写 → 已注册语言的规范名
+const LANG_ALIAS: Record<string, string> = {
+  js: "javascript",
+  jsx: "javascript",
+  mjs: "javascript",
+  cjs: "javascript",
+  ts: "typescript",
+  tsx: "typescript",
+  py: "python",
+  sh: "shell",
+  zsh: "shell",
+  bash: "bash",
+  yml: "yaml",
+  md: "markdown",
+  golang: "go",
+};
+
+const SHIKI_THEME_DARK = "one-dark-pro";
+const SHIKI_THEME_LIGHT = "github-light";
+
+let highlighterPromise: Promise<HighlighterCore> | null = null;
+
+function getHighlighter(): Promise<HighlighterCore> {
+  if (!highlighterPromise) {
+    highlighterPromise = createHighlighterCore({
+      themes: [oneDarkPro, githubLight],
+      langs: [
+        javascript,
+        typescript,
+        python,
+        json,
+        bash,
+        shell,
+        sql,
+        css,
+        html,
+        xml,
+        mdLang,
+        yaml,
+        java,
+        go,
+        rust,
+      ],
+      // forgiving: 个别语法含 JS 引擎无法模拟的 oniguruma 特性时，
+      // 跳过不支持的 pattern 而不是抛错，保证其余部分仍能正常高亮。
+      engine: createJavaScriptRegexEngine({ forgiving: true }),
+    }).catch((err) => {
+      // 初始化失败则重置，允许下次重试
+      highlighterPromise = null;
+      throw err;
+    });
+  }
+  return highlighterPromise;
+}
+
+function resolveTheme(theme?: "light" | "dark"): "light" | "dark" {
+  if (theme === "light" || theme === "dark") return theme;
+  if (
+    typeof document !== "undefined" &&
+    document.documentElement.dataset.theme === "dark"
+  ) {
+    return "dark";
+  }
+  return "light";
+}
+
+function normalizeLang(raw: string): string {
+  const lower = raw.trim().toLowerCase();
+  if (!lower) return "";
+  return LANG_ALIAS[lower] ?? lower;
+}
+
+/** 未高亮（无语言 / 引擎不可用 / 高亮抛错）时的降级代码块。 */
+function plainCodeHtml(code: string): string {
+  return `<pre class="shiki"><code>${escapeHtml(code)}</code></pre>`;
+}
+
+/** 组装带语言标签 + 复制按钮的代码块容器。 */
+function codeBlockHtml(displayLang: string, body: string): string {
+  const label = escapeHtml(displayLang.trim() || "text");
+  return (
+    `<div class="codeblock">` +
+    `<div class="codeblock-head"><span class="codeblock-lang">${label}</span>` +
+    `<button type="button" class="codeblock-copy">复制</button></div>` +
+    body +
+    `</div>`
+  );
+}
+
+/** 同步渲染 markdown（含可选搜索高亮），期间用占位符替代代码块。 */
+function renderMarkdownSync(
+  baseMd: MarkdownItInstance,
+  src: string,
+  keyword: string | undefined,
+  blocks: { lang: string; code: string }[],
+): string {
+  const origFence = baseMd.renderer.rules.fence;
+  baseMd.renderer.rules.fence = (tokens, idx) => {
+    const info = (tokens[idx].info || "").trim();
+    const lang = info.split(/\s+/)[0] || "";
+    const id = blocks.length;
+    blocks.push({ lang, code: tokens[idx].content });
+    return `<span data-shiki-block="${id}"></span>`;
+  };
+
+  let rendered: string;
+  try {
+    if (!keyword) {
+      rendered = baseMd.render(src);
+    } else {
+      const origText = baseMd.renderer.rules.text;
+      baseMd.renderer.rules.text = (tokens, idx) =>
+        highlightText(tokens[idx].content, keyword);
+      rendered = baseMd.render(src);
+      baseMd.renderer.rules.text = origText;
+    }
+  } finally {
+    baseMd.renderer.rules.fence = origFence;
+  }
+  return rendered;
+}
+
+export async function renderMarkdown(
+  src: string,
+  highlight?: string,
+  theme?: "light" | "dark",
+): Promise<string> {
+  const keyword = highlight?.trim() || undefined;
   const baseMd =
     typeof window === "undefined" || !DOMPurify.isSupported ? mdSafe : md;
+  const themeName = resolveTheme(theme);
 
-  if (!keyword) {
-    return baseMd === md
-      ? DOMPurify.sanitize(baseMd.render(src), PURIFY_CONFIG)
-      : baseMd.render(src);
+  const blocks: { lang: string; code: string }[] = [];
+  const rendered = renderMarkdownSync(baseMd, src, keyword, blocks);
+
+  const html =
+    baseMd === md
+      ? DOMPurify.sanitize(rendered, PURIFY_CONFIG)
+      : rendered;
+
+  if (blocks.length === 0) return html;
+
+  // 异步高亮：先拿到 highlighter 单例，再逐个替换占位符。
+  let highlighter: HighlighterCore | null = null;
+  try {
+    highlighter = await getHighlighter();
+  } catch {
+    highlighter = null;
   }
 
-  // 临时覆盖 text 渲染规则做命中高亮，渲染后还原，避免污染单例
-  const origText = baseMd.renderer.rules.text;
-  baseMd.renderer.rules.text = (tokens, idx) =>
-    highlightText(tokens[idx].content, keyword);
-  const rendered = baseMd.render(src);
-  baseMd.renderer.rules.text = origText;
-
-  return baseMd === md
-    ? DOMPurify.sanitize(rendered, PURIFY_CONFIG)
-    : rendered;
+  const shikiTheme = themeName === "dark" ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT;
+  let out = html;
+  blocks.forEach((block, i) => {
+    const placeholder = `<span data-shiki-block="${i}"></span>`;
+    const normalized = normalizeLang(block.lang);
+    let body: string;
+    if (highlighter && normalized) {
+      try {
+        body = highlighter.codeToHtml(block.code, {
+          lang: normalized,
+          theme: shikiTheme,
+        });
+      } catch {
+        body = plainCodeHtml(block.code);
+      }
+    } else {
+      body = plainCodeHtml(block.code);
+    }
+    out = out.replace(placeholder, codeBlockHtml(block.lang, body));
+  });
+  return out;
 }
 
 export function countWords(src: string): number {

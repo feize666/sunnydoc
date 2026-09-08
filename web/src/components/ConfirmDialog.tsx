@@ -34,16 +34,13 @@ export function ConfirmDialog({
   if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/40"
-      onClick={onCancel}
-    >
+    <div className="dialog-overlay" onClick={onCancel}>
       <div
-        className="w-[400px] max-w-[92vw] overflow-hidden rounded-xl border border-line bg-background shadow-2xl"
+        className="dialog-panel w-[400px] max-w-[92vw]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-3 px-5 py-4">
-          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-red-50 text-red-500">
+          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-danger-soft text-danger">
             <AlertIcon size={20} />
           </div>
           <div className="min-w-0 flex-1 pt-0.5">
@@ -57,7 +54,7 @@ export function ConfirmDialog({
         <div className="flex justify-end gap-2 border-t border-line px-4 py-3">
           <button
             onClick={onCancel}
-            className="rounded-lg border border-line px-4 py-2 text-sm text-text hover:bg-hover"
+            className="btn-secondary rounded-lg px-4 py-2 text-sm"
           >
             {cancelText}
           </button>
@@ -65,7 +62,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             className={`rounded-lg px-4 py-2 text-sm text-white ${
               danger
-                ? "bg-red-500 hover:bg-red-600"
+                ? "bg-danger hover:bg-danger-hover"
                 : "bg-accent hover:bg-accent-hover"
             }`}
           >

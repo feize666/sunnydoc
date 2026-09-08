@@ -45,7 +45,7 @@ export function CommandPalette({
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} />
-      <div className="fixed left-1/2 top-[18%] z-50 w-[520px] max-w-[90vw] -translate-x-1/2 overflow-hidden rounded-xl border border-line bg-background shadow-2xl">
+      <div className="glass fixed left-1/2 top-[18%] z-50 w-[520px] max-w-[90vw] -translate-x-1/2 overflow-hidden rounded-xl shadow-glow">
         <input
           ref={inputRef}
           placeholder="搜索命令…"

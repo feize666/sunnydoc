@@ -519,8 +519,9 @@ export default function Home() {
               loading={loadingDoc}
               onSaved={handleSaved}
               highlight={highlight}
+              theme={theme}
             />
-            <AiPanel />
+            <AiPanel theme={theme} />
           </div>
 
           <StatusBar wordCount={wordCount} openCount={openKeys.length} />

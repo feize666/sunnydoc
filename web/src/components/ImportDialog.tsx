@@ -103,12 +103,9 @@ export function ImportDialog({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/30"
-      onClick={onClose}
-    >
+    <div className="dialog-overlay" onClick={onClose}>
       <div
-        className="w-[560px] max-w-[92vw] overflow-hidden rounded-xl border border-line bg-background shadow-2xl"
+        className="dialog-panel w-[560px] max-w-[92vw]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
@@ -235,7 +232,7 @@ export function ImportDialog({
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={reset}
-                className="rounded-lg border border-line px-4 py-2 text-sm text-text hover:bg-hover"
+                className="btn-secondary rounded-lg px-4 py-2 text-sm"
               >
                 继续导入
               </button>
@@ -251,13 +248,13 @@ export function ImportDialog({
 
         {phase === "failed" && (
           <div className="p-4">
-            <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2.5 text-sm text-red-600">
+            <div className="rounded-lg border border-danger/40 bg-danger-soft px-3 py-2.5 text-sm text-danger">
               {errorMsg || "导入失败"}
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={reset}
-                className="rounded-lg border border-line px-4 py-2 text-sm text-text hover:bg-hover"
+                className="btn-secondary rounded-lg px-4 py-2 text-sm"
               >
                 重新导入
               </button>

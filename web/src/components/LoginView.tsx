@@ -40,7 +40,7 @@ export function LoginView({ onAuthed }: { onAuthed: (user: User) => void }) {
     <div className="flex h-full w-full items-center justify-center bg-background">
       <div className="w-[360px] max-w-[92vw]">
         <div className="mb-6 flex flex-col items-center gap-3">
-          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-[#5b8dff] to-[#2b5ce6] text-2xl font-bold text-white shadow-lg">
+          <span className="logo-mark grid h-14 w-14 place-items-center rounded-2xl text-2xl font-bold">
             知
           </span>
           <div className="text-center">
@@ -49,7 +49,7 @@ export function LoginView({ onAuthed }: { onAuthed: (user: User) => void }) {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-xl">
+        <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-lg">
           <div className="flex border-b border-line">
             {(["login", "register"] as const).map((m) => (
               <button
@@ -73,7 +73,7 @@ export function LoginView({ onAuthed }: { onAuthed: (user: User) => void }) {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="请输入用户名"
-              className="w-full rounded-lg border border-line bg-background px-3 py-2 text-sm text-text outline-none focus:border-accent"
+              className="w-full rounded-lg border border-line bg-background px-3 py-2 text-sm text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
             />
 
             <label className="mb-1 mt-3 block text-xs text-muted">密码</label>
@@ -85,11 +85,11 @@ export function LoginView({ onAuthed }: { onAuthed: (user: User) => void }) {
                 if (e.key === "Enter") handleSubmit();
               }}
               placeholder={mode === "register" ? "至少 6 位" : "请输入密码"}
-              className="w-full rounded-lg border border-line bg-background px-3 py-2 text-sm text-text outline-none focus:border-accent"
+              className="w-full rounded-lg border border-line bg-background px-3 py-2 text-sm text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
             />
 
             {error && (
-              <div className="mt-3 rounded-md border border-red-300 bg-red-50 px-2 py-1.5 text-xs text-red-600">
+              <div className="mt-3 rounded-md border border-danger/40 bg-danger-soft px-2 py-1.5 text-xs text-danger">
                 {error}
               </div>
             )}

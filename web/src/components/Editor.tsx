@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, type ReactNode } from "react";
 import { renderMarkdown } from "@/lib/markdown";
+import { handleCodeBlockCopy } from "./CodeBlock";
+import { Tooltip } from "./Tooltip";
 import { updateDocument } from "@/lib/api";
 import type { Doc } from "@/data/docs";
 import {
@@ -36,16 +38,17 @@ function ToolButton({
   children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      title={title}
-      // 阻止按钮抢走 textarea 焦点，保留选区
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onClick}
-      className="flex h-7 shrink-0 items-center justify-center rounded-md px-1.5 text-muted transition-colors hover:bg-hover hover:text-text"
-    >
-      {children}
-    </button>
+    <Tooltip content={title} className="shrink-0">
+      <button
+        type="button"
+        // 阻止按钮抢走 textarea 焦点，保留选区
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={onClick}
+        className="flex h-7 items-center justify-center rounded-md px-1.5 text-muted transition-colors hover:bg-hover hover:text-text"
+      >
+        {children}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -58,17 +61,31 @@ export function Editor({
   loading,
   onSaved,
   highlight,
+  theme,
 }: {
   doc: Doc | null;
   loading?: boolean;
   onSaved?: (doc: Doc, newTitle: string, newBody: string) => void;
   highlight?: string;
+  theme: "light" | "dark";
 }) {
   const [mode, setMode] = useState<Mode>("preview");
   const [draftTitle, setDraftTitle] = useState("");
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // 异步渲染预览（代码块用 shiki 高亮）；切换文档 / 保存 / 主题变化后重渲染
+  useEffect(() => {
+    let cancelled = false;
+    renderMarkdown(doc?.body ?? "", highlight, theme).then((h) => {
+      if (!cancelled) setPreviewHtml(h);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [doc?.body, highlight, theme]);
 
   // 切换文档时重置为预览模式
   useEffect(() => {
@@ -318,15 +335,15 @@ export function Editor({
 
       <div className="flex shrink-0 items-center gap-1.5 px-1">
         {COLORS.map((c) => (
-          <button
-            key={c.value}
-            type="button"
-            title={`文字颜色：${c.name}`}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => applyColor(c.value)}
-            className="h-4 w-4 rounded-full border border-black/10 transition-transform hover:scale-125"
-            style={{ backgroundColor: c.value }}
-          />
+          <Tooltip key={c.value} content={`文字颜色：${c.name}`}>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => applyColor(c.value)}
+              className="h-4 w-4 rounded-full border border-black/10 transition-transform hover:scale-125"
+              style={{ backgroundColor: c.value }}
+            />
+          </Tooltip>
         ))}
       </div>
     </>
@@ -383,9 +400,8 @@ export function Editor({
               <div className="mt-4 border-b border-line" />
               <div
                 className="md-body mt-6"
-                dangerouslySetInnerHTML={{
-                  __html: renderMarkdown(doc.body, highlight),
-                }}
+                onClick={handleCodeBlockCopy}
+                dangerouslySetInnerHTML={{ __html: previewHtml }}
               />
             </>
           ) : (

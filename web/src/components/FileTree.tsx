@@ -14,6 +14,7 @@ import {
 } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { RenameFolderDialog } from "./RenameFolderDialog";
+import { Tooltip } from "./Tooltip";
 
 function FileTreeNode({
   node,
@@ -84,28 +85,30 @@ function FileTreeNode({
             <span className="truncate">{node.name}</span>
           </button>
           {onRequestRenameFolder && node.key && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onRequestRenameFolder(node);
-              }}
-              className="mr-1 grid h-4 w-4 shrink-0 place-items-center rounded text-faint opacity-0 transition-opacity hover:bg-hover hover:text-accent group-hover:opacity-100"
-              title="重命名文件夹"
-            >
-              <EditIcon size={12} />
-            </button>
+            <Tooltip content="重命名文件夹" className="shrink-0">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRequestRenameFolder(node);
+                }}
+                className="mr-1 grid h-4 w-4 place-items-center rounded text-faint opacity-0 transition-opacity hover:bg-hover hover:text-accent group-hover:opacity-100"
+              >
+                <EditIcon size={12} />
+              </button>
+            </Tooltip>
           )}
           {onRequestDeleteFolder && node.key && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onRequestDeleteFolder(node);
-              }}
-              className="mr-1 grid h-4 w-4 shrink-0 place-items-center rounded text-faint opacity-0 transition-opacity hover:bg-hover hover:text-red-500 group-hover:opacity-100"
-              title="删除文件夹"
-            >
-              <TrashIcon size={12} />
-            </button>
+            <Tooltip content="删除文件夹" className="shrink-0">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRequestDeleteFolder(node);
+                }}
+                className="mr-1 grid h-4 w-4 place-items-center rounded text-faint opacity-0 transition-opacity hover:bg-hover hover:text-danger group-hover:opacity-100"
+              >
+                <TrashIcon size={12} />
+              </button>
+            </Tooltip>
           )}
         </div>
         {open && node.children && (
@@ -151,19 +154,20 @@ function FileTreeNode({
       <span className="min-w-0 flex-1 truncate">{node.name}</span>
       {onMoveDoc && node.key && (
         <div className="relative shrink-0">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setMoveOpen((v) => !v);
-            }}
-            className="grid h-4 w-4 place-items-center rounded text-faint opacity-0 transition-opacity hover:bg-hover hover:text-accent group-hover:opacity-100"
-            title="移动到文件夹"
-          >
-            <MoveIcon size={13} />
-          </button>
+          <Tooltip content="移动到文件夹">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setMoveOpen((v) => !v);
+              }}
+              className="grid h-4 w-4 place-items-center rounded text-faint opacity-0 transition-opacity hover:bg-hover hover:text-accent group-hover:opacity-100"
+            >
+              <MoveIcon size={13} />
+            </button>
+          </Tooltip>
           {moveOpen && (
             <div
-              className="absolute right-0 top-full z-20 mt-1 max-h-56 w-44 overflow-y-auto rounded-lg border border-line bg-background py-1 shadow-xl"
+              className="menu-panel absolute right-0 top-full z-20 mt-1 max-h-56 w-44 overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <button
@@ -199,16 +203,17 @@ function FileTreeNode({
         </div>
       )}
       {onRequestDeleteDoc && node.key && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onRequestDeleteDoc(node);
-          }}
-          className="grid h-4 w-4 shrink-0 place-items-center rounded text-faint opacity-0 transition-opacity hover:bg-hover hover:text-red-500 group-hover:opacity-100"
-          title="删除文档"
-        >
-          <CloseIcon size={12} />
-        </button>
+        <Tooltip content="删除文档" className="shrink-0">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onRequestDeleteDoc(node);
+            }}
+            className="grid h-4 w-4 place-items-center rounded text-faint opacity-0 transition-opacity hover:bg-hover hover:text-danger group-hover:opacity-100"
+          >
+            <CloseIcon size={12} />
+          </button>
+        </Tooltip>
       )}
     </div>
   );

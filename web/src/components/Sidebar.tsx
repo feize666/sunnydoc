@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { FileTree } from "./FileTree";
+import { Tooltip } from "./Tooltip";
 import { PlusIcon, SearchIcon, CloseIcon } from "./icons";
 import type { TreeNode, SortBy } from "@/data/docs";
 import type { Folder, SearchResult } from "@/lib/api";
@@ -138,11 +139,11 @@ export function Sidebar({
         <div className="mb-2 flex items-center justify-between">
           <div className="flex min-w-0 items-center gap-1">
             {onBackHome && (
-              <button
-                onClick={onBackHome}
-                className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
-                title="返回首页"
-              >
+              <Tooltip content="返回首页" className="shrink-0">
+                <button
+                  onClick={onBackHome}
+                  className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
+                >
                 <svg
                   width="14"
                   height="14"
@@ -156,30 +157,32 @@ export function Sidebar({
                   <path d="M19 12H5M12 19l-7-7 7-7" />
                 </svg>
               </button>
+              </Tooltip>
             )}
             <span className="truncate text-xs text-faint">
               {kbName ?? "知识库 · 全部文档"}
             </span>
           </div>
           {onRefresh && (
-            <button
-              onClick={onRefresh}
-              className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
-              title="刷新文档列表"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+            <Tooltip content="刷新文档列表">
+              <button
+                onClick={onRefresh}
+                className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
               >
-                <path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
-              </svg>
-            </button>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
+                </svg>
+              </button>
+            </Tooltip>
           )}
         </div>
 
@@ -205,7 +208,7 @@ export function Sidebar({
             </button>
 
             {menuOpen && (
-              <div className="absolute left-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-lg border border-line bg-background py-1 shadow-xl">
+              <div className="menu-panel absolute left-0 top-full z-50 mt-1 w-44">
                 {createItems.map((item, i) => (
                   <button
                     key={i}
@@ -233,43 +236,45 @@ export function Sidebar({
             )}
           </div>
 
-          <button
-            onClick={onImport}
-            className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover"
-            title="导入文档"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              className="text-muted"
+          <Tooltip content="导入文档">
+            <button
+              onClick={onImport}
+              className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover"
             >
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
-            </svg>
-            导入
-          </button>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                className="text-muted"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+              </svg>
+              导入
+            </button>
+          </Tooltip>
 
-          <button
-            onClick={onExport}
-            className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover"
-            title="导出文档"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              className="text-muted"
+          <Tooltip content="导出文档">
+            <button
+              onClick={onExport}
+              className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover"
             >
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
-            </svg>
-            导出
-          </button>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                className="text-muted"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+              </svg>
+              导出
+            </button>
+          </Tooltip>
         </div>
 
         <div className="mt-2 flex items-center gap-1.5">
@@ -282,42 +287,47 @@ export function Sidebar({
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="搜索文档内容…"
-              className="w-full rounded-lg border border-line bg-background py-1.5 pl-8 pr-7 text-[13px] text-text outline-none placeholder:text-faint focus:border-accent"
+              className="w-full rounded-lg border border-line bg-background py-1.5 pl-8 pr-7 text-[13px] text-text outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
             />
             {searchQuery && (
-              <button
-                onClick={() => onSearchChange("")}
-                className="absolute right-1.5 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded text-faint hover:bg-hover hover:text-text"
-                title="清除"
+              <Tooltip
+                content="清除"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2"
               >
-                <CloseIcon size={12} />
-              </button>
+                <button
+                  onClick={() => onSearchChange("")}
+                  className="grid h-5 w-5 place-items-center rounded text-faint hover:bg-hover hover:text-text"
+                >
+                  <CloseIcon size={12} />
+                </button>
+              </Tooltip>
             )}
           </div>
 
           <div className="relative shrink-0" ref={sortMenuRef}>
-            <button
-              onClick={() => setSortMenuOpen((v) => !v)}
-              className="flex items-center gap-1 rounded-lg border border-line px-2 py-1.5 text-[12px] text-muted transition-colors hover:bg-hover hover:text-text"
-              title="排序方式"
-            >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+            <Tooltip content="排序方式">
+              <button
+                onClick={() => setSortMenuOpen((v) => !v)}
+                className="flex items-center gap-1 rounded-lg border border-line px-2 py-1.5 text-[12px] text-muted transition-colors hover:bg-hover hover:text-text"
               >
-                <path d="M8 6h13M8 12h13M8 18h13" />
-                <path d="M3 5l2 2 2-2M3 11l2 2 2-2M3 17l2 2 2-2" />
-              </svg>
-              {sortLabel}
-            </button>
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M8 6h13M8 12h13M8 18h13" />
+                  <path d="M3 5l2 2 2-2M3 11l2 2 2-2M3 17l2 2 2-2" />
+                </svg>
+                {sortLabel}
+              </button>
+            </Tooltip>
             {sortMenuOpen && (
-              <div className="absolute right-0 top-full z-50 mt-1 w-32 overflow-hidden rounded-lg border border-line bg-background py-1 shadow-xl">
+              <div className="menu-panel absolute right-0 top-full z-50 mt-1 w-32">
                 {sortOptions.map((o) => (
                   <button
                     key={o.value}
@@ -378,7 +388,7 @@ export function Sidebar({
         ) : (
           <>
             {listError && (
-              <div className="mx-1 mb-2 rounded-md border border-red-300 bg-red-50 px-2 py-1.5 text-[11px] text-red-600">
+              <div className="mx-1 mb-2 rounded-md border border-danger/40 bg-danger-soft px-2 py-1.5 text-[11px] text-danger">
                 {listError}（后端服务未启动？）
               </div>
             )}

@@ -1,19 +1,70 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   Design Tokens（sunnydoc 知库 · 蓝白科技感）
+   命名约定：颜色 -> --color-*，圆角 -> --radius-*，阴影 -> --shadow-*，
+            渐变 -> --grad-*，聚焦 -> --focus-ring，玻璃 -> --glass-*。
+   所有组件一律引用变量，禁止写裸色值。
+   ========================================================================== */
+
 :root {
+  /* 背景层级 */
   --background: #ffffff;
   --surface: #f8fafc;
   --surface-2: #eef2f7;
   --hover: #eef4ff;
   --active: #dbeafe;
+
+  /* 文本 */
   --text: #0f172a;
   --muted: #475569;
   --faint: #94a3b8;
+
+  /* 边框 */
   --line: #e2e8f0;
+  --line-strong: #cbd5e1;
+
+  /* 主色（蓝） */
   --accent: #2f6bff;
   --accent-soft: #eaf1ff;
   --accent-hover: #1d4ed8;
+  --accent-active: #1e4fd6;
+  --accent-deep: #2b5ce6;
   --accent-grad: linear-gradient(135deg, #5b8dff 0%, #2f6bff 50%, #2b5ce6 100%);
+
+  /* 渐变：蓝 → 靛（科技感点缀，用于装饰线/强调） */
+  --grad-blue-indigo: linear-gradient(135deg, #4f8bff 0%, #2f6bff 45%, #6d5cff 100%);
+
+  /* 状态色 */
+  --success: #16a34a;
+  --success-soft: #dcfce7;
+  --warning: #d97706;
+  --warning-soft: #fef3c7;
+  --danger: #dc2626;
+  --danger-soft: #fee2e2;
+  --danger-hover: #b91c1c;
+
+  /* 圆角层级 */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* 阴影（冷调，偏蓝） */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(47, 107, 255, 0.06);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(47, 107, 255, 0.06);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12), 0 4px 12px rgba(47, 107, 255, 0.08);
+  /* 微光：蓝色光晕（用于 hover / 主按钮 / 命令面板等强调层级） */
+  --shadow-glow: 0 0 0 1px rgba(47, 107, 255, 0.22), 0 8px 24px rgba(47, 107, 255, 0.18);
+
+  /* 聚焦环 */
+  --focus-ring: 0 0 0 3px rgba(47, 107, 255, 0.25);
+
+  /* 玻璃拟态 */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-blur: 12px;
+  --glass-border: rgba(255, 255, 255, 0.6);
+
+  /* 滚动条 */
   --scrollbar: #cbd5e1;
   --scrollbar-hover: #94a3b8;
 }
@@ -24,18 +75,51 @@
   --surface-2: #1e293b;
   --hover: #24324a;
   --active: #1e3a8a;
+
   --text: #e2e8f0;
   --muted: #94a3b8;
   --faint: #64748b;
+
   --line: #273549;
+  --line-strong: #3b4a63;
+
   --accent: #4f8bff;
   --accent-soft: #172554;
   --accent-hover: #6ea0ff;
+  --accent-active: #3b82f6;
+  --accent-deep: #3b82f6;
   --accent-grad: linear-gradient(135deg, #7aa7ff 0%, #4f8bff 50%, #3b82f6 100%);
+
+  --grad-blue-indigo: linear-gradient(135deg, #6ea0ff 0%, #4f8bff 45%, #8b7bff 100%);
+
+  --success: #34d399;
+  --success-soft: #052e1f;
+  --warning: #fbbf24;
+  --warning-soft: #3a2e05;
+  --danger: #f87171;
+  --danger-soft: #3b1216;
+  --danger-hover: #ef4444;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(47, 107, 255, 0.08);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(47, 107, 255, 0.1);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.6), 0 6px 16px rgba(47, 107, 255, 0.12);
+  --shadow-glow: 0 0 0 1px rgba(79, 139, 255, 0.3), 0 10px 30px rgba(79, 139, 255, 0.28);
+
+  --focus-ring: 0 0 0 3px rgba(79, 139, 255, 0.35);
+
+  --glass-bg: rgba(17, 24, 39, 0.72);
+  --glass-blur: 12px;
+  --glass-border: rgba(255, 255, 255, 0.08);
+
   --scrollbar: #334155;
   --scrollbar-hover: #475569;
 }
 
+/* 映射为 Tailwind 可用的颜色 / 圆角 / 阴影变量（bg-* / text-* / rounded-* / shadow-*） */
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
@@ -46,9 +130,29 @@
   --color-muted: var(--muted);
   --color-faint: var(--faint);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
   --color-accent-hover: var(--accent-hover);
+  --color-accent-active: var(--accent-active);
+  --color-accent-deep: var(--accent-deep);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-hover: var(--danger-hover);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-glow: var(--shadow-glow);
+
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --font-mono: "SF Mono", "JetBrains Mono", "Cascadia Code", Consolas,
@@ -84,6 +188,85 @@ body {
   background: var(--scrollbar-hover);
 }
 
+/* ==========================================================================
+   通用工具类（组件约定）
+   ========================================================================== */
+
+/* 统一聚焦态：可点击元素用蓝色 outline，输入类用蓝色边框 + 光晕 */
+:where(button, [role="button"], a, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+:where(input:not([type="checkbox"]), select):focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+/* 品牌标识：渐变蓝底 + 微光 */
+.logo-mark {
+  background-image: var(--accent-grad);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(47, 107, 255, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* 玻璃拟态（半透明 + backdrop-blur） */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
+  border: 1px solid var(--glass-border);
+}
+
+/* 下拉菜单面板 */
+.menu-panel {
+  background: var(--background);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  padding: 4px;
+}
+
+/* 对话框遮罩 + 面板 */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: rgba(2, 6, 23, 0.4);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+.dialog-panel {
+  background: var(--background);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+/* 次要按钮（描边） */
+.btn-secondary {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.btn-secondary:hover {
+  background: var(--hover);
+  border-color: var(--line-strong);
+}
+.btn-secondary:active {
+  background: var(--active);
+}
+.btn-secondary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* 科技感主按钮：蓝→靛蓝渐变 + 微光 */
 .btn-accent {
   background-image: var(--accent-grad);
@@ -93,7 +276,7 @@ body {
 }
 .btn-accent:hover {
   filter: brightness(1.06) saturate(1.08);
-  box-shadow: 0 6px 16px rgba(47, 107, 255, 0.34),
+  box-shadow: var(--shadow-glow),
     inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 .btn-accent:active {
@@ -103,6 +286,9 @@ body {
 .btn-accent:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+.btn-accent:disabled {
+  filter: grayscale(0.15);
 }
 
 /* 用户消息气泡：同款渐变 */
@@ -121,34 +307,48 @@ body {
 .md-body > :first-child {
   margin-top: 0 !important;
 }
+
+/* 标题层级：H1 大号 + 渐变分隔线，H2 左侧蓝色竖条 */
 .md-body h1 {
-  font-size: 26px;
-  font-weight: 700;
-  margin: 1.6em 0 0.6em;
-  padding-bottom: 0.35em;
-  border-bottom: 1px solid var(--line);
-  line-height: 1.3;
-  letter-spacing: -0.01em;
+  font-size: 30px;
+  font-weight: 800;
+  margin: 1.7em 0 0.85em;
+  padding-bottom: 0.45em;
+  border-bottom: 2px solid var(--line);
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  position: relative;
+}
+.md-body h1::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  width: 88px;
+  height: 2px;
+  background: var(--grad-blue-indigo);
+  border-radius: 2px;
 }
 .md-body h2 {
-  font-size: 20px;
-  font-weight: 600;
-  margin: 1.5em 0 0.55em;
-  padding-left: 0.6em;
-  border-left: 3px solid var(--accent);
+  font-size: 21px;
+  font-weight: 700;
+  margin: 1.6em 0 0.6em;
+  padding-left: 0.7em;
+  border-left: 4px solid var(--accent);
   line-height: 1.35;
-  letter-spacing: -0.005em;
+  letter-spacing: -0.01em;
 }
 .md-body h3 {
   font-size: 17px;
-  font-weight: 600;
-  margin: 1.4em 0 0.5em;
+  font-weight: 650;
+  margin: 1.5em 0 0.55em;
   line-height: 1.4;
 }
 .md-body h4 {
   font-size: 15px;
-  font-weight: 600;
-  margin: 1.3em 0 0.4em;
+  font-weight: 650;
+  margin: 1.4em 0 0.45em;
+  color: var(--muted);
 }
 .md-body p {
   margin: 0.75em 0;
@@ -156,28 +356,126 @@ body {
 .md-body strong {
   font-weight: 650;
 }
+
+/* 列表 */
 .md-body ul,
 .md-body ol {
   margin: 0.6em 0;
-  padding-left: 1.6em;
+  padding-left: 1.7em;
   list-style: revert;
 }
 .md-body li {
-  margin: 0.3em 0;
+  margin: 0.32em 0;
 }
 .md-body li > ul,
 .md-body li > ol {
   margin: 0.2em 0;
 }
+
+/* 任务列表 */
+.md-body ul.contains-task-list {
+  list-style: none;
+  padding-left: 0.25em;
+}
+.md-body li.task-list-item {
+  list-style: none;
+}
+.md-body input.task-list-item-checkbox {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  margin: 0 7px 0 0;
+  vertical-align: -2px;
+  border: 1.5px solid var(--faint);
+  border-radius: 4px;
+  background: var(--background);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.md-body input.task-list-item-checkbox:checked {
+  background: var(--accent)
+    url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Cpath%20fill='none'%20stroke='white'%20stroke-width='4'%20stroke-linecap='round'%20stroke-linejoin='round'%20d='M5%2013l4%204L19%207'/%3E%3C/svg%3E")
+    center / 10px 10px no-repeat;
+  border-color: var(--accent);
+}
+
+/* 行内代码 */
 .md-body code {
   font-family: var(--font-mono);
   font-size: 0.86em;
   background: var(--accent-soft);
   color: var(--accent);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: 5px;
 }
-.md-body pre {
+
+/* 代码块容器：语言标签 + 复制按钮 + shiki 高亮 */
+.md-body .codeblock {
+  margin: 1em 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.md-body .codeblock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+  user-select: none;
+}
+.md-body .codeblock-lang {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  text-transform: lowercase;
+}
+.md-body .codeblock-copy {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px 9px;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+.md-body .codeblock-copy:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.md-body .codeblock-copy.codeblock-copied {
+  color: var(--accent);
+}
+.md-body pre.shiki {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  padding: 16px 18px;
+  overflow-x: auto;
+  line-height: 1.6;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  tab-size: 2;
+  /* 覆盖 shiki 行内背景：浅色浅灰底 / 深色深蓝底，token 颜色仍由行内样式控制 */
+  background-color: var(--surface-2) !important;
+}
+.md-body pre.shiki code {
+  background: none;
+  color: inherit;
+  padding: 0;
+  font-size: inherit;
+  font-family: inherit;
+}
+
+/* 非 shiki 代码块（缩进代码 / 行内 HTML <pre>）的兜底样式 */
+.md-body pre:not(.shiki) {
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -186,12 +484,15 @@ body {
   margin: 0.9em 0;
   line-height: 1.6;
 }
-.md-body pre code {
+.md-body pre:not(.shiki) code {
   background: none;
   color: var(--text);
   padding: 0;
   font-size: 13px;
+  font-family: var(--font-mono);
 }
+
+/* 引用 */
 .md-body blockquote {
   border-left: 3px solid var(--accent);
   background: var(--accent-soft);
@@ -203,6 +504,8 @@ body {
 .md-body blockquote p {
   margin: 0;
 }
+
+/* 链接 */
 .md-body a {
   color: var(--accent);
   text-decoration: none;
@@ -212,33 +515,58 @@ body {
 .md-body a:hover {
   border-bottom-color: var(--accent);
 }
+
+/* 表格：斑马纹 + 行 hover + 圆角边框 */
 .md-body table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   margin: 1em 0;
   font-size: 13px;
   width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
 }
 .md-body th,
 .md-body td {
-  border: 1px solid var(--line);
-  padding: 7px 12px;
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  padding: 8px 12px;
   text-align: left;
+}
+.md-body th:last-child,
+.md-body td:last-child {
+  border-right: none;
+}
+.md-body tbody tr:last-child td {
+  border-bottom: none;
 }
 .md-body th {
   background: var(--surface-2);
   font-weight: 600;
 }
+.md-body tbody tr {
+  transition: background 0.12s;
+}
 .md-body tbody tr:nth-child(even) {
   background: var(--surface);
 }
+.md-body tbody tr:hover {
+  background: var(--hover);
+}
+
+/* 分隔线 */
 .md-body hr {
   border: none;
   border-top: 1px solid var(--line);
-  margin: 1.6em 0;
+  margin: 1.8em 0;
 }
+
+/* 图片 */
 .md-body img {
   max-width: 100%;
   border-radius: 8px;
+  display: block;
 }
 
 /* 全文搜索命中高亮 */
@@ -251,4 +579,46 @@ mark.search-hit {
 [data-theme="dark"] mark.search-hit {
   background: #7c5f00;
   color: #fef3c7;
+}
+
+/* —— 统一 Tooltip 浮层（蓝白科技感，明暗主题均清晰） —— */
+.tooltip-bubble {
+  --tip-bg: #0f172a;
+  --tip-fg: #f1f5f9;
+  --tip-border: color-mix(in srgb, var(--accent) 42%, transparent);
+  background: color-mix(in srgb, var(--tip-bg) 96%, transparent);
+  color: var(--tip-fg);
+  border: 1px solid var(--tip-border);
+  border-radius: var(--radius-md);
+  padding: 5px 9px;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* 小三角箭头：旋转 45° 的方形，仅露出朝向触发元素的两条描边 */
+.tooltip-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--tip-bg);
+  border: 1px solid transparent;
+}
+
+.tooltip-bubble--top::after {
+  bottom: -5px;
+  border-right-color: var(--tip-border);
+  border-bottom-color: var(--tip-border);
+}
+
+.tooltip-bubble--bottom::after {
+  top: -5px;
+  border-left-color: var(--tip-border);
+  border-top-color: var(--tip-border);
 }
