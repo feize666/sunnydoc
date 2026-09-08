@@ -2,12 +2,13 @@
 
 import { useState, useRef, useEffect } from "react";
 import { SendIcon, LinkIcon } from "./icons";
-import { chatStream, type Citation, type ChatMessage } from "@/lib/api";
+import { chatStream, type Citation, type ChatMessage, type WebSource } from "@/lib/api";
 
 interface Message {
   role: "user" | "ai";
   content: string;
   citations?: Citation[];
+  webSources?: WebSource[];
   error?: boolean;
 }
 
@@ -15,7 +16,7 @@ const initialMessages: Message[] = [
   {
     role: "ai",
     content:
-      "你好，我可以基于知识库中的文档回答你的问题，也支持多轮追问。试试问我关于「部署」或「导入」相关的内容。",
+      "你好，我可以基于知识库文档回答，也能联网搜索实时信息。试试问我关于「部署」或「今天天气」相关的内容。",
   },
 ];
 
@@ -23,6 +24,7 @@ export function AiPanel() {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [enableWeb, setEnableWeb] = useState(true);
   const chatRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -31,7 +33,6 @@ export function AiPanel() {
 
   // 从消息列表构建对话历史（排除第一条欢迎语，只取最近 8 条）
   const buildHistory = (msgs: Message[]): ChatMessage[] => {
-    // msgs[0] 是欢迎语，跳过
     const real = msgs.slice(1).filter((m) => m.content && !m.error);
     return real.slice(-8).map((m) => ({
       role: m.role === "user" ? "user" : "assistant",
@@ -49,7 +50,6 @@ export function AiPanel() {
     setMessages((m) => [...m, { role: "user", content: q }, { role: "ai", content: "" }]);
     const aiIndex = messages.length + 1; // user 在 index=len，ai 在 len+1
 
-    // 历史取当前已有消息（不含刚加的两条）
     const history = buildHistory(messages);
 
     const updateAi = (updater: (msg: Message) => Message) => {
@@ -57,9 +57,11 @@ export function AiPanel() {
     };
 
     try {
-      await chatStream(q, 5, history, (e) => {
+      await chatStream(q, 5, history, enableWeb, (e) => {
         if (e.type === "citations") {
           updateAi((msg) => ({ ...msg, citations: e.citations ?? [] }));
+        } else if (e.type === "sources") {
+          updateAi((msg) => ({ ...msg, webSources: e.sources ?? [] }));
         } else if (e.type === "delta") {
           updateAi((msg) => ({ ...msg, content: msg.content + (e.content ?? "") }));
         }
@@ -79,9 +81,22 @@ export function AiPanel() {
     <aside className="flex w-[320px] shrink-0 flex-col border-l border-line bg-surface">
       <div className="flex items-center justify-between border-b border-line px-3.5 py-3 text-[13px] font-semibold">
         AI 问答
-        <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">
-          引用溯源
-        </span>
+        <button
+          onClick={() => setEnableWeb((v) => !v)}
+          className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
+            enableWeb
+              ? "bg-accent-soft text-accent"
+              : "bg-surface-2 text-faint"
+          }`}
+          title={enableWeb ? "联网搜索已开启（点击关闭）" : "联网搜索已关闭（点击开启）"}
+        >
+          <span
+            className={`inline-block h-1.5 w-1.5 rounded-full ${
+              enableWeb ? "bg-accent" : "bg-faint"
+            }`}
+          />
+          联网
+        </button>
       </div>
 
       <div ref={chatRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-3.5">
@@ -107,6 +122,7 @@ export function AiPanel() {
               {msg.content}
               {msg.citations && msg.citations.length > 0 && (
                 <div className="mt-1.5 space-y-0.5 border-t border-line pt-1.5 text-[11px]">
+                  <div className="mb-0.5 text-[10px] text-faint">知识库引用</div>
                   {msg.citations.map((c, j) => (
                     <a
                       key={j}
@@ -115,6 +131,24 @@ export function AiPanel() {
                     >
                       <LinkIcon size={11} />
                       {c.title} · 片段 {c.segment_index + 1}
+                    </a>
+                  ))}
+                </div>
+              )}
+              {msg.webSources && msg.webSources.length > 0 && (
+                <div className="mt-1.5 space-y-0.5 border-t border-line pt-1.5 text-[11px]">
+                  <div className="mb-0.5 text-[10px] text-faint">联网搜索来源</div>
+                  {msg.webSources.map((s, j) => (
+                    <a
+                      key={j}
+                      href={s.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 truncate text-accent hover:underline"
+                      title={s.title}
+                    >
+                      <LinkIcon size={11} />
+                      <span className="truncate">{s.title}</span>
                     </a>
                   ))}
                 </div>

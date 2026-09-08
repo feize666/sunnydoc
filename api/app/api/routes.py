@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.core.config import DEFAULT_TOP_K
-from app.services import parser, qa, llm
+from app.services import parser, qa, llm, web_search
 from app.services.store import store
 
 router = APIRouter(prefix="/api/v1")
@@ -18,6 +18,7 @@ class ChatRequest(BaseModel):
     query: str
     top_k: int = DEFAULT_TOP_K
     history: list[dict[str, str]] | None = None
+    enable_web: bool = True
 
 
 class DeleteRequest(BaseModel):
@@ -99,7 +100,9 @@ def chat(req: ChatRequest):
 
 @router.post("/chat/stream")
 def chat_stream(req: ChatRequest):
-    """流式问答（SSE）：先发 citations，再逐段发 answer 增量，最后发 done"""
+    """流式问答（SSE）：citations → delta/sources → done
+    路由：知识库命中→RAG；未命中+联网→联网搜索；未命中+无联网→通用对话
+    """
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="问题不能为空")
 
@@ -119,23 +122,42 @@ def chat_stream(req: ChatRequest):
     ]
 
     def event_stream():
-        # 1. 先发引用
+        # 1. 先发引用（可能为空）
         yield f"data: {json.dumps({'type': 'citations', 'citations': citations}, ensure_ascii=False)}\n\n"
 
-        # 2. 流式生成回答（有命中走 RAG，无命中走普通对话）
-        if llm.available():
+        # 2. 生成回答
+        if hits:
+            # 知识库命中 → RAG
             contexts = [h["text"] for h in hits]
             got = False
             for piece in llm.generate_stream(req.query, contexts, history):
                 got = True
                 yield f"data: {json.dumps({'type': 'delta', 'content': piece}, ensure_ascii=False)}\n\n"
             if not got:
-                # 流式失败，降级
+                answer = qa.answer(req.query, req.top_k, history)["answer"]
+                yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
+        elif req.enable_web and web_search.available():
+            # 未命中 + 联网开 → 联网搜索（流式，含来源）
+            got = False
+            for ev in web_search.search_stream(req.query, history):
+                got = True
+                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+            if not got:
                 answer = qa.answer(req.query, req.top_k, history)["answer"]
                 yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
         else:
-            answer = qa.answer(req.query, req.top_k, history)["answer"]
-            yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
+            # 未命中 + 无联网/未开 → 通用对话
+            if llm.available():
+                got = False
+                for piece in llm.generate_stream(req.query, [], history):
+                    got = True
+                    yield f"data: {json.dumps({'type': 'delta', 'content': piece}, ensure_ascii=False)}\n\n"
+                if not got:
+                    answer = qa.answer(req.query, req.top_k, history)["answer"]
+                    yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
+            else:
+                answer = qa.answer(req.query, req.top_k, history)["answer"]
+                yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
 
         # 3. 结束标记
         yield f"data: {json.dumps({'type': 'done'})}\n\n"

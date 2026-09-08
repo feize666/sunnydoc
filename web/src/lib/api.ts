@@ -82,15 +82,22 @@ export async function deleteDocument(id: string): Promise<void> {
   await request(`/documents/${id}`, { method: "DELETE" });
 }
 
+export interface WebSource {
+  title: string;
+  url: string;
+}
+
 export interface StreamEvent {
-  type: "citations" | "delta" | "done";
+  type: "citations" | "delta" | "sources" | "done";
   citations?: Citation[];
   content?: string;
+  sources?: WebSource[];
 }
 
 /**
  * 流式问答（SSE）。回调接收事件：
- * - citations: 携带引用列表
+ * - citations: 携带知识库引用列表
+ * - sources: 携带联网搜索来源
  * - delta: 携带增量文本
  * - done: 结束
  */
@@ -98,12 +105,13 @@ export async function chatStream(
   query: string,
   topK: number,
   history: ChatMessage[],
+  enableWeb: boolean,
   onEvent: (e: StreamEvent) => void,
 ): Promise<void> {
   const res = await fetch(`${BASE}/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, top_k: topK, history }),
+    body: JSON.stringify({ query, top_k: topK, history, enable_web: enableWeb }),
   });
 
   if (!res.ok || !res.body) {
