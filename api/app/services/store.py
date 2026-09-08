@@ -52,6 +52,7 @@ class DocStore:
         self._folders: list[dict[str, Any]] = []
         self._kbs: list[dict[str, Any]] = []
         self._recent: list[dict[str, Any]] = []
+        self._users: list[dict[str, Any]] = []
         # 启动时判定存储后端：PostgreSQL 可用则用库，否则 JSON 降级
         if db.available():
             self._backend = "db"
@@ -72,11 +73,13 @@ class DocStore:
                 self._folders = []
                 self._kbs = []
                 self._recent = []
+                self._users = []
             else:
                 self._docs = data.get("documents", [])
                 self._folders = data.get("folders", [])
                 self._kbs = data.get("kbs", [])
                 self._recent = data.get("recent", [])
+                self._users = data.get("users", [])
         # 补齐旧数据缺失的 folder_id/kb_id 字段，保证 all() 返回结构一致
         for d in self._docs:
             d.setdefault("folder_id", None)
@@ -93,6 +96,7 @@ class DocStore:
                     "folders": self._folders,
                     "kbs": self._kbs,
                     "recent": self._recent,
+                    "users": self._users,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -393,6 +397,47 @@ class DocStore:
                 }
             )
         return out
+
+    # ---------- 用户 ----------
+
+    def create_user(
+        self, username: str, password_hash: str
+    ) -> dict[str, Any] | None:
+        """创建用户；用户名已存在返回 None。"""
+        if self._backend == "db":
+            return db.create_user(username, password_hash)
+        if any(u["username"] == username for u in self._users):
+            return None
+        user = {
+            "id": uuid.uuid4().hex,
+            "username": username,
+            "password_hash": password_hash,
+            "created_at": time.time(),
+        }
+        self._users.append(user)
+        self._save()
+        return {k: v for k, v in user.items() if k != "password_hash"}
+
+    def get_user_by_username(self, username: str) -> dict[str, Any] | None:
+        if self._backend == "db":
+            return db.get_user_by_username(username)
+        for u in self._users:
+            if u["username"] == username:
+                return dict(u)
+        return None
+
+    def get_user_by_id(self, user_id: str) -> dict[str, Any] | None:
+        if self._backend == "db":
+            return db.get_user_by_id(user_id)
+        for u in self._users:
+            if u["id"] == user_id:
+                return dict(u)
+        return None
+
+    def list_users(self) -> list[dict[str, Any]]:
+        if self._backend == "db":
+            return db.list_users()
+        return [dict(u) for u in self._users]
 
 
 store = DocStore()

@@ -38,11 +38,37 @@ function FileTreeNode({
 }) {
   const [open, setOpen] = useState(depth === 0);
   const [moveOpen, setMoveOpen] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
   if (node.type === "folder") {
     return (
-      <div>
-        <div className="group flex w-full items-center gap-1.5 rounded-md py-1 text-left text-[13px] text-muted hover:bg-hover">
+      <div
+        onDragOver={(e) => {
+          if (!onMoveDoc) return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = "move";
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          if (!onMoveDoc) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const docId = e.dataTransfer.getData("text/plain");
+          setDragOver(false);
+          if (docId && node.key && docId !== node.key) {
+            onMoveDoc(docId, node.key);
+          }
+        }}
+      >
+        <div
+          className={`group flex w-full items-center gap-1.5 rounded-md py-1 text-left text-[13px] transition-colors ${
+            dragOver
+              ? "bg-active ring-1 ring-inset ring-accent text-text"
+              : "text-muted hover:bg-hover"
+          }`}
+        >
           <button
             onClick={() => setOpen((v) => !v)}
             className="flex min-w-0 flex-1 items-center gap-1.5"
@@ -108,6 +134,12 @@ function FileTreeNode({
   return (
     <div
       onClick={() => node.key && onSelect(node.key)}
+      draggable={!!onMoveDoc}
+      onDragStart={(e) => {
+        if (!node.key) return;
+        e.dataTransfer.setData("text/plain", node.key);
+        e.dataTransfer.effectAllowed = "move";
+      }}
       className={`group flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] transition-colors ${
         active
           ? "bg-active text-accent"
@@ -208,10 +240,31 @@ export function FileTree({
   const [pendingRenameFolder, setPendingRenameFolder] = useState<Folder | null>(
     null,
   );
+  const [dragOverRoot, setDragOverRoot] = useState(false);
 
   return (
     <>
-      <nav className="flex flex-col gap-0.5">
+      <nav
+        className={`flex flex-col gap-0.5 rounded-md ${
+          dragOverRoot ? "bg-active ring-1 ring-inset ring-accent" : ""
+        }`}
+        onDragOver={(e) => {
+          if (!onMoveDoc) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          setDragOverRoot(true);
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget === e.target) setDragOverRoot(false);
+        }}
+        onDrop={(e) => {
+          if (!onMoveDoc) return;
+          e.preventDefault();
+          const docId = e.dataTransfer.getData("text/plain");
+          setDragOverRoot(false);
+          if (docId) onMoveDoc(docId, null);
+        }}
+      >
         {(data ?? []).map((node) => (
           <FileTreeNode
             key={node.key ?? node.name}

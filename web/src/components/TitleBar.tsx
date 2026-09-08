@@ -12,6 +12,8 @@ export function TitleBar({
   theme,
   onToggleTheme,
   onBackHome,
+  userName,
+  onLogout,
 }: {
   openDocs: { key: string; title: string }[];
   activeKey: string | null;
@@ -22,6 +24,8 @@ export function TitleBar({
   theme: "light" | "dark";
   onToggleTheme: () => void;
   onBackHome?: () => void;
+  userName?: string;
+  onLogout?: () => void;
 }) {
   return (
     <header className="flex h-11 items-center gap-2 border-b border-line bg-background px-2.5 select-none">
@@ -123,6 +127,24 @@ export function TitleBar({
           </svg>
         )}
       </button>
+
+      {userName && (
+        <div className="flex items-center gap-1.5 border-l border-line pl-2">
+          <span className="grid h-6 w-6 place-items-center rounded-full bg-accent-soft text-[11px] font-semibold text-accent">
+            {(userName || "知").slice(0, 1)}
+          </span>
+          <span className="max-w-[100px] truncate text-xs text-muted">
+            {userName}
+          </span>
+          <button
+            onClick={onLogout}
+            className="rounded-md px-2 py-1 text-xs text-faint transition-colors hover:bg-hover hover:text-text"
+            title="退出登录"
+          >
+            退出
+          </button>
+        </div>
+      )}
     </header>
   );
 }

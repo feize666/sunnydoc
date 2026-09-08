@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { FileTree } from "./FileTree";
 import { PlusIcon, SearchIcon, CloseIcon } from "./icons";
-import type { TreeNode } from "@/data/docs";
+import type { TreeNode, SortBy } from "@/data/docs";
 import type { Folder, SearchResult } from "@/lib/api";
 
 function escapeHtml(s: string): string {
@@ -59,6 +59,8 @@ export function Sidebar({
   searchResults,
   searching,
   onOpenSearchResult,
+  sortBy,
+  onSortChange,
 }: {
   data: TreeNode[];
   activeKey: string | null;
@@ -83,14 +85,24 @@ export function Sidebar({
   searchResults: SearchResult[];
   searching: boolean;
   onOpenSearchResult: (docId: string) => void;
+  sortBy: SortBy;
+  onSortChange: (s: SortBy) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
+      }
+      if (
+        sortMenuRef.current &&
+        !sortMenuRef.current.contains(e.target as Node)
+      ) {
+        setSortMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", onClick);
@@ -98,6 +110,14 @@ export function Sidebar({
   }, []);
 
   if (collapsed) return null;
+
+  const sortOptions: { value: SortBy; label: string }[] = [
+    { value: "numeric", label: "按数字" },
+    { value: "name", label: "按名称" },
+    { value: "created", label: "按创建时间" },
+  ];
+
+  const sortLabel = sortOptions.find((o) => o.value === sortBy)?.label ?? "排序";
 
   const createItems = [
     {
@@ -252,26 +272,72 @@ export function Sidebar({
           </button>
         </div>
 
-        <div className="relative mt-2">
-          <SearchIcon
-            size={14}
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint"
-          />
-          <input
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="搜索文档内容…"
-            className="w-full rounded-lg border border-line bg-background py-1.5 pl-8 pr-7 text-[13px] text-text outline-none placeholder:text-faint focus:border-accent"
-          />
-          {searchQuery && (
+        <div className="mt-2 flex items-center gap-1.5">
+          <div className="relative flex-1">
+            <SearchIcon
+              size={14}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint"
+            />
+            <input
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="搜索文档内容…"
+              className="w-full rounded-lg border border-line bg-background py-1.5 pl-8 pr-7 text-[13px] text-text outline-none placeholder:text-faint focus:border-accent"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => onSearchChange("")}
+                className="absolute right-1.5 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded text-faint hover:bg-hover hover:text-text"
+                title="清除"
+              >
+                <CloseIcon size={12} />
+              </button>
+            )}
+          </div>
+
+          <div className="relative shrink-0" ref={sortMenuRef}>
             <button
-              onClick={() => onSearchChange("")}
-              className="absolute right-1.5 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded text-faint hover:bg-hover hover:text-text"
-              title="清除"
+              onClick={() => setSortMenuOpen((v) => !v)}
+              className="flex items-center gap-1 rounded-lg border border-line px-2 py-1.5 text-[12px] text-muted transition-colors hover:bg-hover hover:text-text"
+              title="排序方式"
             >
-              <CloseIcon size={12} />
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M8 6h13M8 12h13M8 18h13" />
+                <path d="M3 5l2 2 2-2M3 11l2 2 2-2M3 17l2 2 2-2" />
+              </svg>
+              {sortLabel}
             </button>
-          )}
+            {sortMenuOpen && (
+              <div className="absolute right-0 top-full z-50 mt-1 w-32 overflow-hidden rounded-lg border border-line bg-background py-1 shadow-xl">
+                {sortOptions.map((o) => (
+                  <button
+                    key={o.value}
+                    onClick={() => {
+                      onSortChange(o.value);
+                      setSortMenuOpen(false);
+                    }}
+                    className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-[12px] hover:bg-hover ${
+                      sortBy === o.value
+                        ? "text-accent"
+                        : "text-muted hover:text-text"
+                    }`}
+                  >
+                    <span>{o.label}</span>
+                    {sortBy === o.value && <span>✓</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

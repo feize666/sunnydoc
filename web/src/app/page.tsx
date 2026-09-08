@@ -13,7 +13,8 @@ import { NewFolderDialog } from "@/components/NewFolderDialog";
 import { ExportDialog } from "@/components/ExportDialog";
 import { NewKbDialog } from "@/components/NewKbDialog";
 import { HomeView } from "@/components/HomeView";
-import type { Doc, TreeNode } from "@/data/docs";
+import { LoginView } from "@/components/LoginView";
+import type { Doc, TreeNode, SortBy } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
 import { buildTree } from "@/lib/buildTree";
 import {
@@ -28,11 +29,16 @@ import {
   listRecent,
   recordRecent,
   searchDocuments,
+  getMe,
+  logout,
+  getToken,
+  setToken,
   type DocMeta,
   type Folder,
   type Kb,
   type RecentDoc,
   type SearchResult,
+  type User,
 } from "@/lib/api";
 
 function formatTime(ts: number): string {
@@ -87,6 +93,11 @@ export default function Home() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [highlight, setHighlight] = useState("");
+  const [sortBy, setSortBy] = useState<SortBy>("numeric");
+
+  // 登录态
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   // 视图路由 + 当前知识库
   const [view, setView] = useState<"home" | "kb">("home");
@@ -101,6 +112,37 @@ export default function Home() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  // 启动时校验登录态：有 token 则拉取当前用户，失败则清除
+  useEffect(() => {
+    (async () => {
+      const token = getToken();
+      if (!token) {
+        setAuthLoading(false);
+        return;
+      }
+      try {
+        setUser(await getMe());
+      } catch {
+        setToken(null);
+      } finally {
+        setAuthLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleAuthed = useCallback((u: User) => setUser(u), []);
+
+  const handleLogout = useCallback(async () => {
+    await logout();
+    setToken(null);
+    setUser(null);
+    clearSessionKbId();
+    setView("home");
+    setCurrentKbId(null);
+    setActiveKey(null);
+    setOpenKeys([]);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -375,7 +417,7 @@ export default function Home() {
   );
 
   // 构建多级文件树
-  const tree: TreeNode[] = buildTree(metas, folders);
+  const tree: TreeNode[] = buildTree(metas, folders, sortBy);
 
   const activeDoc = activeKey ? docs[activeKey] ?? null : null;
   const wordCount = activeDoc ? countWords(activeDoc.body) : 0;
@@ -410,6 +452,18 @@ export default function Home() {
     { icon: "⚙️", label: "设置", hint: "Ctrl+," },
   ];
 
+  // 登录态守卫：校验中 / 未登录
+  if (authLoading) {
+    return (
+      <div className="flex h-full items-center justify-center bg-background text-muted">
+        <p className="text-sm">加载中…</p>
+      </div>
+    );
+  }
+  if (!user) {
+    return <LoginView onAuthed={handleAuthed} />;
+  }
+
   return (
     <div className="flex h-full flex-col bg-background">
       {view === "kb" ? (
@@ -428,6 +482,8 @@ export default function Home() {
               setTheme((t) => (t === "light" ? "dark" : "light"))
             }
             onBackHome={goHome}
+            userName={user.username}
+            onLogout={handleLogout}
           />
 
           <div className="flex min-h-0 flex-1">
@@ -455,6 +511,8 @@ export default function Home() {
               searchResults={searchResults}
               searching={searching}
               onOpenSearchResult={handleOpenSearchResult}
+              sortBy={sortBy}
+              onSortChange={setSortBy}
             />
             <Editor
               doc={activeDoc}
@@ -483,6 +541,8 @@ export default function Home() {
           onEditKb={handleEditKb}
           onDeleteKb={handleDeleteKb}
           onOpenRecent={openRecent}
+          userName={user.username}
+          onLogout={handleLogout}
         />
       )}
 

@@ -30,6 +30,8 @@ export function HomeView({
   onEditKb,
   onDeleteKb,
   onOpenRecent,
+  userName,
+  onLogout,
 }: {
   kbs: Kb[];
   recent: RecentDoc[];
@@ -43,6 +45,8 @@ export function HomeView({
   onEditKb: (kb: Kb) => void;
   onDeleteKb: (id: string) => void;
   onOpenRecent: (docId: string, kbId: string | null) => void;
+  userName?: string;
+  onLogout?: () => void;
 }) {
   const [pendingDelete, setPendingDelete] = useState<Kb | null>(null);
 
@@ -114,6 +118,24 @@ export function HomeView({
               </svg>
             )}
           </button>
+
+          {userName && (
+            <div className="flex items-center gap-1.5 border-l border-line pl-2">
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-accent-soft text-[12px] font-semibold text-accent">
+                {(userName || "知").slice(0, 1)}
+              </span>
+              <span className="max-w-[100px] truncate text-xs text-muted">
+                {userName}
+              </span>
+              <button
+                onClick={onLogout}
+                className="rounded-md px-2 py-1 text-xs text-faint transition-colors hover:bg-hover hover:text-text"
+                title="退出登录"
+              >
+                退出
+              </button>
+            </div>
+          )}
         </div>
       </header>
 

@@ -420,3 +420,77 @@ export async function chatStream(
   }
 }
 
+// —— 认证 / 用户 ——
+
+export interface User {
+  id: string;
+  username: string;
+  created_at?: number;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: User;
+}
+
+const TOKEN_KEY = "sunnydoc.token";
+
+export function getToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setToken(token: string | null): void {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export async function register(
+  username: string,
+  password: string,
+): Promise<AuthResponse> {
+  return request("/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export async function login(
+  username: string,
+  password: string,
+): Promise<AuthResponse> {
+  return request("/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export async function getMe(): Promise<User> {
+  const data = await request<{ user: User }>("/auth/me", {
+    headers: authHeaders(),
+  });
+  return data.user;
+}
+
+export async function logout(): Promise<void> {
+  try {
+    await request("/auth/logout", { method: "POST", headers: authHeaders() });
+  } catch {
+    /* 忽略登出失败 */
+  }
+}
+

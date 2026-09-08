@@ -10,12 +10,12 @@ import uuid
 import zipfile
 from urllib.parse import quote
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.core.config import DEFAULT_TOP_K, MEDIA_DIR, DATA_DIR, TEXT_EXTS
-from app.services import media, parser, qa, llm, web_search, exporter
+from app.services import media, parser, qa, llm, web_search, exporter, auth
 from app.services.store import store
 
 router = APIRouter(prefix="/api/v1")
@@ -80,6 +80,16 @@ class RecordRecentRequest(BaseModel):
 class ExportRequest(BaseModel):
     format: str
     doc_ids: list[str] | None = None
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 
 def _dedupe_title(store, title: str) -> str:
@@ -704,3 +714,79 @@ def export_documents(req: ExportRequest):
         media_type=content_type,
         headers={"Content-Disposition": cd},
     )
+
+
+# ---------- 认证 / 用户 ----------
+
+def _public_user(user: dict) -> dict:
+    """剔除 password_hash 后的用户信息。"""
+    return {
+        "id": user["id"],
+        "username": user["username"],
+        "created_at": user.get("created_at"),
+    }
+
+
+def _validate_credentials(username: str, password: str) -> tuple[str, str]:
+    username = (username or "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="用户名不能为空")
+    if len(username) > 32:
+        raise HTTPException(status_code=400, detail="用户名过长（最多 32 字符）")
+    if not password or len(password) < 6:
+        raise HTTPException(status_code=400, detail="密码至少 6 位")
+    return username, password
+
+
+@router.post("/auth/register")
+def register(req: RegisterRequest):
+    """注册新用户，成功后直接返回 token（自动登录）。"""
+    username, password = _validate_credentials(req.username, req.password)
+    if store.get_user_by_username(username):
+        raise HTTPException(status_code=409, detail="用户名已存在")
+    user = store.create_user(username, auth.hash_password(password))
+    if user is None:
+        raise HTTPException(status_code=409, detail="用户名已存在")
+    token = auth.issue_token(user["id"])
+    return {"token": token, "user": _public_user(user)}
+
+
+@router.post("/auth/login")
+def login(req: LoginRequest):
+    username = (req.username or "").strip()
+    if not username or not req.password:
+        raise HTTPException(status_code=400, detail="用户名和密码不能为空")
+    user = store.get_user_by_username(username)
+    if user is None or not auth.verify_password(req.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    token = auth.issue_token(user["id"])
+    return {"token": token, "user": _public_user(user)}
+
+
+@router.get("/auth/me")
+def me(authorization: str | None = Header(None)):
+    token = _bearer_token(authorization)
+    user_id = auth.resolve_token(token) if token else None
+    if not user_id:
+        raise HTTPException(status_code=401, detail="未登录或登录已过期")
+    user = store.get_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="用户不存在")
+    return {"user": _public_user(user)}
+
+
+@router.post("/auth/logout")
+def logout(authorization: str | None = Header(None)):
+    token = _bearer_token(authorization)
+    if token:
+        auth.revoke_token(token)
+    return {"ok": True}
+
+
+def _bearer_token(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    parts = authorization.split()
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1]
+    return authorization.strip() or None

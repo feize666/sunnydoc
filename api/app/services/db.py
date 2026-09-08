@@ -125,6 +125,17 @@ def init() -> None:
             )
             """
         )
+        # 用户
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id varchar PRIMARY KEY,
+                username varchar UNIQUE,
+                password_hash text,
+                created_at double precision
+            )
+            """
+        )
     conn.commit()
 
 
@@ -534,3 +545,71 @@ def search_chunks(query_vec: list[float], top_n: int) -> list[dict[str, Any]]:
         }
         for r in rows
     ]
+
+
+# ---------- 用户 ----------
+
+def _user_from_row(row: Any) -> dict[str, Any]:
+    return {
+        "id": row[0],
+        "username": row[1],
+        "password_hash": row[2],
+        "created_at": row[3],
+    }
+
+
+def create_user(username: str, password_hash: str) -> dict[str, Any] | None:
+    """创建用户；用户名已存在返回 None。"""
+    import time as _time
+
+    conn = _connect()
+    user_id = uuid.uuid4().hex
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO users (id, username, password_hash, created_at)"
+                " VALUES (%s, %s, %s, %s)",
+                (user_id, username, password_hash, _time.time()),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        return None
+    return {
+        "id": user_id,
+        "username": username,
+        "password_hash": password_hash,
+        "created_at": _time.time(),
+    }
+
+
+def get_user_by_username(username: str) -> dict[str, Any] | None:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, username, password_hash, created_at FROM users WHERE username = %s",
+            (username,),
+        )
+        row = cur.fetchone()
+    return _user_from_row(row) if row else None
+
+
+def get_user_by_id(user_id: str) -> dict[str, Any] | None:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, username, password_hash, created_at FROM users WHERE id = %s",
+            (user_id,),
+        )
+        row = cur.fetchone()
+    return _user_from_row(row) if row else None
+
+
+def list_users() -> list[dict[str, Any]]:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, username, password_hash, created_at FROM users ORDER BY created_at"
+        )
+        rows = cur.fetchall()
+    return [_user_from_row(r) for r in rows]

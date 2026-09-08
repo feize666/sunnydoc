@@ -11,4 +11,7 @@ export interface TreeNode {
   name: string;
   key?: string;
   children?: TreeNode[];
+  createdAt?: number;
 }
+
+export type SortBy = "numeric" | "name" | "created";

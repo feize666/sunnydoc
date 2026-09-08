@@ -1,36 +1,29 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# sunnydoc 前端（web）
 
-## Getting Started
+sunnydoc 知库的前端，Next.js 16 + React 19 + TypeScript + Tailwind CSS 4。
 
-First, run the development server:
+## 开发
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev     # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 构建
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# 生产构建（API 走相对路径 /api/v1，由 nginx 反代到后端）
+NEXT_PUBLIC_API_BASE= npm run build
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# 本地联调后端时指定地址
+NEXT_PUBLIC_API_BASE=http://localhost:8000/api/v1 npm run build
+```
 
-## Learn More
+`web/.env.local` 中的 `NEXT_PUBLIC_API_BASE` 仅用于本地开发，生产构建务必置空，否则会把 `localhost` 地址打进产物。
 
-To learn more about Next.js, take a look at the following resources:
+## 目录
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `src/app/` — 页面、布局、全局样式
+- `src/components/` — UI 组件（侧栏 / 文件树 / 编辑器 / AI 面板 / 登录等）
+- `src/lib/` — 工具（API 客户端、markdown 渲染、文件树构建）
+- `src/data/` — 类型定义
