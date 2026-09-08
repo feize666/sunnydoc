@@ -33,15 +33,61 @@ const PURIFY_CONFIG: Config = {
     "input",
     "base",
   ],
+  // 搜索命中高亮用 <mark>，加入白名单
+  ADD_TAGS: ["mark"],
 };
 
-export function renderMarkdown(src: string): string {
-  // 无 DOM 环境（如 SSR 预渲染）时退回禁用内联 HTML 的安全渲染。
-  if (typeof window === "undefined" || !DOMPurify.isSupported) {
-    return mdSafe.render(src);
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** 对文本做大小写不敏感的关键词高亮，非命中部分转义。 */
+function highlightText(content: string, keyword: string): string {
+  if (!keyword) return escapeHtml(content);
+  const lower = content.toLowerCase();
+  const kw = keyword.toLowerCase();
+  let out = "";
+  let i = 0;
+  while (i < content.length) {
+    const idx = lower.indexOf(kw, i);
+    if (idx === -1) {
+      out += escapeHtml(content.slice(i));
+      break;
+    }
+    out += escapeHtml(content.slice(i, idx));
+    out += `<mark class="search-hit">${escapeHtml(
+      content.slice(idx, idx + keyword.length),
+    )}</mark>`;
+    i = idx + keyword.length;
   }
-  const dirty = md.render(src);
-  return DOMPurify.sanitize(dirty, PURIFY_CONFIG);
+  return out;
+}
+
+export function renderMarkdown(src: string, highlight?: string): string {
+  const keyword = highlight?.trim();
+  const baseMd =
+    typeof window === "undefined" || !DOMPurify.isSupported ? mdSafe : md;
+
+  if (!keyword) {
+    return baseMd === md
+      ? DOMPurify.sanitize(baseMd.render(src), PURIFY_CONFIG)
+      : baseMd.render(src);
+  }
+
+  // 临时覆盖 text 渲染规则做命中高亮，渲染后还原，避免污染单例
+  const origText = baseMd.renderer.rules.text;
+  baseMd.renderer.rules.text = (tokens, idx) =>
+    highlightText(tokens[idx].content, keyword);
+  const rendered = baseMd.render(src);
+  baseMd.renderer.rules.text = origText;
+
+  return baseMd === md
+    ? DOMPurify.sanitize(rendered, PURIFY_CONFIG)
+    : rendered;
 }
 
 export function countWords(src: string): number {

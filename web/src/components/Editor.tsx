@@ -57,10 +57,12 @@ export function Editor({
   doc,
   loading,
   onSaved,
+  highlight,
 }: {
   doc: Doc | null;
   loading?: boolean;
   onSaved?: (doc: Doc, newTitle: string, newBody: string) => void;
+  highlight?: string;
 }) {
   const [mode, setMode] = useState<Mode>("preview");
   const [draftTitle, setDraftTitle] = useState("");
@@ -381,7 +383,9 @@ export function Editor({
               <div className="mt-4 border-b border-line" />
               <div
                 className="md-body mt-6"
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(doc.body) }}
+                dangerouslySetInnerHTML={{
+                  __html: renderMarkdown(doc.body, highlight),
+                }}
               />
             </>
           ) : (

@@ -27,10 +27,12 @@ import {
   deleteKb,
   listRecent,
   recordRecent,
+  searchDocuments,
   type DocMeta,
   type Folder,
   type Kb,
   type RecentDoc,
+  type SearchResult,
 } from "@/lib/api";
 
 function formatTime(ts: number): string {
@@ -79,6 +81,12 @@ export default function Home() {
   const [editingKb, setEditingKb] = useState<Kb | null>(null);
   const [loadingDoc, setLoadingDoc] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
+
+  // 全文搜索
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [highlight, setHighlight] = useState("");
 
   // 视图路由 + 当前知识库
   const [view, setView] = useState<"home" | "kb">("home");
@@ -167,6 +175,7 @@ export default function Home() {
     async (key: string) => {
       setOpenKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
       setActiveKey(key);
+      setHighlight("");
       if (!docs[key]) {
         setLoadingDoc(true);
         try {
@@ -207,6 +216,36 @@ export default function Home() {
       });
     },
     [activeKey],
+  );
+
+  // 全文搜索（防抖 300ms）
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        setSearchResults(await searchDocuments(q, currentKbId));
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, currentKbId]);
+
+  // 点击搜索结果：打开文档并高亮关键词
+  const handleOpenSearchResult = useCallback(
+    (docId: string) => {
+      openDoc(docId);
+      setHighlight(searchQuery.trim());
+    },
+    [openDoc, searchQuery],
   );
 
   // 保存文档：更新本地缓存并刷新列表（让预览与侧栏立即反映新标题/内容）
@@ -411,8 +450,18 @@ export default function Home() {
               listError={listError}
               kbName={currentKb?.name}
               onBackHome={goHome}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchResults={searchResults}
+              searching={searching}
+              onOpenSearchResult={handleOpenSearchResult}
             />
-            <Editor doc={activeDoc} loading={loadingDoc} onSaved={handleSaved} />
+            <Editor
+              doc={activeDoc}
+              loading={loadingDoc}
+              onSaved={handleSaved}
+              highlight={highlight}
+            />
             <AiPanel />
           </div>
 

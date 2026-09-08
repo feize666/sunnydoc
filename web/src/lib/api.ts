@@ -77,6 +77,28 @@ export async function listDocuments(kbId?: string | null): Promise<DocMeta[]> {
   return Array.isArray(data?.documents) ? data.documents : [];
 }
 
+export interface SearchResult {
+  doc_id: string;
+  title: string;
+  snippet: string;
+  match_in_title: boolean;
+  folder_id?: string | null;
+  kb_id?: string | null;
+  source?: string;
+}
+
+export async function searchDocuments(
+  q: string,
+  kbId?: string | null,
+): Promise<SearchResult[]> {
+  const params = new URLSearchParams({ q });
+  if (kbId) params.set("kb_id", kbId);
+  const data = await request<{ total: number; results: SearchResult[] }>(
+    `/search?${params.toString()}`,
+  );
+  return Array.isArray(data?.results) ? data.results : [];
+}
+
 export async function listFolders(kbId?: string | null): Promise<Folder[]> {
   const qs = kbId ? `?kb_id=${encodeURIComponent(kbId)}` : "";
   const data = await request<unknown>(`/folders${qs}`);

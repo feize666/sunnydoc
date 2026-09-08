@@ -93,6 +93,15 @@ def _dedupe_title(store, title: str) -> str:
     return f"{title}({i})"
 
 
+def _make_snippet(text: str, idx: int, qlen: int, radius: int = 60) -> str:
+    """截取命中位置前后各 radius 字符的片段，首尾补省略号、换行压成空格。"""
+    start = max(0, idx - radius)
+    end = min(len(text), idx + qlen + radius)
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if end < len(text) else ""
+    return prefix + text[start:end].replace("\n", " ") + suffix
+
+
 # ---------- 异步导入任务 ----------
 
 def _new_task(task_id: str) -> dict:
@@ -282,6 +291,45 @@ def _run_import_task(task_id: str, tmp_path: str, filename: str, kb_id: str | No
 @router.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@router.get("/search")
+def search_documents(q: str, kb_id: str | None = None, limit: int = 50):
+    """全文搜索：在文档标题/正文中大小写不敏感地匹配关键词，返回带片段的命中列表。
+
+    kb_id 提供时仅在指定知识库内搜索；结果按「标题命中优先 → 标题字典序」排序。
+    """
+    query = q.strip()
+    if not query:
+        return {"query": q, "total": 0, "results": []}
+
+    ql = query.lower()
+    results: list[dict] = []
+    for d in store.all(kb_id):
+        title = d.get("title") or ""
+        text = d.get("text") or ""
+        title_idx = title.lower().find(ql)
+        text_idx = text.lower().find(ql)
+        if title_idx == -1 and text_idx == -1:
+            continue
+        if text_idx >= 0:
+            snippet = _make_snippet(text, text_idx, len(query))
+        else:
+            snippet = text[:120].replace("\n", " ")
+        results.append(
+            {
+                "doc_id": d["id"],
+                "title": title,
+                "snippet": snippet,
+                "match_in_title": title_idx >= 0,
+                "folder_id": d.get("folder_id"),
+                "kb_id": d.get("kb_id"),
+                "source": d.get("source"),
+            }
+        )
+
+    results.sort(key=lambda r: (not r["match_in_title"], r["title"].lower()))
+    return {"query": q, "total": len(results), "results": results[:limit]}
 
 
 @router.get("/documents")

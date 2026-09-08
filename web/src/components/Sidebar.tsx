@@ -2,9 +2,38 @@
 
 import { useState, useRef, useEffect } from "react";
 import { FileTree } from "./FileTree";
-import { PlusIcon } from "./icons";
+import { PlusIcon, SearchIcon, CloseIcon } from "./icons";
 import type { TreeNode } from "@/data/docs";
-import type { Folder } from "@/lib/api";
+import type { Folder, SearchResult } from "@/lib/api";
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** 安全地高亮关键词（先转义，再包裹 <mark>） */
+function highlightKw(text: string, kw: string): string {
+  const escaped = escapeHtml(text);
+  if (!kw) return escaped;
+  const kwEsc = escapeHtml(kw);
+  const lower = escaped.toLowerCase();
+  const kwl = kwEsc.toLowerCase();
+  let out = "";
+  let i = 0;
+  while (i < escaped.length) {
+    const idx = lower.indexOf(kwl, i);
+    if (idx === -1) {
+      out += escaped.slice(i);
+      break;
+    }
+    out += escaped.slice(i, idx);
+    out += `<mark class="search-hit">${escaped.slice(idx, idx + kwEsc.length)}</mark>`;
+    i = idx + kwEsc.length;
+  }
+  return out;
+}
 
 export function Sidebar({
   data,
@@ -25,6 +54,11 @@ export function Sidebar({
   listError,
   kbName,
   onBackHome,
+  searchQuery,
+  onSearchChange,
+  searchResults,
+  searching,
+  onOpenSearchResult,
 }: {
   data: TreeNode[];
   activeKey: string | null;
@@ -44,6 +78,11 @@ export function Sidebar({
   listError?: string | null;
   kbName?: string;
   onBackHome?: () => void;
+  searchQuery: string;
+  onSearchChange: (q: string) => void;
+  searchResults: SearchResult[];
+  searching: boolean;
+  onOpenSearchResult: (docId: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -212,29 +251,88 @@ export function Sidebar({
             导出
           </button>
         </div>
+
+        <div className="relative mt-2">
+          <SearchIcon
+            size={14}
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint"
+          />
+          <input
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="搜索文档内容…"
+            className="w-full rounded-lg border border-line bg-background py-1.5 pl-8 pr-7 text-[13px] text-text outline-none placeholder:text-faint focus:border-accent"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => onSearchChange("")}
+              className="absolute right-1.5 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded text-faint hover:bg-hover hover:text-text"
+              title="清除"
+            >
+              <CloseIcon size={12} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-1.5 py-2">
-        {listError && (
-          <div className="mx-1 mb-2 rounded-md border border-red-300 bg-red-50 px-2 py-1.5 text-[11px] text-red-600">
-            {listError}（后端服务未启动？）
+        {searchQuery.trim() !== "" ? (
+          <div className="flex flex-col gap-0.5">
+            <div className="px-2 py-1 text-[11px] text-faint">
+              {searching
+                ? "搜索中…"
+                : `共 ${searchResults.length} 条结果`}
+            </div>
+            {!searching && searchResults.length === 0 && (
+              <div className="px-2 py-6 text-center text-[12px] text-faint">
+                无匹配结果
+              </div>
+            )}
+            {searchResults.map((r) => (
+              <button
+                key={r.doc_id}
+                onClick={() => onOpenSearchResult(r.doc_id)}
+                className="flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-hover"
+              >
+                <span
+                  className="truncate text-[13px] text-text"
+                  dangerouslySetInnerHTML={{
+                    __html: highlightKw(r.title, searchQuery.trim()),
+                  }}
+                />
+                <span
+                  className="line-clamp-2 text-[11px] leading-snug text-faint"
+                  dangerouslySetInnerHTML={{
+                    __html: highlightKw(r.snippet, searchQuery.trim()),
+                  }}
+                />
+              </button>
+            ))}
           </div>
+        ) : (
+          <>
+            {listError && (
+              <div className="mx-1 mb-2 rounded-md border border-red-300 bg-red-50 px-2 py-1.5 text-[11px] text-red-600">
+                {listError}（后端服务未启动？）
+              </div>
+            )}
+            {data.length === 0 && !listError && (
+              <div className="px-2 py-4 text-center text-[12px] text-faint">
+                暂无文档，点击上方「导入」或「新建」
+              </div>
+            )}
+            <FileTree
+              data={data}
+              activeKey={activeKey}
+              onSelect={onSelect}
+              folders={folders}
+              onDeleteDoc={onDeleteDoc}
+              onDeleteFolder={onDeleteFolder}
+              onRenameFolder={onRenameFolder}
+              onMoveDoc={onMoveDoc}
+            />
+          </>
         )}
-        {data.length === 0 && !listError && (
-          <div className="px-2 py-4 text-center text-[12px] text-faint">
-            暂无文档，点击上方「导入」或「新建」
-          </div>
-        )}
-        <FileTree
-          data={data}
-          activeKey={activeKey}
-          onSelect={onSelect}
-          folders={folders}
-          onDeleteDoc={onDeleteDoc}
-          onDeleteFolder={onDeleteFolder}
-          onRenameFolder={onRenameFolder}
-          onMoveDoc={onMoveDoc}
-        />
       </div>
     </aside>
   );
