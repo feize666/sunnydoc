@@ -10,8 +10,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # 加载 api/.env（若存在）
 load_dotenv(BASE_DIR / ".env")
 
-# 文档存储目录
-DATA_DIR = BASE_DIR / "data"
+# 文档存储目录（生产环境通过环境变量 SUNNYDOC_DATA_DIR 指向数据盘，如 /data/sunnydoc）
+DATA_DIR = Path(os.getenv("SUNNYDOC_DATA_DIR", str(BASE_DIR / "data")))
 DOCS_DIR = DATA_DIR / "docs"
 MEDIA_DIR = DATA_DIR / "media"
 
