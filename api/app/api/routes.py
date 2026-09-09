@@ -29,6 +29,36 @@ _import_tasks: dict[str, dict] = {}
 _import_lock = threading.Lock()
 
 
+def _bearer_token(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    parts = authorization.split()
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1]
+    return authorization.strip() or None
+
+
+def get_current_user(authorization: str | None = Header(None)) -> dict:
+    """解析 Bearer token → 校验存在且未禁用 → 返回用户。"""
+    token = _bearer_token(authorization)
+    user_id = auth.resolve_token(token) if token else None
+    if not user_id:
+        raise HTTPException(status_code=401, detail="未登录或登录已过期")
+    user = store.get_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="用户不存在")
+    if user.get("status") != "active":
+        raise HTTPException(status_code=403, detail="账号已被禁用")
+    return user
+
+
+def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
+    """管理员权限校验。"""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return current_user
+
+
 class ChatRequest(BaseModel):
     query: str
     top_k: int = DEFAULT_TOP_K
@@ -806,27 +836,6 @@ def _public_user(user: dict) -> dict:
     }
 
 
-def get_current_user(authorization: str | None = Header(None)) -> dict:
-    """解析 Bearer token → 校验存在且未禁用 → 返回用户。"""
-    token = _bearer_token(authorization)
-    user_id = auth.resolve_token(token) if token else None
-    if not user_id:
-        raise HTTPException(status_code=401, detail="未登录或登录已过期")
-    user = store.get_user_by_id(user_id)
-    if user is None:
-        raise HTTPException(status_code=401, detail="用户不存在")
-    if user.get("status") != "active":
-        raise HTTPException(status_code=403, detail="账号已被禁用")
-    return user
-
-
-def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
-    """管理员权限校验。"""
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="需要管理员权限")
-    return current_user
-
-
 def _validate_credentials(username: str, password: str) -> tuple[str, str]:
     username = (username or "").strip()
     if not username:
@@ -1012,12 +1021,3 @@ def reset_password(
     store.update_user(user_id, password_hash=auth.hash_password(new_password))
     auth.revoke_all_for_user(user_id)
     return {"ok": True}
-
-
-def _bearer_token(authorization: str | None) -> str | None:
-    if not authorization:
-        return None
-    parts = authorization.split()
-    if len(parts) == 2 and parts[0].lower() == "bearer":
-        return parts[1]
-    return authorization.strip() or None
