@@ -217,11 +217,13 @@ export default function Home() {
     }
   }, []);
 
+  // 登录后才加载首页数据（避免未登录时带旧 token 请求 401，导致错误残留）
   useEffect(() => {
+    if (!user) return;
     refreshKbs();
     refreshRecent();
     refreshFavorites();
-  }, [refreshKbs, refreshRecent, refreshFavorites]);
+  }, [user, refreshKbs, refreshRecent, refreshFavorites]);
 
   // 知识库加载完成后，尝试恢复上次打开的知识库
   useEffect(() => {
