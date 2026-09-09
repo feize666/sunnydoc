@@ -4,6 +4,7 @@ export interface Doc {
   path: string;
   updated: string;
   body: string;
+  type?: string;
 }
 
 export interface TreeNode {

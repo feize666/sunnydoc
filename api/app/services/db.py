@@ -89,6 +89,7 @@ def init() -> None:
         cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS type varchar DEFAULT 'doc'")
         # 手动排序（拖拽用）
         cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS sort_order double precision")
+        cur.execute("UPDATE documents SET sort_order = created_at WHERE sort_order IS NULL")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS folders (
@@ -104,6 +105,7 @@ def init() -> None:
         cur.execute("ALTER TABLE folders ADD COLUMN IF NOT EXISTS user_id varchar")
         cur.execute("ALTER TABLE folders ADD COLUMN IF NOT EXISTS deleted_at double precision")
         cur.execute("ALTER TABLE folders ADD COLUMN IF NOT EXISTS sort_order double precision")
+        cur.execute("UPDATE folders SET sort_order = created_at WHERE sort_order IS NULL")
         # vector 不固定维度，维度由实际 embedding 决定
         cur.execute(
             """

@@ -8,9 +8,22 @@ import { updateDocument } from "@/lib/api";
 import type { Doc } from "@/data/docs";
 import type { RecentDoc } from "@/lib/api";
 import { RichEditor } from "./RichEditor";
+import { TableEditor } from "./TableEditor";
 import { CopyIcon, CheckIcon, EditIcon } from "./icons";
 
 type Mode = "preview" | "edit";
+
+function parseTableData(value: string): string[][] {
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed) && parsed.every((r) => Array.isArray(r))) {
+      return parsed as string[][];
+    }
+  } catch {
+    /* fallthrough */
+  }
+  return [];
+}
 
 function ShareIcon({ size = 15 }: { size?: number }) {
   return (
@@ -93,10 +106,10 @@ export function Editor({
     };
   }, [doc?.body, highlight, theme]);
 
-  // 切换文档时重置为预览模式
+  // 切换文档时重置为预览模式（表格文档默认进编辑态）
   useEffect(() => {
-    setMode("preview");
-  }, [doc?.key]);
+    setMode(doc?.type === "table" ? "edit" : "preview");
+  }, [doc?.key, doc?.type]);
 
   // Ctrl/Cmd+S 保存
   useEffect(() => {
@@ -367,12 +380,33 @@ export function Editor({
                 </div>
               )}
               <div className="mt-4 border-b border-line" />
-              <div
-                ref={contentRef}
-                className="md-body mt-6"
-                onClick={handleCodeBlockCopy}
-                dangerouslySetInnerHTML={{ __html: previewHtml }}
-              />
+              {doc.type === "table" ? (
+                <div className="mt-6 overflow-auto">
+                  <table className="border-collapse">
+                    <tbody>
+                      {parseTableData(doc.body).map((row, r) => (
+                        <tr key={r}>
+                          {row.map((cell, c) => (
+                            <td
+                              key={c}
+                              className="border border-line px-3 py-1.5 text-[13px] text-text"
+                            >
+                              {cell}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div
+                  ref={contentRef}
+                  className="md-body mt-6"
+                  onClick={handleCodeBlockCopy}
+                  dangerouslySetInnerHTML={{ __html: previewHtml }}
+                />
+              )}
             </div>
           ) : (
             <div className="mx-auto max-w-[860px] px-10">
@@ -388,11 +422,15 @@ export function Editor({
               </p>
               <div className="mt-4 border-b border-line" />
               <div className="mt-6">
-                <RichEditor
-                  value={draft}
-                  onChange={setDraft}
-                  placeholder="开始输入内容…"
-                />
+                {doc.type === "table" ? (
+                  <TableEditor value={draft} onChange={setDraft} />
+                ) : (
+                  <RichEditor
+                    value={draft}
+                    onChange={setDraft}
+                    placeholder="开始输入内容…"
+                  />
+                )}
               </div>
             </div>
           )}

@@ -75,6 +75,7 @@ class CreateDocumentRequest(BaseModel):
     content: str = ""
     kb_id: str | None = None
     folder_id: str | None = None
+    type: str = "doc"
 
 
 class UpdateDocumentRequest(BaseModel):
@@ -501,6 +502,7 @@ def create_document(req: CreateDocumentRequest, current_user: dict = Depends(get
         folder_id=req.folder_id,
         kb_id=req.kb_id,
         user_id=current_user["id"],
+        type=req.type,
     )
     return {"id": doc["id"], "title": doc["title"], "kb_id": doc.get("kb_id")}
 
@@ -523,6 +525,7 @@ def get_document(doc_id: str, current_user: dict = Depends(get_current_user)):
         "pinned": bool(doc.get("pinned")),
         "tags": doc.get("tags") or [],
         "summary": doc.get("summary"),
+        "type": doc.get("type", "doc"),
     }
 
 

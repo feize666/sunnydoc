@@ -17,6 +17,7 @@ export interface DocMeta {
   tags?: string[];
   summary?: string | null;
   sort_order?: number | null;
+  type?: string;
 }
 
 export interface Kb {
@@ -135,11 +136,12 @@ export async function createDocument(
   content: string,
   kbId?: string | null,
   folderId?: string | null,
+  type?: string,
 ): Promise<{ id: string; title: string }> {
   return request("/documents", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, content, kb_id: kbId ?? undefined, folder_id: folderId ?? null }),
+    body: JSON.stringify({ title, content, kb_id: kbId ?? undefined, folder_id: folderId ?? null, type: type ?? "doc" }),
   });
 }
 

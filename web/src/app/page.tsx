@@ -294,6 +294,7 @@ export default function Home() {
               path: detail.source,
               updated: formatTime(detail.created_at),
               body: detail.text,
+              type: detail.type ?? "doc",
             },
           }));
           void recordRecent(detail.id);
@@ -445,9 +446,10 @@ export default function Home() {
         } else if (type === "table") {
           const doc = await createDocument(
             "未命名表格",
-            "| 列1 | 列2 |\n| --- | --- |\n|  |  |\n",
+            JSON.stringify([["", "", ""], ["", "", ""], ["", "", ""]]),
             currentKbId,
             parentFolderId,
+            "table",
           );
           refreshList();
           openDoc(doc.id);
