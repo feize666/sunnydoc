@@ -22,6 +22,7 @@ import { ShareView } from "@/components/ShareView";
 import { FavoritesPopover } from "@/components/FavoritesPopover";
 import { TrashView } from "@/components/TrashView";
 import { TagsDialog } from "@/components/TagsDialog";
+import { VersionHistoryDialog } from "@/components/VersionHistoryDialog";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import type { NodeType } from "@/components/NewNodeMenu";
 import type { Doc, TreeNode, SortBy } from "@/data/docs";
@@ -131,6 +132,7 @@ export default function Home() {
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
+  const [versionOpen, setVersionOpen] = useState(false);
   const [currentKbId, setCurrentKbId] = useState<string | null>(null);
   const [kbs, setKbs] = useState<Kb[]>([]);
   const [recent, setRecent] = useState<RecentDoc[]>([]);
@@ -830,6 +832,9 @@ export default function Home() {
                   ? () => handleGenerateSummary(activeKey)
                   : undefined
               }
+              onOpenHistory={
+                activeKey ? () => setVersionOpen(true) : undefined
+              }
             />
           </div>
 
@@ -959,6 +964,13 @@ export default function Home() {
         initialTags={activeMeta?.tags ?? []}
         onClose={() => setTagsOpen(false)}
         onSaved={() => refreshList()}
+      />
+
+      <VersionHistoryDialog
+        open={versionOpen}
+        docId={activeKey}
+        onClose={() => setVersionOpen(false)}
+        onRolledBack={refreshList}
       />
 
       <FavoritesPopover

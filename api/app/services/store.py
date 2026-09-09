@@ -402,6 +402,12 @@ class DocStore:
             doc = db.get_document(doc_id)
             if doc is None or (user_id is not None and not self._can_write_doc(doc, user_id)):
                 return None
+            # 内容有变化时，先记录一个历史版本
+            content_changed = (title is not _UNSET and title != doc["title"]) or (
+                text is not _UNSET and text != doc["text"]
+            )
+            if content_changed:
+                db.add_version(doc_id, doc["title"], doc["text"], time.time())
             if title is not _UNSET:
                 doc["title"] = title
             if text is not _UNSET:
@@ -518,6 +524,7 @@ class DocStore:
 
     def list_trash(self, user_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
         """回收站：返回删除的文档/文件夹/知识库。"""
+        self.purge_expired_trash()
         if self._backend == "db":
             return {
                 "documents": db.list_trash_documents(user_id),
@@ -535,6 +542,26 @@ class DocStore:
                 k for k in self._kbs if k.get("deleted_at") and (user_id is None or k.get("user_id") == user_id)
             ],
         }
+
+    def purge_expired_trash(self, days: int = 30) -> None:
+        """惰性清理回收站中超过 days 天的对象。"""
+        before = time.time() - days * 86400
+        if self._backend == "db":
+            db.purge_expired_trash(before)
+            return
+        self._docs = [
+            d for d in self._docs
+            if not (d.get("deleted_at") and d["deleted_at"] < before)
+        ]
+        self._folders = [
+            f for f in self._folders
+            if not (f.get("deleted_at") and f["deleted_at"] < before)
+        ]
+        self._kbs = [
+            k for k in self._kbs
+            if not (k.get("deleted_at") and k["deleted_at"] < before)
+        ]
+        self._save()
 
     def restore(self, kind: str, obj_id: str, user_id: str | None = None) -> bool:
         """恢复回收站中的对象。kind: document/folder/kb。"""
@@ -641,6 +668,33 @@ class DocStore:
             for t in d.get("tags") or []:
                 all_tags.add(t)
         return sorted(all_tags)
+
+    # ---------- 版本历史 ----------
+
+    def list_versions(self, doc_id: str, user_id: str | None = None) -> list[dict[str, Any]]:
+        doc = self.get(doc_id, user_id)
+        if doc is None:
+            return []
+        if self._backend == "db":
+            return db.list_versions(doc_id)
+        return []
+
+    def get_version(self, version_id: str) -> dict[str, Any] | None:
+        if self._backend == "db":
+            return db.get_version(version_id)
+        return None
+
+    def rollback(self, doc_id: str, version_id: str, user_id: str | None = None) -> dict[str, Any] | None:
+        """回滚文档到指定版本（当前内容先存为新版本，再恢复目标版本）。"""
+        version = self.get_version(version_id)
+        if version is None or version["doc_id"] != doc_id:
+            return None
+        return self.update(
+            doc_id,
+            title=version["title"],
+            text=version["text"],
+            user_id=user_id,
+        )
 
     # ---------- 文件夹 ----------
 

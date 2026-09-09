@@ -446,6 +446,21 @@ export async function renameDocument(docId: string, title: string): Promise<void
   });
 }
 
+export interface DocVersion {
+  id: string;
+  title: string;
+  created_at: number;
+}
+
+export async function listDocVersions(docId: string): Promise<DocVersion[]> {
+  const data = await request<{ versions: DocVersion[] }>(`/documents/${docId}/versions`);
+  return Array.isArray(data?.versions) ? data.versions : [];
+}
+
+export async function rollbackDocument(docId: string, versionId: string): Promise<void> {
+  await request(`/documents/${docId}/rollback/${versionId}`, { method: "POST" });
+}
+
 // —— 知识库 ——
 
 export async function listKbs(): Promise<Kb[]> {

@@ -197,6 +197,19 @@ def init() -> None:
             )
             """
         )
+        # 文档版本历史
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS document_versions (
+                id varchar PRIMARY KEY,
+                doc_id varchar,
+                title text,
+                text text,
+                created_at double precision
+            )
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_doc_versions_doc ON document_versions (doc_id)")
     conn.commit()
 
 
@@ -893,6 +906,72 @@ def list_trash_kbs(user_id: str | None = None) -> list[dict[str, Any]]:
             }
             for r in cur.fetchall()
         ]
+
+
+def purge_expired_trash(before_ts: float) -> None:
+    """物理删除回收站中超过 30 天（deleted_at < before_ts）的文档/文件夹/知识库。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM documents WHERE deleted_at IS NOT NULL AND deleted_at < %s",
+            (before_ts,),
+        )
+        cur.execute(
+            "DELETE FROM folders WHERE deleted_at IS NOT NULL AND deleted_at < %s",
+            (before_ts,),
+        )
+        cur.execute(
+            "DELETE FROM knowledge_bases WHERE deleted_at IS NOT NULL AND deleted_at < %s",
+            (before_ts,),
+        )
+    conn.commit()
+
+
+def add_version(doc_id: str, title: str, text: str, created_at: float) -> dict[str, Any]:
+    conn = _connect()
+    version_id = uuid.uuid4().hex
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO document_versions (id, doc_id, title, text, created_at)"
+            " VALUES (%s, %s, %s, %s, %s)",
+            (version_id, doc_id, title, text, created_at),
+        )
+        # 每文档最多保留 50 个版本
+        cur.execute(
+            "DELETE FROM document_versions WHERE doc_id = %s AND id IN ("
+            " SELECT id FROM document_versions WHERE doc_id = %s"
+            " ORDER BY created_at DESC OFFSET 50)",
+            (doc_id, doc_id),
+        )
+    conn.commit()
+    return {"id": version_id, "doc_id": doc_id, "title": title, "created_at": created_at}
+
+
+def list_versions(doc_id: str) -> list[dict[str, Any]]:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, doc_id, title, text, created_at FROM document_versions"
+            " WHERE doc_id = %s ORDER BY created_at DESC",
+            (doc_id,),
+        )
+        return [
+            {"id": r[0], "doc_id": r[1], "title": r[2], "text": r[3], "created_at": r[4]}
+            for r in cur.fetchall()
+        ]
+
+
+def get_version(version_id: str) -> dict[str, Any] | None:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, doc_id, title, text, created_at FROM document_versions WHERE id = %s",
+            (version_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return {"id": row[0], "doc_id": row[1], "title": row[2], "text": row[3], "created_at": row[4]}
 
 
 # ---------- 知识库共享 ----------

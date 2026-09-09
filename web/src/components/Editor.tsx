@@ -64,6 +64,7 @@ export function Editor({
   onTogglePin,
   onEditTags,
   onGenerateSummary,
+  onOpenHistory,
 }: {
   doc: Doc | null;
   loading?: boolean;
@@ -82,6 +83,7 @@ export function Editor({
   onTogglePin?: () => void;
   onEditTags?: () => void;
   onGenerateSummary?: () => void;
+  onOpenHistory?: () => void;
 }) {
   const [mode, setMode] = useState<Mode>("preview");
   const [draftTitle, setDraftTitle] = useState("");
@@ -306,6 +308,20 @@ export function Editor({
                     <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" />
                   </svg>
                   摘要
+                </button>
+              </Tooltip>
+            )}
+            {onOpenHistory && (
+              <Tooltip content="版本历史">
+                <button
+                  onClick={onOpenHistory}
+                  className="flex items-center gap-1.5 rounded-lg border border-line bg-background px-3 py-1.5 text-xs text-text shadow-sm transition-all hover:border-accent/40 hover:text-accent hover:shadow-glow"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+                    <path d="M3 3v5h5" />
+                  </svg>
+                  历史
                 </button>
               </Tooltip>
             )}
