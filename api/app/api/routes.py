@@ -10,7 +10,7 @@ import uuid
 import zipfile
 from urllib.parse import quote
 
-from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -92,9 +92,39 @@ class LoginRequest(BaseModel):
     password: str
 
 
-def _dedupe_title(store, title: str) -> str:
-    """若 title 已存在则自动追加「(2)」「(3)」…后缀，直到不重名"""
-    existing = {d["title"] for d in store.all()}
+class UpdateMeRequest(BaseModel):
+    nickname: str | None = None
+    email: str | None = None
+    avatar: str | None = None
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    nickname: str | None = None
+    email: str | None = None
+    role: str = "user"
+
+
+class UpdateUserRequest(BaseModel):
+    nickname: str | None = None
+    email: str | None = None
+    role: str | None = None
+    status: str | None = None
+
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str
+
+
+def _dedupe_title(store, title: str, user_id: str | None = None) -> str:
+    """若 title 已存在则自动追加「(2)」「(3)」…后缀，直到不重名（按 user 范围去重）"""
+    existing = {d["title"] for d in store.all(user_id=user_id)}
     if title not in existing:
         return title
     i = 2
@@ -181,12 +211,14 @@ def _iter_parse_zip(data: bytes, progress_cb):
     return parsed, media_files
 
 
-def _ensure_folder_path(store, path_parts: list[str], kb_id: str | None = None) -> str | None:
+def _ensure_folder_path(
+    store, path_parts: list[str], kb_id: str | None = None, user_id: str | None = None
+) -> str | None:
     """按目录层级逐级查找/创建文件夹，返回最深层 folder_id；空路径返回 None。
 
     逐级匹配：在现有 list_folders() 中按 parent_id + name 找同名子文件夹，
     找不到才 create_folder（避免 create_folder 无去重导致重复创建）。
-    kb_id 提供时，查找与创建均限定在该知识库内。
+    kb_id / user_id 提供时，查找与创建均限定在该范围内。
     """
     if not path_parts:
         return None
@@ -195,18 +227,26 @@ def _ensure_folder_path(store, path_parts: list[str], kb_id: str | None = None) 
         child = next(
             (
                 f
-                for f in store.list_folders(kb_id)
+                for f in store.list_folders(kb_id, user_id)
                 if f["parent_id"] == parent_id and f["name"] == name
             ),
             None,
         )
         if child is None:
-            child = store.create_folder(name=name, parent_id=parent_id, kb_id=kb_id)
+            child = store.create_folder(
+                name=name, parent_id=parent_id, kb_id=kb_id, user_id=user_id
+            )
         parent_id = child["id"]
     return parent_id
 
 
-def _run_import_task(task_id: str, tmp_path: str, filename: str, kb_id: str | None = None) -> None:
+def _run_import_task(
+    task_id: str,
+    tmp_path: str,
+    filename: str,
+    kb_id: str | None = None,
+    user_id: str | None = None,
+) -> None:
     """后台线程：读临时文件 → 解析 + 提取媒体 → 保存媒体 → 逐文档入库 + 向量化。
 
     进度分配：解析 0-40（按 zip 文件数）、媒体保存 40-50、入库 + 向量化 50-100。
@@ -260,13 +300,13 @@ def _run_import_task(task_id: str, tmp_path: str, filename: str, kb_id: str | No
             # 拆出目录层级与文件名，逐级创建/复用文件夹
             dir_part, _, file_part = name.rpartition("/")
             path_parts = [s for s in dir_part.split("/") if s] if dir_part else []
-            folder_id = _ensure_folder_path(store, path_parts, kb_id)
+            folder_id = _ensure_folder_path(store, path_parts, kb_id, user_id)
             # 用文件名（去扩展名）作为标题
             title = file_part
             title = title.rsplit(".", 1)[0] if "." in title else title
-            title = _dedupe_title(store, title)
+            title = _dedupe_title(store, title, user_id)
             doc = store.add(
-                title=title, text=text, source=filename, ext=p["ext"], folder_id=folder_id, kb_id=kb_id
+                title=title, text=text, source=filename, ext=p["ext"], folder_id=folder_id, kb_id=kb_id, user_id=user_id
             )
             imported.append({"id": doc["id"], "title": doc["title"]})
             progress = 50 + int(50 * i / n) if n else 100
@@ -304,7 +344,12 @@ def health():
 
 
 @router.get("/search")
-def search_documents(q: str, kb_id: str | None = None, limit: int = 50):
+def search_documents(
+    q: str,
+    kb_id: str | None = None,
+    limit: int = 50,
+    current_user: dict = Depends(get_current_user),
+):
     """全文搜索：在文档标题/正文中大小写不敏感地匹配关键词，返回带片段的命中列表。
 
     kb_id 提供时仅在指定知识库内搜索；结果按「标题命中优先 → 标题字典序」排序。
@@ -315,7 +360,7 @@ def search_documents(q: str, kb_id: str | None = None, limit: int = 50):
 
     ql = query.lower()
     results: list[dict] = []
-    for d in store.all(kb_id):
+    for d in store.all(kb_id, current_user["id"]):
         title = d.get("title") or ""
         text = d.get("text") or ""
         title_idx = title.lower().find(ql)
@@ -343,8 +388,10 @@ def search_documents(q: str, kb_id: str | None = None, limit: int = 50):
 
 
 @router.get("/documents")
-def list_documents(kb_id: str | None = None):
-    docs = store.all(kb_id)
+def list_documents(
+    kb_id: str | None = None, current_user: dict = Depends(get_current_user)
+):
+    docs = store.all(kb_id, current_user["id"])
     return {
         "total": len(docs),
         "documents": [
@@ -363,22 +410,27 @@ def list_documents(kb_id: str | None = None):
 
 
 @router.post("/documents")
-def create_document(req: CreateDocumentRequest):
+def create_document(req: CreateDocumentRequest, current_user: dict = Depends(get_current_user)):
     """新建文档（markdown 文本）"""
     title = req.title.strip()
     if not title:
         raise HTTPException(status_code=400, detail="标题不能为空")
 
-    title = _dedupe_title(store, title)
+    title = _dedupe_title(store, title, current_user["id"])
     doc = store.add(
-        title=title, text=req.content, source="手动创建", ext=".md", kb_id=req.kb_id
+        title=title,
+        text=req.content,
+        source="手动创建",
+        ext=".md",
+        kb_id=req.kb_id,
+        user_id=current_user["id"],
     )
     return {"id": doc["id"], "title": doc["title"], "kb_id": doc.get("kb_id")}
 
 
 @router.get("/documents/{doc_id}")
-def get_document(doc_id: str):
-    doc = store.get(doc_id)
+def get_document(doc_id: str, current_user: dict = Depends(get_current_user)):
+    doc = store.get(doc_id, current_user["id"])
     if not doc:
         raise HTTPException(status_code=404, detail="文档不存在")
     return {
@@ -394,7 +446,11 @@ def get_document(doc_id: str):
 
 
 @router.post("/documents/import")
-async def import_documents(file: UploadFile = File(...), kb_id: str | None = Form(None)):
+async def import_documents(
+    file: UploadFile = File(...),
+    kb_id: str | None = Form(None),
+    current_user: dict = Depends(get_current_user),
+):
     """上传文件（支持 md/txt/json/csv/pdf/docx/xlsx/zip），异步解析并入库。
 
     文件先流式写入临时文件（避免整读进内存），随后返回 task_id，
@@ -429,7 +485,9 @@ async def import_documents(file: UploadFile = File(...), kb_id: str | None = For
     task_id = uuid.uuid4().hex
     _set_task(task_id, status="queued")
     thread = threading.Thread(
-        target=_run_import_task, args=(task_id, tmp_path, filename, kb_id), daemon=True
+        target=_run_import_task,
+        args=(task_id, tmp_path, filename, kb_id, current_user["id"]),
+        daemon=True,
     )
     thread.start()
 
@@ -463,14 +521,14 @@ def get_media(filename: str):
 
 
 @router.post("/chat")
-def chat(req: ChatRequest):
+def chat(req: ChatRequest, current_user: dict = Depends(get_current_user)):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="问题不能为空")
-    return qa.answer(req.query, req.top_k, req.history)
+    return qa.answer(req.query, req.top_k, req.history, current_user["id"])
 
 
 @router.post("/chat/stream")
-def chat_stream(req: ChatRequest):
+def chat_stream(req: ChatRequest, current_user: dict = Depends(get_current_user)):
     """流式问答（SSE）：citations → delta/sources → done
     路由：知识库命中→RAG；未命中+联网→联网搜索；未命中+无联网→通用对话
     """
@@ -480,7 +538,7 @@ def chat_stream(req: ChatRequest):
     from app.services.store import search
 
     history = req.history or []
-    hits = search(req.query, req.top_k)
+    hits = search(req.query, req.top_k, current_user["id"])
     citations = [
         {
             "doc_id": h["doc_id"],
@@ -505,7 +563,7 @@ def chat_stream(req: ChatRequest):
                 got = True
                 yield f"data: {json.dumps({'type': 'delta', 'content': piece}, ensure_ascii=False)}\n\n"
             if not got:
-                answer = qa.answer(req.query, req.top_k, history)["answer"]
+                answer = qa.answer(req.query, req.top_k, history, current_user["id"])["answer"]
                 yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
         elif req.enable_web and web_search.available():
             # 未命中 + 联网开 → 联网搜索（流式，含来源）
@@ -514,7 +572,7 @@ def chat_stream(req: ChatRequest):
                 got = True
                 yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
             if not got:
-                answer = qa.answer(req.query, req.top_k, history)["answer"]
+                answer = qa.answer(req.query, req.top_k, history, current_user["id"])["answer"]
                 yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
         else:
             # 未命中 + 无联网/未开 → 通用对话
@@ -524,10 +582,10 @@ def chat_stream(req: ChatRequest):
                     got = True
                     yield f"data: {json.dumps({'type': 'delta', 'content': piece}, ensure_ascii=False)}\n\n"
                 if not got:
-                    answer = qa.answer(req.query, req.top_k, history)["answer"]
+                    answer = qa.answer(req.query, req.top_k, history, current_user["id"])["answer"]
                     yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
             else:
-                answer = qa.answer(req.query, req.top_k, history)["answer"]
+                answer = qa.answer(req.query, req.top_k, history, current_user["id"])["answer"]
                 yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
 
         # 3. 结束标记
@@ -541,7 +599,9 @@ def chat_stream(req: ChatRequest):
 
 
 @router.put("/documents/{doc_id}")
-def update_document(doc_id: str, req: UpdateDocumentRequest):
+def update_document(
+    doc_id: str, req: UpdateDocumentRequest, current_user: dict = Depends(get_current_user)
+):
     """更新文档标题与正文（重新分片 + 向量化），可选移动文件夹/知识库。"""
     title = req.title.strip()
     if not title:
@@ -554,7 +614,7 @@ def update_document(doc_id: str, req: UpdateDocumentRequest):
     if "kb_id" in req.model_fields_set:
         kwargs["kb_id"] = req.kb_id
 
-    doc = store.update(doc_id, **kwargs)
+    doc = store.update(doc_id, user_id=current_user["id"], **kwargs)
     if not doc:
         raise HTTPException(status_code=404, detail="文档不存在")
     return {
@@ -566,8 +626,8 @@ def update_document(doc_id: str, req: UpdateDocumentRequest):
 
 
 @router.delete("/documents/{doc_id}")
-def delete_document(doc_id: str):
-    if store.delete(doc_id):
+def delete_document(doc_id: str, current_user: dict = Depends(get_current_user)):
+    if store.delete(doc_id, current_user["id"]):
         return {"deleted": doc_id}
     raise HTTPException(status_code=404, detail="文档不存在")
 
@@ -575,35 +635,45 @@ def delete_document(doc_id: str):
 # ---------- 文件夹 ----------
 
 @router.get("/folders")
-def list_folders(kb_id: str | None = None):
+def list_folders(
+    kb_id: str | None = None, current_user: dict = Depends(get_current_user)
+):
     """文件夹列表（扁平，含 parent_id，供前端组装树）。"""
-    return {"folders": store.list_folders(kb_id)}
+    return {"folders": store.list_folders(kb_id, current_user["id"])}
 
 
 @router.post("/folders")
-def create_folder(req: CreateFolderRequest):
+def create_folder(
+    req: CreateFolderRequest, current_user: dict = Depends(get_current_user)
+):
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="文件夹名称不能为空")
-    folder = store.create_folder(name=name, parent_id=req.parent_id, kb_id=req.kb_id)
+    folder = store.create_folder(
+        name=name, parent_id=req.parent_id, kb_id=req.kb_id, user_id=current_user["id"]
+    )
     return folder
 
 
 @router.put("/folders/{folder_id}")
-def rename_folder(folder_id: str, req: UpdateFolderRequest):
+def rename_folder(
+    folder_id: str,
+    req: UpdateFolderRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """重命名文件夹。"""
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="文件夹名称不能为空")
-    folder = store.rename_folder(folder_id, name)
+    folder = store.rename_folder(folder_id, name, current_user["id"])
     if not folder:
         raise HTTPException(status_code=404, detail="文件夹不存在")
     return folder
 
 
 @router.delete("/folders/{folder_id}")
-def delete_folder(folder_id: str):
-    if store.delete_folder(folder_id):
+def delete_folder(folder_id: str, current_user: dict = Depends(get_current_user)):
+    if store.delete_folder(folder_id, current_user["id"]):
         return {"deleted": folder_id}
     raise HTTPException(status_code=404, detail="文件夹不存在")
 
@@ -611,9 +681,9 @@ def delete_folder(folder_id: str):
 # ---------- 知识库 ----------
 
 @router.get("/kbs")
-def list_kbs():
+def list_kbs(current_user: dict = Depends(get_current_user)):
     """知识库列表，含各自文档数。"""
-    kbs = store.list_kbs()
+    kbs = store.list_kbs(current_user["id"])
     return {
         "kbs": [
             {
@@ -621,7 +691,7 @@ def list_kbs():
                 "name": k["name"],
                 "description": k.get("description"),
                 "created_at": k["created_at"],
-                "doc_count": store.count_docs(k["id"]),
+                "doc_count": store.count_docs(k["id"], current_user["id"]),
             }
             for k in kbs
         ]
@@ -629,11 +699,11 @@ def list_kbs():
 
 
 @router.post("/kbs")
-def create_kb(req: CreateKBRequest):
+def create_kb(req: CreateKBRequest, current_user: dict = Depends(get_current_user)):
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="名称不能为空")
-    kb = store.create_kb(name=name, description=req.description)
+    kb = store.create_kb(name=name, description=req.description, user_id=current_user["id"])
     return {
         "id": kb["id"],
         "name": kb["name"],
@@ -643,15 +713,17 @@ def create_kb(req: CreateKBRequest):
 
 
 @router.get("/kbs/{kb_id}")
-def get_kb(kb_id: str):
-    kb = store.get_kb(kb_id)
+def get_kb(kb_id: str, current_user: dict = Depends(get_current_user)):
+    kb = store.get_kb(kb_id, current_user["id"])
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
     return kb
 
 
 @router.put("/kbs/{kb_id}")
-def update_kb(kb_id: str, req: UpdateKBRequest):
+def update_kb(
+    kb_id: str, req: UpdateKBRequest, current_user: dict = Depends(get_current_user)
+):
     kwargs: dict = {}
     if "name" in req.model_fields_set:
         name = (req.name or "").strip()
@@ -660,15 +732,15 @@ def update_kb(kb_id: str, req: UpdateKBRequest):
         kwargs["name"] = name
     if "description" in req.model_fields_set:
         kwargs["description"] = req.description
-    kb = store.update_kb(kb_id, **kwargs)
+    kb = store.update_kb(kb_id, user_id=current_user["id"], **kwargs)
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
     return kb
 
 
 @router.delete("/kbs/{kb_id}")
-def delete_kb(kb_id: str):
-    if store.delete_kb(kb_id):
+def delete_kb(kb_id: str, current_user: dict = Depends(get_current_user)):
+    if store.delete_kb(kb_id, current_user["id"]):
         return {"deleted": kb_id}
     raise HTTPException(status_code=404, detail="知识库不存在")
 
@@ -676,24 +748,26 @@ def delete_kb(kb_id: str):
 # ---------- 最近浏览 ----------
 
 @router.post("/recent")
-def record_recent(req: RecordRecentRequest):
-    rec = store.record_recent(req.doc_id)
+def record_recent(
+    req: RecordRecentRequest, current_user: dict = Depends(get_current_user)
+):
+    rec = store.record_recent(req.doc_id, current_user["id"])
     if rec is None:
         raise HTTPException(status_code=404, detail="文档不存在")
     return rec
 
 
 @router.get("/recent")
-def list_recent(limit: int = 20):
-    return {"recent": store.list_recent(limit)}
+def list_recent(limit: int = 20, current_user: dict = Depends(get_current_user)):
+    return {"recent": store.list_recent(limit, current_user["id"])}
 
 
 # ---------- 导出 ----------
 
 @router.post("/export")
-def export_documents(req: ExportRequest):
-    """多格式导出：md/docx/pdf/html/json/zip。doc_ids 为空导出全部。"""
-    docs = store.all()
+def export_documents(req: ExportRequest, current_user: dict = Depends(get_current_user)):
+    """多格式导出：md/docx/pdf/html/json/zip。doc_ids 为空导出当前用户全部。"""
+    docs = store.all(user_id=current_user["id"])
     if req.doc_ids:
         idset = set(req.doc_ids)
         docs = [d for d in docs if d["id"] in idset]
@@ -723,8 +797,34 @@ def _public_user(user: dict) -> dict:
     return {
         "id": user["id"],
         "username": user["username"],
+        "role": user.get("role", "user"),
+        "nickname": user.get("nickname") or user["username"],
+        "email": user.get("email"),
+        "avatar": user.get("avatar"),
+        "status": user.get("status", "active"),
         "created_at": user.get("created_at"),
     }
+
+
+def get_current_user(authorization: str | None = Header(None)) -> dict:
+    """解析 Bearer token → 校验存在且未禁用 → 返回用户。"""
+    token = _bearer_token(authorization)
+    user_id = auth.resolve_token(token) if token else None
+    if not user_id:
+        raise HTTPException(status_code=401, detail="未登录或登录已过期")
+    user = store.get_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="用户不存在")
+    if user.get("status") != "active":
+        raise HTTPException(status_code=403, detail="账号已被禁用")
+    return user
+
+
+def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
+    """管理员权限校验。"""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return current_user
 
 
 def _validate_credentials(username: str, password: str) -> tuple[str, str]:
@@ -738,17 +838,22 @@ def _validate_credentials(username: str, password: str) -> tuple[str, str]:
     return username, password
 
 
+def _validate_new_password(password: str) -> str:
+    if not password or len(password) < 6:
+        raise HTTPException(status_code=400, detail="密码至少 6 位")
+    return password
+
+
 @router.post("/auth/register")
-def register(req: RegisterRequest):
-    """注册新用户，成功后直接返回 token（自动登录）。"""
+def register(req: RegisterRequest, admin: dict = Depends(require_admin)):
+    """创建用户（仅管理员；开放注册已关闭）。"""
     username, password = _validate_credentials(req.username, req.password)
     if store.get_user_by_username(username):
         raise HTTPException(status_code=409, detail="用户名已存在")
     user = store.create_user(username, auth.hash_password(password))
     if user is None:
         raise HTTPException(status_code=409, detail="用户名已存在")
-    token = auth.issue_token(user["id"])
-    return {"token": token, "user": _public_user(user)}
+    return {"user": _public_user(user)}
 
 
 @router.post("/auth/login")
@@ -759,20 +864,45 @@ def login(req: LoginRequest):
     user = store.get_user_by_username(username)
     if user is None or not auth.verify_password(req.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
+    if user.get("status") != "active":
+        raise HTTPException(status_code=403, detail="账号已被禁用")
     token = auth.issue_token(user["id"])
     return {"token": token, "user": _public_user(user)}
 
 
 @router.get("/auth/me")
-def me(authorization: str | None = Header(None)):
-    token = _bearer_token(authorization)
-    user_id = auth.resolve_token(token) if token else None
-    if not user_id:
-        raise HTTPException(status_code=401, detail="未登录或登录已过期")
-    user = store.get_user_by_id(user_id)
-    if user is None:
-        raise HTTPException(status_code=401, detail="用户不存在")
+def me(current_user: dict = Depends(get_current_user)):
+    return {"user": _public_user(current_user)}
+
+
+@router.put("/auth/me")
+def update_me(req: UpdateMeRequest, current_user: dict = Depends(get_current_user)):
+    """更新自己的昵称/邮箱/头像。"""
+    kwargs: dict = {}
+    if "nickname" in req.model_fields_set and req.nickname is not None:
+        kwargs["nickname"] = req.nickname.strip()
+    if "email" in req.model_fields_set:
+        kwargs["email"] = req.email
+    if "avatar" in req.model_fields_set:
+        kwargs["avatar"] = req.avatar
+    user = store.update_user(current_user["id"], **kwargs)
     return {"user": _public_user(user)}
+
+
+@router.post("/auth/me/password")
+def change_password(
+    req: ChangePasswordRequest, current_user: dict = Depends(get_current_user)
+):
+    """修改密码：校验旧密码，吊销旧 token，返回新 token。"""
+    if not auth.verify_password(req.old_password, current_user["password_hash"]):
+        raise HTTPException(status_code=400, detail="旧密码错误")
+    new_password = _validate_new_password(req.new_password)
+    store.update_user(
+        current_user["id"], password_hash=auth.hash_password(new_password)
+    )
+    auth.revoke_all_for_user(current_user["id"])
+    token = auth.issue_token(current_user["id"])
+    return {"ok": True, "token": token}
 
 
 @router.post("/auth/logout")
@@ -780,6 +910,107 @@ def logout(authorization: str | None = Header(None)):
     token = _bearer_token(authorization)
     if token:
         auth.revoke_token(token)
+    return {"ok": True}
+
+
+# ---------- 用户管理（仅管理员） ----------
+
+def _admin_count_excluding(user_id: str | None = None) -> int:
+    """统计除某用户外的「有效管理员」数量（用于保护最后一个 admin）。"""
+    return sum(
+        1
+        for u in store.list_users()
+        if u.get("role") == "admin"
+        and u.get("status") == "active"
+        and u["id"] != user_id
+    )
+
+
+@router.get("/users")
+def list_users(admin: dict = Depends(require_admin)):
+    return {"users": [_public_user(u) for u in store.list_users()]}
+
+
+@router.post("/users")
+def create_user(req: CreateUserRequest, admin: dict = Depends(require_admin)):
+    username, password = _validate_credentials(req.username, req.password)
+    if store.get_user_by_username(username):
+        raise HTTPException(status_code=409, detail="用户名已存在")
+    role = req.role if req.role in ("admin", "user") else "user"
+    user = store.create_user(
+        username,
+        auth.hash_password(password),
+        role=role,
+        nickname=req.nickname,
+        email=req.email,
+    )
+    if user is None:
+        raise HTTPException(status_code=409, detail="用户名已存在")
+    return {"user": _public_user(user)}
+
+
+@router.put("/users/{user_id}")
+def update_user(
+    user_id: str, req: UpdateUserRequest, admin: dict = Depends(require_admin)
+):
+    target = store.get_user_by_id(user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    kwargs: dict = {}
+    if "nickname" in req.model_fields_set and req.nickname is not None:
+        kwargs["nickname"] = req.nickname.strip()
+    if "email" in req.model_fields_set:
+        kwargs["email"] = req.email
+    if "role" in req.model_fields_set and req.role in ("admin", "user"):
+        kwargs["role"] = req.role
+    if "status" in req.model_fields_set and req.status in ("active", "disabled"):
+        kwargs["status"] = req.status
+
+    # 保护最后一个管理员：降级 / 禁用时保证仍有至少一个有效 admin
+    demoting = kwargs.get("role") == "user" and target.get("role") == "admin"
+    disabling = kwargs.get("status") == "disabled" and target.get("status") == "active"
+    if demoting and _admin_count_excluding(user_id) == 0:
+        raise HTTPException(status_code=400, detail="不能降级最后一个管理员")
+    if disabling and target.get("role") == "admin" and _admin_count_excluding(user_id) == 0:
+        raise HTTPException(status_code=400, detail="不能禁用最后一个管理员")
+    if user_id == admin["id"] and kwargs.get("status") == "disabled":
+        raise HTTPException(status_code=400, detail="不能禁用自己的账号")
+
+    user = store.update_user(user_id, **kwargs)
+    if user is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    # 角色/状态变更后强制该用户下线
+    if "role" in kwargs or "status" in kwargs:
+        auth.revoke_all_for_user(user_id)
+    return {"user": _public_user(user)}
+
+
+@router.delete("/users/{user_id}")
+def delete_user(user_id: str, admin: dict = Depends(require_admin)):
+    target = store.get_user_by_id(user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    if user_id == admin["id"]:
+        raise HTTPException(status_code=400, detail="不能删除自己的账号")
+    if target.get("role") == "admin" and _admin_count_excluding(user_id) == 0:
+        raise HTTPException(status_code=400, detail="不能删除最后一个管理员")
+    if store.delete_user(user_id):
+        auth.revoke_all_for_user(user_id)
+        return {"deleted": user_id}
+    raise HTTPException(status_code=404, detail="用户不存在")
+
+
+@router.post("/users/{user_id}/reset-password")
+def reset_password(
+    user_id: str, req: ResetPasswordRequest, admin: dict = Depends(require_admin)
+):
+    target = store.get_user_by_id(user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    new_password = _validate_new_password(req.new_password)
+    store.update_user(user_id, password_hash=auth.hash_password(new_password))
+    auth.revoke_all_for_user(user_id)
     return {"ok": True}
 
 

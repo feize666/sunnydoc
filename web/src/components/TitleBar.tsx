@@ -2,6 +2,8 @@
 
 import { CloseIcon } from "./icons";
 import { Tooltip } from "./Tooltip";
+import { UserMenu } from "./UserMenu";
+import type { User } from "@/lib/api";
 
 export function TitleBar({
   openDocs,
@@ -13,7 +15,9 @@ export function TitleBar({
   theme,
   onToggleTheme,
   onBackHome,
-  userName,
+  user,
+  onOpenProfile,
+  onOpenUsers,
   onLogout,
 }: {
   openDocs: { key: string; title: string }[];
@@ -25,7 +29,9 @@ export function TitleBar({
   theme: "light" | "dark";
   onToggleTheme: () => void;
   onBackHome?: () => void;
-  userName?: string;
+  user?: User;
+  onOpenProfile?: () => void;
+  onOpenUsers?: () => void;
   onLogout?: () => void;
 }) {
   return (
@@ -132,22 +138,14 @@ export function TitleBar({
         </button>
       </Tooltip>
 
-      {userName && (
-        <div className="flex items-center gap-1.5 border-l border-line pl-2">
-          <span className="grid h-6 w-6 place-items-center rounded-full bg-accent-soft text-[11px] font-semibold text-accent">
-            {(userName || "知").slice(0, 1)}
-          </span>
-          <span className="max-w-[100px] truncate text-xs text-muted">
-            {userName}
-          </span>
-          <Tooltip content="退出登录">
-            <button
-              onClick={onLogout}
-              className="rounded-md px-2 py-1 text-xs text-faint transition-colors hover:bg-hover hover:text-text"
-            >
-              退出
-            </button>
-          </Tooltip>
+      {user && onLogout && (
+        <div className="border-l border-line pl-1.5">
+          <UserMenu
+            user={user}
+            onOpenProfile={onOpenProfile ?? (() => {})}
+            onOpenUsers={onOpenUsers ?? (() => {})}
+            onLogout={onLogout}
+          />
         </div>
       )}
     </header>

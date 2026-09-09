@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import type { Kb, RecentDoc } from "@/lib/api";
+import type { Kb, RecentDoc, User } from "@/lib/api";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Tooltip } from "./Tooltip";
+import { UserMenu } from "./UserMenu";
 import { PlusIcon, TrashIcon, HistoryIcon, FolderIcon, EditIcon } from "./icons";
 
 function formatTime(ts: number): string {
@@ -31,7 +32,9 @@ export function HomeView({
   onEditKb,
   onDeleteKb,
   onOpenRecent,
-  userName,
+  user,
+  onOpenProfile,
+  onOpenUsers,
   onLogout,
 }: {
   kbs: Kb[];
@@ -46,7 +49,9 @@ export function HomeView({
   onEditKb: (kb: Kb) => void;
   onDeleteKb: (id: string) => void;
   onOpenRecent: (docId: string, kbId: string | null) => void;
-  userName?: string;
+  user?: User;
+  onOpenProfile?: () => void;
+  onOpenUsers?: () => void;
   onLogout?: () => void;
 }) {
   const [pendingDelete, setPendingDelete] = useState<Kb | null>(null);
@@ -121,22 +126,14 @@ export function HomeView({
             </button>
           </Tooltip>
 
-          {userName && (
-            <div className="flex items-center gap-1.5 border-l border-line pl-2">
-              <span className="grid h-7 w-7 place-items-center rounded-full bg-accent-soft text-[12px] font-semibold text-accent">
-                {(userName || "知").slice(0, 1)}
-              </span>
-              <span className="max-w-[100px] truncate text-xs text-muted">
-                {userName}
-              </span>
-              <Tooltip content="退出登录">
-                <button
-                  onClick={onLogout}
-                  className="rounded-md px-2 py-1 text-xs text-faint transition-colors hover:bg-hover hover:text-text"
-                >
-                  退出
-                </button>
-              </Tooltip>
+          {user && onLogout && (
+            <div className="border-l border-line pl-1.5">
+              <UserMenu
+                user={user}
+                onOpenProfile={onOpenProfile ?? (() => {})}
+                onOpenUsers={onOpenUsers ?? (() => {})}
+                onLogout={onLogout}
+              />
             </div>
           )}
         </div>

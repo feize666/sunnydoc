@@ -76,9 +76,10 @@ def init() -> None:
             )
             """
         )
-        # 兼容已有生产数据：为 documents 表补充 folder_id / kb_id 列
+        # 兼容已有生产数据：为 documents 表补充 folder_id / kb_id / user_id 列
         cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS folder_id varchar")
         cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS kb_id varchar")
+        cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS user_id varchar")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS folders (
@@ -89,8 +90,9 @@ def init() -> None:
             )
             """
         )
-        # 兼容已有生产数据：为 folders 表补充 kb_id 列
+        # 兼容已有生产数据：为 folders 表补充 kb_id / user_id 列
         cur.execute("ALTER TABLE folders ADD COLUMN IF NOT EXISTS kb_id varchar")
+        cur.execute("ALTER TABLE folders ADD COLUMN IF NOT EXISTS user_id varchar")
         # vector 不固定维度，维度由实际 embedding 决定
         cur.execute(
             """
@@ -114,6 +116,7 @@ def init() -> None:
             )
             """
         )
+        cur.execute("ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS user_id varchar")
         # 最近浏览（同一 doc_id 只保留最新一条）
         cur.execute(
             """
@@ -125,6 +128,7 @@ def init() -> None:
             )
             """
         )
+        cur.execute("ALTER TABLE recent_views ADD COLUMN IF NOT EXISTS user_id varchar")
         # 用户
         cur.execute(
             """
@@ -136,6 +140,15 @@ def init() -> None:
             )
             """
         )
+        for col, ddl in [
+            ("role", "varchar"),
+            ("nickname", "varchar"),
+            ("email", "varchar"),
+            ("avatar", "varchar"),
+            ("status", "varchar"),
+            ("updated_at", "double precision"),
+        ]:
+            cur.execute(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} {ddl}")
     conn.commit()
 
 
@@ -169,6 +182,7 @@ def _doc_from_row(row: Any) -> dict[str, Any]:
         "created_at": row[5],
         "folder_id": row[6],
         "kb_id": row[7],
+        "user_id": row[8],
     }
 
 
@@ -183,13 +197,16 @@ def _load_chunks(cur: Any, doc_id: str) -> list[dict[str, Any]]:
     ]
 
 
+_DOC_COLS = "id, title, text, source, ext, created_at, folder_id, kb_id, user_id"
+
+
 def add_document(doc: dict[str, Any]) -> dict[str, Any]:
     """写入文档及其 chunks（含向量）。"""
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO documents (id, title, text, source, ext, created_at, folder_id, kb_id)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO documents (id, title, text, source, ext, created_at, folder_id, kb_id, user_id)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 doc["id"],
                 doc["title"],
@@ -199,6 +216,7 @@ def add_document(doc: dict[str, Any]) -> dict[str, Any]:
                 doc["created_at"],
                 doc.get("folder_id"),
                 doc.get("kb_id"),
+                doc.get("user_id"),
             ),
         )
         for i, chunk in enumerate(doc["chunks"]):
@@ -211,24 +229,28 @@ def add_document(doc: dict[str, Any]) -> dict[str, Any]:
     return doc
 
 
-def all_documents(kb_id: str | None = None) -> list[dict[str, Any]]:
+def all_documents(
+    kb_id: str | None = None, user_id: str | None = None
+) -> list[dict[str, Any]]:
     """返回全部文档（含 chunks 与向量），结构与 JSON 存储保持一致。
 
-    kb_id 提供时仅返回该知识库下的文档。
+    kb_id / user_id 提供时按对应维度过滤。
     """
     conn = _connect()
     with conn.cursor() as cur:
-        if kb_id is None:
-            cur.execute(
-                "SELECT id, title, text, source, ext, created_at, folder_id, kb_id"
-                " FROM documents ORDER BY created_at DESC"
-            )
-        else:
-            cur.execute(
-                "SELECT id, title, text, source, ext, created_at, folder_id, kb_id"
-                " FROM documents WHERE kb_id = %s ORDER BY created_at DESC",
-                (kb_id,),
-            )
+        sql = f"SELECT {_DOC_COLS} FROM documents"
+        conds: list[str] = []
+        params: list[Any] = []
+        if kb_id is not None:
+            conds.append("kb_id = %s")
+            params.append(kb_id)
+        if user_id is not None:
+            conds.append("user_id = %s")
+            params.append(user_id)
+        if conds:
+            sql += " WHERE " + " AND ".join(conds)
+        sql += " ORDER BY created_at DESC"
+        cur.execute(sql, params)
         docs = [_doc_from_row(r) for r in cur.fetchall()]
         for doc in docs:
             doc["chunks"] = _load_chunks(cur, doc["id"])
@@ -239,7 +261,7 @@ def get_document(doc_id: str) -> dict[str, Any] | None:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, title, text, source, ext, created_at, folder_id, kb_id FROM documents WHERE id = %s",
+            f"SELECT {_DOC_COLS} FROM documents WHERE id = %s",
             (doc_id,),
         )
         row = cur.fetchone()
@@ -286,36 +308,43 @@ def create_folder(folder: dict[str, Any]) -> dict[str, Any]:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO folders (id, name, parent_id, created_at, kb_id)"
-            " VALUES (%s, %s, %s, %s, %s)",
+            "INSERT INTO folders (id, name, parent_id, created_at, kb_id, user_id)"
+            " VALUES (%s, %s, %s, %s, %s, %s)",
             (
                 folder["id"],
                 folder["name"],
                 folder["parent_id"],
                 folder["created_at"],
                 folder.get("kb_id"),
+                folder.get("user_id"),
             ),
         )
     conn.commit()
     return folder
 
 
-def list_folders(kb_id: str | None = None) -> list[dict[str, Any]]:
+def list_folders(
+    kb_id: str | None = None, user_id: str | None = None
+) -> list[dict[str, Any]]:
     """返回全部文件夹（扁平列表，含 parent_id，供前端组装树）。
 
-    kb_id 提供时仅返回该知识库下的文件夹。
+    kb_id / user_id 提供时按对应维度过滤。
     """
     conn = _connect()
     with conn.cursor() as cur:
-        if kb_id is None:
-            cur.execute(
-                "SELECT id, name, parent_id, created_at, kb_id FROM folders ORDER BY created_at"
-            )
-        else:
-            cur.execute(
-                "SELECT id, name, parent_id, created_at, kb_id FROM folders WHERE kb_id = %s ORDER BY created_at",
-                (kb_id,),
-            )
+        sql = "SELECT id, name, parent_id, created_at, kb_id, user_id FROM folders"
+        conds: list[str] = []
+        params: list[Any] = []
+        if kb_id is not None:
+            conds.append("kb_id = %s")
+            params.append(kb_id)
+        if user_id is not None:
+            conds.append("user_id = %s")
+            params.append(user_id)
+        if conds:
+            sql += " WHERE " + " AND ".join(conds)
+        sql += " ORDER BY created_at"
+        cur.execute(sql, params)
         return [
             {
                 "id": r[0],
@@ -323,6 +352,7 @@ def list_folders(kb_id: str | None = None) -> list[dict[str, Any]]:
                 "parent_id": r[2],
                 "created_at": r[3],
                 "kb_id": r[4],
+                "user_id": r[5],
             }
             for r in cur.fetchall()
         ]
@@ -336,7 +366,7 @@ def rename_folder(folder_id: str, name: str) -> dict[str, Any] | None:
         if cur.rowcount == 0:
             return None
         cur.execute(
-            "SELECT id, name, parent_id, created_at, kb_id FROM folders WHERE id = %s",
+            "SELECT id, name, parent_id, created_at, kb_id, user_id FROM folders WHERE id = %s",
             (folder_id,),
         )
         row = cur.fetchone()
@@ -347,6 +377,7 @@ def rename_folder(folder_id: str, name: str) -> dict[str, Any] | None:
         "parent_id": row[2],
         "created_at": row[3],
         "kb_id": row[4],
+        "user_id": row[5],
     }
 
 
@@ -386,26 +417,33 @@ def create_kb(kb: dict[str, Any]) -> dict[str, Any]:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO knowledge_bases (id, name, description, created_at)"
-            " VALUES (%s, %s, %s, %s)",
-            (kb["id"], kb["name"], kb.get("description"), kb["created_at"]),
+            "INSERT INTO knowledge_bases (id, name, description, created_at, user_id)"
+            " VALUES (%s, %s, %s, %s, %s)",
+            (kb["id"], kb["name"], kb.get("description"), kb["created_at"], kb.get("user_id")),
         )
     conn.commit()
     return kb
 
 
-def list_kbs() -> list[dict[str, Any]]:
+def list_kbs(user_id: str | None = None) -> list[dict[str, Any]]:
     conn = _connect()
     with conn.cursor() as cur:
-        cur.execute(
-            "SELECT id, name, description, created_at FROM knowledge_bases ORDER BY created_at"
-        )
+        if user_id is None:
+            cur.execute(
+                "SELECT id, name, description, created_at, user_id FROM knowledge_bases ORDER BY created_at"
+            )
+        else:
+            cur.execute(
+                "SELECT id, name, description, created_at, user_id FROM knowledge_bases WHERE user_id = %s ORDER BY created_at",
+                (user_id,),
+            )
         return [
             {
                 "id": r[0],
                 "name": r[1],
                 "description": r[2],
                 "created_at": r[3],
+                "user_id": r[4],
             }
             for r in cur.fetchall()
         ]
@@ -415,7 +453,7 @@ def get_kb(kb_id: str) -> dict[str, Any] | None:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, name, description, created_at FROM knowledge_bases WHERE id = %s",
+            "SELECT id, name, description, created_at, user_id FROM knowledge_bases WHERE id = %s",
             (kb_id,),
         )
         row = cur.fetchone()
@@ -426,6 +464,7 @@ def get_kb(kb_id: str) -> dict[str, Any] | None:
             "name": row[1],
             "description": row[2],
             "created_at": row[3],
+            "user_id": row[4],
         }
 
 
@@ -473,36 +512,58 @@ def delete_kb(kb_id: str) -> bool:
 
 # ---------- 最近浏览 ----------
 
-def record_recent(doc_id: str, kb_id: str | None) -> dict[str, Any]:
+def record_recent(doc_id: str, kb_id: str | None, user_id: str | None) -> dict[str, Any]:
     """记录一次浏览：同一 doc_id 只保留最新一条（DELETE + INSERT）。"""
     rec_id = uuid.uuid4().hex
     viewed_at = time.time()
     conn = _connect()
     with conn.cursor() as cur:
-        cur.execute("DELETE FROM recent_views WHERE doc_id = %s", (doc_id,))
         cur.execute(
-            "INSERT INTO recent_views (id, doc_id, kb_id, viewed_at)"
-            " VALUES (%s, %s, %s, %s)",
-            (rec_id, doc_id, kb_id, viewed_at),
+            "DELETE FROM recent_views WHERE doc_id = %s AND user_id IS NOT DISTINCT FROM %s",
+            (doc_id, user_id),
+        )
+        cur.execute(
+            "INSERT INTO recent_views (id, doc_id, kb_id, viewed_at, user_id)"
+            " VALUES (%s, %s, %s, %s, %s)",
+            (rec_id, doc_id, kb_id, viewed_at, user_id),
         )
     conn.commit()
-    return {"id": rec_id, "doc_id": doc_id, "kb_id": kb_id, "viewed_at": viewed_at}
+    return {
+        "id": rec_id,
+        "doc_id": doc_id,
+        "kb_id": kb_id,
+        "viewed_at": viewed_at,
+        "user_id": user_id,
+    }
 
 
-def list_recent(limit: int = 20) -> list[dict[str, Any]]:
+def list_recent(limit: int = 20, user_id: str | None = None) -> list[dict[str, Any]]:
     """按 viewed_at 倒序返回最近浏览（join documents 取 title/source）。"""
     conn = _connect()
     with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT r.doc_id, r.kb_id, r.viewed_at, d.title, d.source
-            FROM recent_views r
-            LEFT JOIN documents d ON d.id = r.doc_id
-            ORDER BY r.viewed_at DESC
-            LIMIT %s
-            """,
-            (limit,),
-        )
+        if user_id is None:
+            cur.execute(
+                """
+                SELECT r.doc_id, r.kb_id, r.viewed_at, d.title, d.source
+                FROM recent_views r
+                LEFT JOIN documents d ON d.id = r.doc_id
+                ORDER BY r.viewed_at DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT r.doc_id, r.kb_id, r.viewed_at, d.title, d.source
+                FROM recent_views r
+                LEFT JOIN documents d ON d.id = r.doc_id
+                WHERE r.user_id = %s
+                ORDER BY r.viewed_at DESC
+                LIMIT %s
+                """,
+                (user_id, limit),
+            )
         return [
             {
                 "doc_id": r[0],
@@ -515,24 +576,39 @@ def list_recent(limit: int = 20) -> list[dict[str, Any]]:
         ]
 
 
-def search_chunks(query_vec: list[float], top_n: int) -> list[dict[str, Any]]:
+def search_chunks(
+    query_vec: list[float], top_n: int, user_id: str | None = None
+) -> list[dict[str, Any]]:
     """用 pgvector 余弦距离（<=>）做 top 候选召回，返回 chunk 级候选。
 
-    返回结构与 JSON 路径的候选一致，便于在 Python 层继续做混合打分。
+    user_id 提供时仅在该用户文档内召回。返回结构与 JSON 路径的候选一致。
     """
     conn = _connect()
     with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT d.id, d.title, d.source, c.segment_index, c.text, c.vector
-            FROM chunks c
-            JOIN documents d ON d.id = c.doc_id
-            WHERE c.vector IS NOT NULL
-            ORDER BY c.vector <=> %s::vector
-            LIMIT %s
-            """,
-            (_vec_to_str(query_vec), top_n),
-        )
+        if user_id is None:
+            cur.execute(
+                """
+                SELECT d.id, d.title, d.source, c.segment_index, c.text, c.vector
+                FROM chunks c
+                JOIN documents d ON d.id = c.doc_id
+                WHERE c.vector IS NOT NULL
+                ORDER BY c.vector <=> %s::vector
+                LIMIT %s
+                """,
+                (_vec_to_str(query_vec), top_n),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT d.id, d.title, d.source, c.segment_index, c.text, c.vector
+                FROM chunks c
+                JOIN documents d ON d.id = c.doc_id
+                WHERE c.vector IS NOT NULL AND d.user_id = %s
+                ORDER BY c.vector <=> %s::vector
+                LIMIT %s
+                """,
+                (user_id, _vec_to_str(query_vec), top_n),
+            )
         rows = cur.fetchall()
     return [
         {
@@ -549,27 +625,55 @@ def search_chunks(query_vec: list[float], top_n: int) -> list[dict[str, Any]]:
 
 # ---------- 用户 ----------
 
+_USER_COLS = "id, username, password_hash, role, nickname, email, avatar, status, created_at, updated_at"
+
+
 def _user_from_row(row: Any) -> dict[str, Any]:
     return {
         "id": row[0],
         "username": row[1],
         "password_hash": row[2],
-        "created_at": row[3],
+        "role": row[3] or "user",
+        "nickname": row[4],
+        "email": row[5],
+        "avatar": row[6],
+        "status": row[7] or "active",
+        "created_at": row[8],
+        "updated_at": row[9],
     }
 
 
-def create_user(username: str, password_hash: str) -> dict[str, Any] | None:
+def create_user(
+    username: str,
+    password_hash: str,
+    role: str = "user",
+    nickname: str | None = None,
+    email: str | None = None,
+    avatar: str | None = None,
+) -> dict[str, Any] | None:
     """创建用户；用户名已存在返回 None。"""
     import time as _time
 
     conn = _connect()
     user_id = uuid.uuid4().hex
+    now = _time.time()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO users (id, username, password_hash, created_at)"
-                " VALUES (%s, %s, %s, %s)",
-                (user_id, username, password_hash, _time.time()),
+                "INSERT INTO users (id, username, password_hash, role, nickname, email, avatar, status, created_at, updated_at)"
+                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    user_id,
+                    username,
+                    password_hash,
+                    role,
+                    nickname or username,
+                    email,
+                    avatar,
+                    "active",
+                    now,
+                    now,
+                ),
             )
         conn.commit()
     except Exception:
@@ -579,7 +683,13 @@ def create_user(username: str, password_hash: str) -> dict[str, Any] | None:
         "id": user_id,
         "username": username,
         "password_hash": password_hash,
-        "created_at": _time.time(),
+        "role": role,
+        "nickname": nickname or username,
+        "email": email,
+        "avatar": avatar,
+        "status": "active",
+        "created_at": now,
+        "updated_at": now,
     }
 
 
@@ -587,7 +697,7 @@ def get_user_by_username(username: str) -> dict[str, Any] | None:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, username, password_hash, created_at FROM users WHERE username = %s",
+            f"SELECT {_USER_COLS} FROM users WHERE username = %s",
             (username,),
         )
         row = cur.fetchone()
@@ -598,7 +708,7 @@ def get_user_by_id(user_id: str) -> dict[str, Any] | None:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, username, password_hash, created_at FROM users WHERE id = %s",
+            f"SELECT {_USER_COLS} FROM users WHERE id = %s",
             (user_id,),
         )
         row = cur.fetchone()
@@ -609,7 +719,64 @@ def list_users() -> list[dict[str, Any]]:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, username, password_hash, created_at FROM users ORDER BY created_at"
+            f"SELECT {_USER_COLS} FROM users ORDER BY created_at"
         )
         rows = cur.fetchall()
     return [_user_from_row(r) for r in rows]
+
+
+def update_user(
+    user_id: str,
+    password_hash: Any = _UNSET,
+    role: Any = _UNSET,
+    nickname: Any = _UNSET,
+    email: Any = _UNSET,
+    avatar: Any = _UNSET,
+    status: Any = _UNSET,
+) -> dict[str, Any] | None:
+    """更新用户字段，_UNSET 表示不修改。不存在返回 None。"""
+    import time as _time
+
+    user = get_user_by_id(user_id)
+    if user is None:
+        return None
+    if password_hash is not _UNSET:
+        user["password_hash"] = password_hash
+    if role is not _UNSET:
+        user["role"] = role
+    if nickname is not _UNSET:
+        user["nickname"] = nickname
+    if email is not _UNSET:
+        user["email"] = email
+    if avatar is not _UNSET:
+        user["avatar"] = avatar
+    if status is not _UNSET:
+        user["status"] = status
+    user["updated_at"] = _time.time()
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE users SET password_hash = %s, role = %s, nickname = %s, email = %s,"
+            " avatar = %s, status = %s, updated_at = %s WHERE id = %s",
+            (
+                user["password_hash"],
+                user["role"],
+                user["nickname"],
+                user["email"],
+                user["avatar"],
+                user["status"],
+                user["updated_at"],
+                user_id,
+            ),
+        )
+    conn.commit()
+    return user
+
+
+def delete_user(user_id: str) -> bool:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        deleted = cur.rowcount > 0
+    conn.commit()
+    return deleted

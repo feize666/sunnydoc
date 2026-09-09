@@ -80,12 +80,25 @@ class DocStore:
                 self._kbs = data.get("kbs", [])
                 self._recent = data.get("recent", [])
                 self._users = data.get("users", [])
-        # 补齐旧数据缺失的 folder_id/kb_id 字段，保证 all() 返回结构一致
+        # 补齐旧数据缺失的字段，保证 all() 返回结构一致
         for d in self._docs:
             d.setdefault("folder_id", None)
             d.setdefault("kb_id", None)
+            d.setdefault("user_id", None)
         for f in self._folders:
             f.setdefault("kb_id", None)
+            f.setdefault("user_id", None)
+        for k in self._kbs:
+            k.setdefault("user_id", None)
+        for r in self._recent:
+            r.setdefault("user_id", None)
+        for u in self._users:
+            u.setdefault("role", "user")
+            u.setdefault("nickname", u.get("username"))
+            u.setdefault("email", None)
+            u.setdefault("avatar", None)
+            u.setdefault("status", "active")
+            u.setdefault("updated_at", u.get("created_at"))
 
     def _save(self) -> None:
         STORE_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -122,6 +135,7 @@ class DocStore:
         ext: str,
         folder_id: str | None = None,
         kb_id: str | None = None,
+        user_id: str | None = None,
     ) -> dict[str, Any]:
         doc = {
             "id": uuid.uuid4().hex,
@@ -132,6 +146,7 @@ class DocStore:
             "created_at": time.time(),
             "folder_id": folder_id,
             "kb_id": kb_id,
+            "user_id": user_id,
             "chunks": self._build_chunks(text),
         }
         if self._backend == "db":
@@ -148,11 +163,12 @@ class DocStore:
         text: Any = _UNSET,
         folder_id: Any = _UNSET,
         kb_id: Any = _UNSET,
+        user_id: str | None = None,
     ) -> dict[str, Any] | None:
         """更新文档字段。title/text 提供时更新并重建分片 + 向量；folder_id/kb_id 提供时移动。找不到返回 None。"""
         if self._backend == "db":
             doc = db.get_document(doc_id)
-            if doc is None:
+            if doc is None or (user_id is not None and doc.get("user_id") != user_id):
                 return None
             if title is not _UNSET:
                 doc["title"] = title
@@ -166,6 +182,8 @@ class DocStore:
             return db.update_document(doc_id, doc)
         for d in self._docs:
             if d["id"] == doc_id:
+                if user_id is not None and d.get("user_id") != user_id:
+                    return None
                 if title is not _UNSET:
                     d["title"] = title
                 if text is not _UNSET:
@@ -190,31 +208,48 @@ class DocStore:
                     item["ext"],
                     item.get("folder_id"),
                     item.get("kb_id"),
+                    item.get("user_id"),
                 )
             )
         return docs
 
-    def all(self, kb_id: str | None = None) -> list[dict[str, Any]]:
-        """返回全部文档；kb_id 提供时仅返回该知识库下的文档。"""
+    def all(self, kb_id: str | None = None, user_id: str | None = None) -> list[dict[str, Any]]:
+        """返回全部文档；kb_id / user_id 提供时按对应维度过滤。"""
         if self._backend == "db":
-            return db.all_documents(kb_id)
-        if kb_id is None:
-            return list(self._docs)
-        return [d for d in self._docs if d.get("kb_id") == kb_id]
+            return db.all_documents(kb_id, user_id)
+        docs = self._docs
+        if kb_id is not None:
+            docs = [d for d in docs if d.get("kb_id") == kb_id]
+        if user_id is not None:
+            docs = [d for d in docs if d.get("user_id") == user_id]
+        return list(docs)
 
-    def get(self, doc_id: str) -> dict[str, Any] | None:
+    def get(self, doc_id: str, user_id: str | None = None) -> dict[str, Any] | None:
         if self._backend == "db":
-            return db.get_document(doc_id)
+            doc = db.get_document(doc_id)
+            if doc is None or (user_id is not None and doc.get("user_id") != user_id):
+                return None
+            return doc
         for d in self._docs:
             if d["id"] == doc_id:
+                if user_id is not None and d.get("user_id") != user_id:
+                    return None
                 return d
         return None
 
-    def delete(self, doc_id: str) -> bool:
+    def delete(self, doc_id: str, user_id: str | None = None) -> bool:
         if self._backend == "db":
+            if user_id is not None:
+                doc = db.get_document(doc_id)
+                if doc is None or doc.get("user_id") != user_id:
+                    return False
             return db.delete_document(doc_id)
         before = len(self._docs)
-        self._docs = [d for d in self._docs if d["id"] != doc_id]
+        self._docs = [
+            d
+            for d in self._docs
+            if not (d["id"] == doc_id and (user_id is None or d.get("user_id") == user_id))
+        ]
         if len(self._docs) != before:
             self._save()
             return True
@@ -222,19 +257,28 @@ class DocStore:
 
     # ---------- 文件夹 ----------
 
-    def list_folders(self, kb_id: str | None = None) -> list[dict[str, Any]]:
+    def list_folders(
+        self, kb_id: str | None = None, user_id: str | None = None
+    ) -> list[dict[str, Any]]:
         """返回全部文件夹（扁平列表，含 parent_id，供前端组装树）。
 
-        kb_id 提供时仅返回该知识库下的文件夹。
+        kb_id / user_id 提供时按对应维度过滤。
         """
         if self._backend == "db":
-            return db.list_folders(kb_id)
-        if kb_id is None:
-            return list(self._folders)
-        return [f for f in self._folders if f.get("kb_id") == kb_id]
+            return db.list_folders(kb_id, user_id)
+        folders = self._folders
+        if kb_id is not None:
+            folders = [f for f in folders if f.get("kb_id") == kb_id]
+        if user_id is not None:
+            folders = [f for f in folders if f.get("user_id") == user_id]
+        return list(folders)
 
     def create_folder(
-        self, name: str, parent_id: str | None = None, kb_id: str | None = None
+        self,
+        name: str,
+        parent_id: str | None = None,
+        kb_id: str | None = None,
+        user_id: str | None = None,
     ) -> dict[str, Any]:
         folder = {
             "id": uuid.uuid4().hex,
@@ -242,6 +286,7 @@ class DocStore:
             "parent_id": parent_id,
             "created_at": time.time(),
             "kb_id": kb_id,
+            "user_id": user_id,
         }
         if self._backend == "db":
             db.create_folder(folder)
@@ -250,21 +295,37 @@ class DocStore:
             self._save()
         return folder
 
-    def rename_folder(self, folder_id: str, name: str) -> dict[str, Any] | None:
+    def rename_folder(
+        self, folder_id: str, name: str, user_id: str | None = None
+    ) -> dict[str, Any] | None:
         """重命名文件夹，不存在返回 None。"""
         if self._backend == "db":
-            return db.rename_folder(folder_id, name)
+            f = db.rename_folder(folder_id, name)
+            if f is None or (user_id is not None and f.get("user_id") != user_id):
+                return None
+            return f
         for f in self._folders:
             if f["id"] == folder_id:
+                if user_id is not None and f.get("user_id") != user_id:
+                    return None
                 f["name"] = name
                 self._save()
                 return dict(f)
         return None
 
-    def delete_folder(self, folder_id: str) -> bool:
+    def delete_folder(self, folder_id: str, user_id: str | None = None) -> bool:
         """删除文件夹：级联删除子文件夹，其下文档 folder_id 置空（移回根目录）。"""
         if self._backend == "db":
+            if user_id is not None:
+                folders = db.list_folders(user_id=user_id)
+                if not any(f["id"] == folder_id for f in folders):
+                    return False
             return db.delete_folder(folder_id)
+        # 校验归属
+        if user_id is not None:
+            target = next((f for f in self._folders if f["id"] == folder_id), None)
+            if target is None or target.get("user_id") != user_id:
+                return False
         # 收集自身 + 所有后代文件夹 id
         ids = [folder_id]
         idx = 0
@@ -288,18 +349,24 @@ class DocStore:
 
     # ---------- 知识库 ----------
 
-    def list_kbs(self) -> list[dict[str, Any]]:
+    def list_kbs(self, user_id: str | None = None) -> list[dict[str, Any]]:
         """返回全部知识库（不含 doc_count，由调用方补齐）。"""
         if self._backend == "db":
-            return db.list_kbs()
-        return [dict(k) for k in self._kbs]
+            return db.list_kbs(user_id)
+        kbs = self._kbs
+        if user_id is not None:
+            kbs = [k for k in kbs if k.get("user_id") == user_id]
+        return [dict(k) for k in kbs]
 
-    def create_kb(self, name: str, description: str | None = None) -> dict[str, Any]:
+    def create_kb(
+        self, name: str, description: str | None = None, user_id: str | None = None
+    ) -> dict[str, Any]:
         kb = {
             "id": uuid.uuid4().hex,
             "name": name,
             "description": description,
             "created_at": time.time(),
+            "user_id": user_id,
         }
         if self._backend == "db":
             db.create_kb(kb)
@@ -308,11 +375,16 @@ class DocStore:
             self._save()
         return kb
 
-    def get_kb(self, kb_id: str) -> dict[str, Any] | None:
+    def get_kb(self, kb_id: str, user_id: str | None = None) -> dict[str, Any] | None:
         if self._backend == "db":
-            return db.get_kb(kb_id)
+            kb = db.get_kb(kb_id)
+            if kb is None or (user_id is not None and kb.get("user_id") != user_id):
+                return None
+            return kb
         for k in self._kbs:
             if k["id"] == kb_id:
+                if user_id is not None and k.get("user_id") != user_id:
+                    return None
                 return dict(k)
         return None
 
@@ -321,12 +393,18 @@ class DocStore:
         kb_id: str,
         name: Any = _UNSET,
         description: Any = _UNSET,
+        user_id: str | None = None,
     ) -> dict[str, Any] | None:
         """更新知识库字段，_UNSET 表示不修改。不存在返回 None。"""
         if self._backend == "db":
+            kb = db.get_kb(kb_id)
+            if kb is None or (user_id is not None and kb.get("user_id") != user_id):
+                return None
             return db.update_kb(kb_id, name, description)
         for k in self._kbs:
             if k["id"] == kb_id:
+                if user_id is not None and k.get("user_id") != user_id:
+                    return None
                 if name is not _UNSET:
                     k["name"] = name
                 if description is not _UNSET:
@@ -335,19 +413,30 @@ class DocStore:
                 return dict(k)
         return None
 
-    def count_docs(self, kb_id: str) -> int:
+    def count_docs(self, kb_id: str, user_id: str | None = None) -> int:
         if self._backend == "db":
             return db.count_docs(kb_id)
-        return sum(1 for d in self._docs if d.get("kb_id") == kb_id)
+        return sum(
+            1
+            for d in self._docs
+            if d.get("kb_id") == kb_id and (user_id is None or d.get("user_id") == user_id)
+        )
 
-    def delete_kb(self, kb_id: str) -> bool:
+    def delete_kb(self, kb_id: str, user_id: str | None = None) -> bool:
         """级联删除知识库：删除其下所有文档、文件夹与最近浏览记录。
 
         媒体文件采用内容寻址去重（可能被其它知识库/文档共享），此处不物理删除。
         """
         if self._backend == "db":
+            if user_id is not None:
+                kb = db.get_kb(kb_id)
+                if kb is None or kb.get("user_id") != user_id:
+                    return False
             return db.delete_kb(kb_id)
-        existed = any(k["id"] == kb_id for k in self._kbs)
+        existed = any(
+            k["id"] == kb_id and (user_id is None or k.get("user_id") == user_id)
+            for k in self._kbs
+        )
         if not existed:
             return False
         self._kbs = [k for k in self._kbs if k["id"] != kb_id]
@@ -359,31 +448,35 @@ class DocStore:
 
     # ---------- 最近浏览 ----------
 
-    def record_recent(self, doc_id: str) -> dict[str, Any] | None:
+    def record_recent(self, doc_id: str, user_id: str | None = None) -> dict[str, Any] | None:
         """记录一次浏览（同 doc_id 去重只保留最新）。文档不存在返回 None。"""
-        doc = self.get(doc_id)
+        doc = self.get(doc_id, user_id)
         if doc is None:
             return None
         kb_id = doc.get("kb_id")
+        uid = doc.get("user_id") if user_id is None else user_id
         if self._backend == "db":
-            return db.record_recent(doc_id, kb_id)
+            return db.record_recent(doc_id, kb_id, uid)
         self._recent = [r for r in self._recent if r.get("doc_id") != doc_id]
         rec = {
             "id": uuid.uuid4().hex,
             "doc_id": doc_id,
             "kb_id": kb_id,
+            "user_id": uid,
             "viewed_at": time.time(),
         }
         self._recent.append(rec)
         self._save()
         return rec
 
-    def list_recent(self, limit: int = 20) -> list[dict[str, Any]]:
+    def list_recent(self, limit: int = 20, user_id: str | None = None) -> list[dict[str, Any]]:
         """按 viewed_at 倒序返回最近浏览，join 文档 title/source。"""
         if self._backend == "db":
-            return db.list_recent(limit)
-        # 按 viewed_at 倒序
-        recs = sorted(self._recent, key=lambda r: r.get("viewed_at", 0), reverse=True)
+            return db.list_recent(limit, user_id)
+        recs = [
+            r for r in self._recent if user_id is None or r.get("user_id") == user_id
+        ]
+        recs = sorted(recs, key=lambda r: r.get("viewed_at", 0), reverse=True)
         out: list[dict[str, Any]] = []
         for r in recs[:limit]:
             doc = next((d for d in self._docs if d["id"] == r["doc_id"]), None)
@@ -401,18 +494,31 @@ class DocStore:
     # ---------- 用户 ----------
 
     def create_user(
-        self, username: str, password_hash: str
+        self,
+        username: str,
+        password_hash: str,
+        role: str = "user",
+        nickname: str | None = None,
+        email: str | None = None,
+        avatar: str | None = None,
     ) -> dict[str, Any] | None:
         """创建用户；用户名已存在返回 None。"""
         if self._backend == "db":
-            return db.create_user(username, password_hash)
+            return db.create_user(username, password_hash, role, nickname, email, avatar)
         if any(u["username"] == username for u in self._users):
             return None
+        now = time.time()
         user = {
             "id": uuid.uuid4().hex,
             "username": username,
             "password_hash": password_hash,
-            "created_at": time.time(),
+            "role": role,
+            "nickname": nickname or username,
+            "email": email,
+            "avatar": avatar,
+            "status": "active",
+            "created_at": now,
+            "updated_at": now,
         }
         self._users.append(user)
         self._save()
@@ -438,6 +544,49 @@ class DocStore:
         if self._backend == "db":
             return db.list_users()
         return [dict(u) for u in self._users]
+
+    def update_user(
+        self,
+        user_id: str,
+        password_hash: Any = _UNSET,
+        role: Any = _UNSET,
+        nickname: Any = _UNSET,
+        email: Any = _UNSET,
+        avatar: Any = _UNSET,
+        status: Any = _UNSET,
+    ) -> dict[str, Any] | None:
+        if self._backend == "db":
+            return db.update_user(
+                user_id, password_hash, role, nickname, email, avatar, status
+            )
+        for u in self._users:
+            if u["id"] == user_id:
+                if password_hash is not _UNSET:
+                    u["password_hash"] = password_hash
+                if role is not _UNSET:
+                    u["role"] = role
+                if nickname is not _UNSET:
+                    u["nickname"] = nickname
+                if email is not _UNSET:
+                    u["email"] = email
+                if avatar is not _UNSET:
+                    u["avatar"] = avatar
+                if status is not _UNSET:
+                    u["status"] = status
+                u["updated_at"] = time.time()
+                self._save()
+                return dict(u)
+        return None
+
+    def delete_user(self, user_id: str) -> bool:
+        if self._backend == "db":
+            return db.delete_user(user_id)
+        before = len(self._users)
+        self._users = [u for u in self._users if u["id"] != user_id]
+        if len(self._users) != before:
+            self._save()
+            return True
+        return False
 
 
 store = DocStore()
@@ -538,8 +687,11 @@ def _score_candidates(
     return results
 
 
-def search(query: str, top_k: int = 5) -> list[dict[str, Any]]:
-    """混合检索：jieba 关键词 + 向量相似度粗召回，再用 rerank 精排（若可用）"""
+def search(query: str, top_k: int = 5, user_id: str | None = None) -> list[dict[str, Any]]:
+    """混合检索：jieba 关键词 + 向量相似度粗召回，再用 rerank 精排（若可用）。
+
+    user_id 提供时仅在该用户文档内检索。
+    """
     keywords = _tokenize(query)
     if not keywords:
         keywords = [query.strip().lower()]
@@ -550,11 +702,11 @@ def search(query: str, top_k: int = 5) -> list[dict[str, Any]]:
     # 候选召回：DB 路径用 pgvector <=> 召回；JSON 路径全量扫描
     if db.available():
         if query_vec is not None:
-            candidates = db.search_chunks(query_vec, max(20, top_k * 4))
+            candidates = db.search_chunks(query_vec, max(20, top_k * 4), user_id)
         else:
-            candidates = _candidates_from_docs(store.all())
+            candidates = _candidates_from_docs(store.all(user_id=user_id))
     else:
-        candidates = _candidates_from_docs(store.all())
+        candidates = _candidates_from_docs(store.all(user_id=user_id))
 
     results = _score_candidates(candidates, keywords, query_vec)
 

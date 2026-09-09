@@ -14,6 +14,8 @@ import { ExportDialog } from "@/components/ExportDialog";
 import { NewKbDialog } from "@/components/NewKbDialog";
 import { HomeView } from "@/components/HomeView";
 import { LoginView } from "@/components/LoginView";
+import { ProfileDialog } from "@/components/ProfileDialog";
+import { UserManagementView } from "@/components/UserManagementView";
 import type { Doc, TreeNode, SortBy } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
 import { buildTree } from "@/lib/buildTree";
@@ -100,7 +102,8 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(true);
 
   // 视图路由 + 当前知识库
-  const [view, setView] = useState<"home" | "kb">("home");
+  const [view, setView] = useState<"home" | "kb" | "users">("home");
+  const [profileOpen, setProfileOpen] = useState(false);
   const [currentKbId, setCurrentKbId] = useState<string | null>(null);
   const [kbs, setKbs] = useState<Kb[]>([]);
   const [recent, setRecent] = useState<RecentDoc[]>([]);
@@ -140,6 +143,14 @@ export default function Home() {
     clearSessionKbId();
     setView("home");
     setCurrentKbId(null);
+    setActiveKey(null);
+    setOpenKeys([]);
+  }, []);
+
+  const handleOpenProfile = useCallback(() => setProfileOpen(true), []);
+
+  const handleOpenUsers = useCallback(() => {
+    setView("users");
     setActiveKey(null);
     setOpenKeys([]);
   }, []);
@@ -482,7 +493,9 @@ export default function Home() {
               setTheme((t) => (t === "light" ? "dark" : "light"))
             }
             onBackHome={goHome}
-            userName={user.username}
+            user={user}
+            onOpenProfile={handleOpenProfile}
+            onOpenUsers={handleOpenUsers}
             onLogout={handleLogout}
           />
 
@@ -526,6 +539,8 @@ export default function Home() {
 
           <StatusBar wordCount={wordCount} openCount={openKeys.length} />
         </>
+      ) : view === "users" ? (
+        <UserManagementView currentUserId={user.id} onBack={goHome} />
       ) : (
         <HomeView
           kbs={kbs}
@@ -542,7 +557,9 @@ export default function Home() {
           onEditKb={handleEditKb}
           onDeleteKb={handleDeleteKb}
           onOpenRecent={openRecent}
-          userName={user.username}
+          user={user}
+          onOpenProfile={handleOpenProfile}
+          onOpenUsers={handleOpenUsers}
           onLogout={handleLogout}
         />
       )}
@@ -599,6 +616,13 @@ export default function Home() {
           setEditingKb(null);
         }}
         kb={editingKb}
+      />
+
+      <ProfileDialog
+        open={profileOpen}
+        user={user}
+        onClose={() => setProfileOpen(false)}
+        onUpdated={(u) => setUser(u)}
       />
     </div>
   );

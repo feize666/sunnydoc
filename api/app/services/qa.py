@@ -11,9 +11,10 @@ def answer(
     query: str,
     top_k: int = 5,
     history: list[dict[str, str]] | None = None,
+    user_id: str | None = None,
 ) -> dict[str, Any]:
     history = history or []
-    hits = search(query, top_k)
+    hits = search(query, top_k, user_id)
     citations = [
         {
             "doc_id": h["doc_id"],

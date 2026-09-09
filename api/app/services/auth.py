@@ -55,3 +55,9 @@ def resolve_token(token: str) -> str | None:
 
 def revoke_token(token: str) -> None:
     _TOKENS.pop(token, None)
+
+
+def revoke_all_for_user(user_id: str) -> None:
+    """吊销某用户的所有 token（禁用/删除/改密/重置密码后调用）。"""
+    for token in [t for t, u in _TOKENS.items() if u == user_id]:
+        _TOKENS.pop(token, None)

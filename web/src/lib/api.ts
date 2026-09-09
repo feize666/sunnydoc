@@ -55,7 +55,11 @@ export interface ChatResponse {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, init);
+  // 自动携带登录态（有 token 时附加 Authorization 头）
+  const headers = new Headers(init?.headers);
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const res = await fetch(`${BASE}${path}`, { ...init, headers });
   if (!res.ok) {
     let detail = `请求失败（${res.status}）`;
     try {
@@ -425,6 +429,11 @@ export async function chatStream(
 export interface User {
   id: string;
   username: string;
+  role: "admin" | "user";
+  nickname?: string;
+  email?: string | null;
+  avatar?: string | null;
+  status?: "active" | "disabled";
   created_at?: number;
 }
 
@@ -486,11 +495,87 @@ export async function getMe(): Promise<User> {
   return data.user;
 }
 
+export async function updateMe(patch: {
+  nickname?: string;
+  email?: string;
+  avatar?: string;
+}): Promise<User> {
+  const data = await request<{ user: User }>("/auth/me", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  return data.user;
+}
+
+export async function changePassword(
+  oldPassword: string,
+  newPassword: string,
+): Promise<{ token: string }> {
+  return request("/auth/me/password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      old_password: oldPassword,
+      new_password: newPassword,
+    }),
+  });
+}
+
 export async function logout(): Promise<void> {
   try {
     await request("/auth/logout", { method: "POST", headers: authHeaders() });
   } catch {
     /* 忽略登出失败 */
   }
+}
+
+// —— 用户管理（仅管理员） ——
+
+export async function listUsers(): Promise<User[]> {
+  const data = await request<{ users: User[] }>("/users");
+  return Array.isArray(data?.users) ? data.users : [];
+}
+
+export async function createUser(payload: {
+  username: string;
+  password: string;
+  nickname?: string;
+  email?: string;
+  role?: "admin" | "user";
+}): Promise<User> {
+  const data = await request<{ user: User }>("/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return data.user;
+}
+
+export async function updateUser(
+  id: string,
+  patch: { nickname?: string; email?: string; role?: "admin" | "user"; status?: "active" | "disabled" },
+): Promise<User> {
+  const data = await request<{ user: User }>(`/users/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  return data.user;
+}
+
+export async function deleteUser(id: string): Promise<void> {
+  await request(`/users/${id}`, { method: "DELETE" });
+}
+
+export async function resetUserPassword(
+  id: string,
+  newPassword: string,
+): Promise<void> {
+  await request(`/users/${id}/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ new_password: newPassword }),
+  });
 }
 
