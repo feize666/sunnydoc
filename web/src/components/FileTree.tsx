@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import type { TreeNode } from "@/data/docs";
 import type { Folder } from "@/lib/api";
 import {
@@ -103,6 +103,7 @@ function FileTreeNode({
   const [menuOpen, setMenuOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [dropPos, setDropPos] = useState<DropPos | null>(null);
+  const dropPosRef = useRef<DropPos | null>(null);
 
   const canDrag = !!onReorder;
   const isFolder = node.type === "folder";
@@ -118,17 +119,21 @@ function FileTreeNode({
     const rect = e.currentTarget.getBoundingClientRect();
     const y = e.clientY - rect.top;
     const h = rect.height;
+    let pos: DropPos;
     if (isFolder && y > h * 0.3 && y < h * 0.7) {
-      setDropPos("inside");
+      pos = "inside";
     } else if (y < h / 2) {
-      setDropPos("before");
+      pos = "before";
     } else {
-      setDropPos("after");
+      pos = "after";
     }
+    dropPosRef.current = pos;
+    setDropPos(pos);
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
     if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    dropPosRef.current = null;
     setDropPos(null);
   };
 
@@ -138,7 +143,8 @@ function FileTreeNode({
     e.stopPropagation();
     const draggedKey = e.dataTransfer.getData("text/plain");
     const draggedKind = (e.dataTransfer.getData("application/x-kind") || "file") as "folder" | "file";
-    const pos = dropPos ?? (isFolder ? "inside" : "after");
+    const pos = dropPosRef.current ?? (isFolder ? "inside" : "after");
+    dropPosRef.current = null;
     setDropPos(null);
     if (!draggedKey || draggedKey === node.key) return;
     onReorder?.(draggedKey, draggedKind, node, pos, siblings);
@@ -388,6 +394,19 @@ export function FileTree({
 
   const canReorder = !!(onMoveDoc && onMoveFolder);
 
+  // 收集某文件夹的所有后代 id（含自身），用于前端拦截循环引用
+  const collectDescendants = (nodes: TreeNode[], key: string): Set<string> => {
+    const found = nodes.find((n) => n.key === key);
+    if (!found) return new Set();
+    const ids = new Set<string>();
+    const walk = (n: TreeNode) => {
+      ids.add(n.key ?? "");
+      for (const c of n.children ?? []) walk(c);
+    };
+    walk(found);
+    return ids;
+  };
+
   const handleReorder = (
     draggedKey: string,
     draggedKind: "folder" | "file",
@@ -415,6 +434,14 @@ export function FileTree({
         sortOrder = prev ? (orderOf(prev) + orderOf(target)) / 2 : orderOf(target) + 1;
       } else {
         sortOrder = next ? (orderOf(target) + orderOf(next)) / 2 : orderOf(target) - 1;
+      }
+    }
+
+    // 前端拦截循环：文件夹不能移到自身或自己的后代
+    if (draggedKind === "folder" && parentId) {
+      const descendants = collectDescendants(data, draggedKey);
+      if (descendants.has(parentId)) {
+        return;
       }
     }
 

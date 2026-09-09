@@ -415,6 +415,7 @@ export default function Home() {
     async (docId: string, folderId: string | null, sortOrder?: number | null) => {
       try {
         await moveDocument(docId, folderId, sortOrder ?? undefined);
+        setSortBy("manual");
         refreshList();
       } catch (e) {
         alert(`移动文档失败：${e instanceof Error ? e.message : "未知错误"}`);
@@ -428,6 +429,7 @@ export default function Home() {
     async (folderId: string, parentId: string | null, sortOrder?: number | null) => {
       try {
         await moveFolder(folderId, parentId, sortOrder ?? undefined);
+        setSortBy("manual");
         refreshList();
       } catch (e) {
         alert(`移动文件夹失败：${e instanceof Error ? e.message : "未知错误"}`);

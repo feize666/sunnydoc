@@ -174,13 +174,15 @@ export function Sidebar({
   }
 
   const sortOptions: { value: SortBy; label: string }[] = [
-    { value: "manual", label: "手动排序" },
     { value: "numeric", label: "按数字" },
     { value: "name", label: "按名称" },
     { value: "created", label: "按创建时间" },
   ];
 
-  const sortLabel = sortOptions.find((o) => o.value === sortBy)?.label ?? "排序";
+  const sortLabel =
+    sortBy === "manual"
+      ? "默认顺序"
+      : sortOptions.find((o) => o.value === sortBy)?.label ?? "排序";
 
   const createItems = [
     {

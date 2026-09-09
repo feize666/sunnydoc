@@ -478,6 +478,8 @@ def list_documents(
                 "pinned": bool(d.get("pinned")),
                 "tags": d.get("tags") or [],
                 "summary": d.get("summary"),
+                "sort_order": d.get("sort_order"),
+                "type": d.get("type", "doc"),
             }
             for d in docs
         ],
