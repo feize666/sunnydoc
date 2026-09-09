@@ -9,6 +9,8 @@ import type { Doc } from "@/data/docs";
 import type { RecentDoc } from "@/lib/api";
 import { RichEditor } from "./RichEditor";
 import { TableEditor } from "./TableEditor";
+import { BoardEditor } from "./BoardEditor";
+import { DatasheetEditor } from "./DatasheetEditor";
 import { CopyIcon, CheckIcon, EditIcon } from "./icons";
 
 type Mode = "preview" | "edit";
@@ -106,9 +108,10 @@ export function Editor({
     };
   }, [doc?.body, highlight, theme]);
 
-  // 切换文档时重置为预览模式（表格文档默认进编辑态）
+  // 切换文档时重置为预览模式（表格/画板/数据表默认进编辑态）
   useEffect(() => {
-    setMode(doc?.type === "table" ? "edit" : "preview");
+    const t = doc?.type ?? "doc";
+    setMode(["table", "board", "datasheet"].includes(t) ? "edit" : "preview");
   }, [doc?.key, doc?.type]);
 
   // Ctrl/Cmd+S 保存
@@ -424,6 +427,10 @@ export function Editor({
               <div className="mt-6">
                 {doc.type === "table" ? (
                   <TableEditor value={draft} onChange={setDraft} />
+                ) : doc.type === "board" ? (
+                  <BoardEditor value={draft} onChange={setDraft} />
+                ) : doc.type === "datasheet" ? (
+                  <DatasheetEditor value={draft} onChange={setDraft} />
                 ) : (
                   <RichEditor
                     value={draft}

@@ -455,6 +455,26 @@ export default function Home() {
           );
           refreshList();
           openDoc(doc.id);
+        } else if (type === "board") {
+          const doc = await createDocument(
+            "未命名画板",
+            JSON.stringify([]),
+            currentKbId,
+            parentFolderId,
+            "board",
+          );
+          refreshList();
+          openDoc(doc.id);
+        } else if (type === "datasheet") {
+          const doc = await createDocument(
+            "未命名数据表",
+            JSON.stringify({ columns: ["字段 1", "字段 2"], rows: [["", ""], ["", ""]] }),
+            currentKbId,
+            parentFolderId,
+            "datasheet",
+          );
+          refreshList();
+          openDoc(doc.id);
         } else {
           const doc = await createDocument("未命名文档", "", currentKbId, parentFolderId);
           refreshList();
