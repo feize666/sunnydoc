@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  type ReactNode,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { renderMarkdown, extractToc, type TocItem } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
@@ -52,21 +59,23 @@ function StarIcon({ size = 15, filled = false }: { size?: number; filled?: boole
 
 function ToolButton({
   title,
+  shortcut,
   onClick,
   children,
 }: {
   title: string;
+  shortcut?: string;
   onClick: () => void;
   children: ReactNode;
 }) {
   return (
-    <Tooltip content={title} className="shrink-0">
+    <Tooltip content={shortcut ? `${title}（${shortcut}）` : title} className="shrink-0">
       <button
         type="button"
         // 阻止按钮抢走 textarea 焦点，保留选区
         onMouseDown={(e) => e.preventDefault()}
         onClick={onClick}
-        className="flex h-7 items-center justify-center rounded-md px-1.5 text-muted transition-colors hover:bg-hover hover:text-text"
+        className="flex h-9 items-center justify-center rounded-md px-2 text-muted transition-colors hover:bg-hover hover:text-text"
       >
         {children}
       </button>
@@ -114,16 +123,23 @@ export function Editor({
     [doc?.body],
   );
 
-  // 异步渲染预览（代码块用 shiki 高亮）；切换文档 / 保存 / 主题变化后重渲染
+  // 渲染预览：预览模式渲染 doc.body，编辑模式实时渲染 draft（120ms 防抖）
   useEffect(() => {
+    const target = mode === "edit" ? draft : doc?.body ?? "";
     let cancelled = false;
-    renderMarkdown(doc?.body ?? "", highlight, theme).then((h) => {
-      if (!cancelled) setPreviewHtml(h);
-    });
+    const timer = setTimeout(
+      () => {
+        renderMarkdown(target, highlight, theme).then((h) => {
+          if (!cancelled) setPreviewHtml(h);
+        });
+      },
+      mode === "edit" ? 120 : 0,
+    );
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [doc?.body, highlight, theme]);
+  }, [mode, draft, doc?.body, highlight, theme]);
 
   // 切换文档时重置为预览模式
   useEffect(() => {
@@ -202,6 +218,52 @@ export function Editor({
     if (!container) return;
     const headings = container.querySelectorAll("h1, h2, h3, h4");
     headings[index]?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  // 编辑态快捷键（主流 markdown 编辑器）
+  const handleEditorKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    const mod = e.metaKey || e.ctrlKey;
+    if (!mod) return;
+    const key = e.key.toLowerCase();
+    const shift = e.shiftKey;
+
+    if (key === "b") {
+      e.preventDefault();
+      applyWrap("**", "**", "加粗文本");
+    } else if (key === "i") {
+      e.preventDefault();
+      applyWrap("*", "*", "斜体文本");
+    } else if (key === "x" && shift) {
+      e.preventDefault();
+      applyWrap("~~", "~~", "删除文本");
+    } else if (key === "`") {
+      e.preventDefault();
+      applyWrap("`", "`", "代码");
+    } else if (key === "k" && shift) {
+      e.preventDefault();
+      insertCodeBlock();
+    } else if (key === "k") {
+      e.preventDefault();
+      insertLink();
+    } else if (key === "1") {
+      e.preventDefault();
+      applyLinePrefix("# ");
+    } else if (key === "2") {
+      e.preventDefault();
+      applyLinePrefix("## ");
+    } else if (key === "3") {
+      e.preventDefault();
+      applyLinePrefix("### ");
+    } else if (key === "&") {
+      e.preventDefault();
+      applyLinePrefix("1. ");
+    } else if (key === "*") {
+      e.preventDefault();
+      applyLinePrefix("- ");
+    } else if (key === ">") {
+      e.preventDefault();
+      applyLinePrefix("> ");
+    }
   };
 
   // —— 选区工具函数 ——
@@ -325,59 +387,59 @@ export function Editor({
 
   const toolbar = (
     <>
-      <ToolButton title="加粗" onClick={() => applyWrap("**", "**", "加粗文本")}>
-        <span className="text-[13px] font-bold leading-none">B</span>
+      <ToolButton title="加粗" shortcut="⌘B" onClick={() => applyWrap("**", "**", "加粗文本")}>
+        <span className="text-[15px] font-bold leading-none">B</span>
       </ToolButton>
-      <ToolButton title="斜体" onClick={() => applyWrap("*", "*", "斜体文本")}>
-        <span className="font-serif text-[13px] italic leading-none">I</span>
+      <ToolButton title="斜体" shortcut="⌘I" onClick={() => applyWrap("*", "*", "斜体文本")}>
+        <span className="font-serif text-[15px] italic leading-none">I</span>
       </ToolButton>
-      <ToolButton title="删除线" onClick={() => applyWrap("~~", "~~", "删除文本")}>
-        <span className="text-[13px] leading-none line-through">S</span>
+      <ToolButton title="删除线" shortcut="⌘⇧X" onClick={() => applyWrap("~~", "~~", "删除文本")}>
+        <span className="text-[15px] leading-none line-through">S</span>
       </ToolButton>
-      <ToolButton title="行内代码" onClick={() => applyWrap("`", "`", "代码")}>
-        <CodeIcon size={14} />
-      </ToolButton>
-
-      <ToolDivider />
-
-      <ToolButton title="一级标题" onClick={() => applyLinePrefix("# ")}>
-        <span className="text-[12px] font-semibold leading-none">H1</span>
-      </ToolButton>
-      <ToolButton title="二级标题" onClick={() => applyLinePrefix("## ")}>
-        <span className="text-[12px] font-semibold leading-none">H2</span>
-      </ToolButton>
-      <ToolButton title="三级标题" onClick={() => applyLinePrefix("### ")}>
-        <span className="text-[12px] font-semibold leading-none">H3</span>
+      <ToolButton title="行内代码" shortcut="⌘`" onClick={() => applyWrap("`", "`", "代码")}>
+        <CodeIcon size={16} />
       </ToolButton>
 
       <ToolDivider />
 
-      <ToolButton title="无序列表" onClick={() => applyLinePrefix("- ")}>
-        <ListUlIcon size={15} />
+      <ToolButton title="一级标题" shortcut="⌘1" onClick={() => applyLinePrefix("# ")}>
+        <span className="text-[14px] font-semibold leading-none">H1</span>
       </ToolButton>
-      <ToolButton title="有序列表" onClick={() => applyLinePrefix("1. ")}>
-        <ListOlIcon size={15} />
+      <ToolButton title="二级标题" shortcut="⌘2" onClick={() => applyLinePrefix("## ")}>
+        <span className="text-[14px] font-semibold leading-none">H2</span>
+      </ToolButton>
+      <ToolButton title="三级标题" shortcut="⌘3" onClick={() => applyLinePrefix("### ")}>
+        <span className="text-[14px] font-semibold leading-none">H3</span>
       </ToolButton>
 
       <ToolDivider />
 
-      <ToolButton title="引用" onClick={() => applyLinePrefix("> ")}>
-        <QuoteIcon size={15} />
+      <ToolButton title="无序列表" shortcut="⌘⇧8" onClick={() => applyLinePrefix("- ")}>
+        <ListUlIcon size={17} />
       </ToolButton>
-      <ToolButton title="代码块" onClick={insertCodeBlock}>
-        <CodeBlockIcon size={15} />
+      <ToolButton title="有序列表" shortcut="⌘⇧7" onClick={() => applyLinePrefix("1. ")}>
+        <ListOlIcon size={17} />
+      </ToolButton>
+
+      <ToolDivider />
+
+      <ToolButton title="引用" shortcut="⌘⇧." onClick={() => applyLinePrefix("> ")}>
+        <QuoteIcon size={17} />
+      </ToolButton>
+      <ToolButton title="代码块" shortcut="⌘⇧K" onClick={insertCodeBlock}>
+        <CodeBlockIcon size={17} />
       </ToolButton>
       <ToolButton title="分割线" onClick={insertHr}>
-        <MinusIcon size={15} />
+        <MinusIcon size={17} />
       </ToolButton>
 
       <ToolDivider />
 
-      <ToolButton title="链接" onClick={insertLink}>
-        <LinkIcon size={15} />
+      <ToolButton title="链接" shortcut="⌘K" onClick={insertLink}>
+        <LinkIcon size={17} />
       </ToolButton>
       <ToolButton title="图片" onClick={insertImage}>
-        <ImageIcon size={15} />
+        <ImageIcon size={17} />
       </ToolButton>
 
       <ToolDivider />
@@ -389,7 +451,7 @@ export function Editor({
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => applyColor(c.value)}
-              className="h-4 w-4 rounded-full border border-black/10 transition-transform hover:scale-125"
+              className="h-5 w-5 rounded-full border border-black/10 transition-transform hover:scale-125"
               style={{ backgroundColor: c.value }}
             />
           </Tooltip>
@@ -497,12 +559,24 @@ export function Editor({
 
         {/* 正文 */}
         <div className="flex-1 overflow-y-auto py-8">
-          <div className="mx-auto max-w-[760px] px-10">
-            {mode === "preview" ? (
+          {mode === "preview" ? (
+            <div className="mx-auto max-w-[760px] px-10">
               <h1 className="text-[32px] font-bold leading-[1.25] tracking-[-0.01em] text-text">
                 {doc.title}
               </h1>
-            ) : (
+              <p className="mt-3 text-[13px] text-faint">
+                {doc.path} · 更新于 {doc.updated}
+              </p>
+              <div className="mt-4 border-b border-line" />
+              <div
+                ref={contentRef}
+                className="md-body mt-6"
+                onClick={handleCodeBlockCopy}
+                dangerouslySetInnerHTML={{ __html: previewHtml }}
+              />
+            </div>
+          ) : (
+            <div className="mx-auto max-w-[1200px] px-8">
               <input
                 value={draftTitle}
                 onChange={(e) => setDraftTitle(e.target.value)}
@@ -510,28 +584,27 @@ export function Editor({
                 placeholder="标题"
                 spellCheck={false}
               />
-            )}
-            <p className="mt-3 text-[13px] text-faint">
-              {doc.path} · 更新于 {doc.updated}
-            </p>
-            <div className="mt-4 border-b border-line" />
-            {mode === "preview" ? (
-              <div
-                ref={contentRef}
-                className="md-body mt-6"
-                onClick={handleCodeBlockCopy}
-                dangerouslySetInnerHTML={{ __html: previewHtml }}
-              />
-            ) : (
-              <textarea
-                ref={textareaRef}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                className="mt-6 h-[calc(100vh-300px)] w-full resize-none bg-transparent font-mono text-[14px] leading-relaxed text-text outline-none"
-                spellCheck={false}
-              />
-            )}
-          </div>
+              <p className="mt-3 text-[13px] text-faint">
+                {doc.path} · 更新于 {doc.updated}
+              </p>
+              <div className="mt-4 border-b border-line" />
+              <div className="mt-6 flex gap-6">
+                <textarea
+                  ref={textareaRef}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={handleEditorKeyDown}
+                  className="min-h-[calc(100vh-300px)] flex-1 resize-none rounded-lg border border-line bg-background p-4 font-mono text-[14px] leading-relaxed text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+                  spellCheck={false}
+                />
+                <div
+                  className="md-body min-h-[calc(100vh-300px)] flex-1 overflow-y-auto rounded-lg border border-line bg-background p-4"
+                  onClick={handleCodeBlockCopy}
+                  dangerouslySetInnerHTML={{ __html: previewHtml }}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
