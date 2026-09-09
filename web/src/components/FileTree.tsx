@@ -204,19 +204,18 @@ function FileTreeNode({
     }
 
     return (
-      <div
-        draggable={canDrag}
-        onDragStart={(e) => {
-          if (!node.key) return;
-          e.dataTransfer.setData("text/plain", node.key);
-          e.dataTransfer.setData("application/x-kind", "folder");
-          e.dataTransfer.effectAllowed = "move";
-        }}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
+      <div>
         <div
+          draggable={canDrag}
+          onDragStart={(e) => {
+            if (!node.key) return;
+            e.dataTransfer.setData("text/plain", node.key);
+            e.dataTransfer.setData("application/x-kind", "folder");
+            e.dataTransfer.effectAllowed = "move";
+          }}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
           className={`group relative flex w-full items-center gap-1 rounded-md py-1 text-left text-[15px] transition-colors ${
             dropPos === "inside" ? "bg-accent-soft ring-1 ring-inset ring-accent" : "text-text hover:bg-hover"
           } ${dropClass}`}
