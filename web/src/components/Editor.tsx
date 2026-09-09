@@ -62,12 +62,14 @@ export function Editor({
   onSaved,
   highlight,
   theme,
+  readOnly,
 }: {
   doc: Doc | null;
   loading?: boolean;
   onSaved?: (doc: Doc, newTitle: string, newBody: string) => void;
   highlight?: string;
   theme: "light" | "dark";
+  readOnly?: boolean;
 }) {
   const [mode, setMode] = useState<Mode>("preview");
   const [draftTitle, setDraftTitle] = useState("");
@@ -357,12 +359,22 @@ export function Editor({
             预览
           </span>
           <div className="flex-1" />
-          <button
-            onClick={() => handleSwitch("edit")}
-            className="btn-accent rounded-md px-3.5 py-1.5 text-xs font-medium text-white"
-          >
-            编辑
-          </button>
+          {readOnly ? (
+            <span className="flex items-center gap-1 text-xs text-faint">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              只读
+            </span>
+          ) : (
+            <button
+              onClick={() => handleSwitch("edit")}
+              className="btn-accent rounded-md px-3.5 py-1.5 text-xs font-medium text-white"
+            >
+              编辑
+            </button>
+          )}
         </div>
       ) : (
         <div className="flex items-center gap-2 border-b border-line bg-surface px-3 py-1.5">

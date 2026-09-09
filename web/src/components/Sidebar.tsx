@@ -62,6 +62,7 @@ export function Sidebar({
   onOpenSearchResult,
   sortBy,
   onSortChange,
+  readOnly,
 }: {
   data: TreeNode[];
   activeKey: string | null;
@@ -88,6 +89,7 @@ export function Sidebar({
   onOpenSearchResult: (docId: string) => void;
   sortBy: SortBy;
   onSortChange: (s: SortBy) => void;
+  readOnly?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -110,7 +112,51 @@ export function Sidebar({
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
-  if (collapsed) return null;
+  // 折叠态：渲染窄竖条，点击展开
+  if (collapsed) {
+    return (
+      <aside className="flex w-10 shrink-0 flex-col items-center border-r border-line bg-surface">
+        <Tooltip content="展开侧栏">
+          <button
+            onClick={onToggleCollapse}
+            className="mt-3 grid h-7 w-7 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+          </button>
+        </Tooltip>
+        <Tooltip content="展开侧栏">
+          <button
+            onClick={onToggleCollapse}
+            className="mt-3 grid h-7 w-7 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M2 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H2zM14 7h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-6z" />
+            </svg>
+          </button>
+        </Tooltip>
+      </aside>
+    );
+  }
 
   const sortOptions: { value: SortBy; label: string }[] = [
     { value: "numeric", label: "按数字" },
@@ -186,6 +232,15 @@ export function Sidebar({
           )}
         </div>
 
+        {readOnly ? (
+          <div className="flex items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1.5 text-[12px] text-faint">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            只读模式
+          </div>
+        ) : (
         <div className="flex gap-1.5">
           <div className="relative flex-1" ref={menuRef}>
             <button
@@ -276,6 +331,7 @@ export function Sidebar({
             </button>
           </Tooltip>
         </div>
+        )}
 
         <div className="mt-2 flex items-center gap-1.5">
           <div className="relative flex-1">
@@ -402,10 +458,10 @@ export function Sidebar({
               activeKey={activeKey}
               onSelect={onSelect}
               folders={folders}
-              onDeleteDoc={onDeleteDoc}
-              onDeleteFolder={onDeleteFolder}
-              onRenameFolder={onRenameFolder}
-              onMoveDoc={onMoveDoc}
+              onDeleteDoc={readOnly ? undefined : onDeleteDoc}
+              onDeleteFolder={readOnly ? undefined : onDeleteFolder}
+              onRenameFolder={readOnly ? undefined : onRenameFolder}
+              onMoveDoc={readOnly ? undefined : onMoveDoc}
             />
           </>
         )}

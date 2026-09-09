@@ -149,6 +149,18 @@ def init() -> None:
             ("updated_at", "double precision"),
         ]:
             cur.execute(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} {ddl}")
+        # 知识库共享（kb_id + user_id + permission: read/write）
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS kb_shares (
+                id varchar PRIMARY KEY,
+                kb_id varchar,
+                user_id varchar,
+                permission varchar,
+                created_at double precision
+            )
+            """
+        )
     conn.commit()
 
 
@@ -257,6 +269,32 @@ def all_documents(
     return docs
 
 
+def all_documents_for_user(
+    user_id: str, kb_ids: set[str] | None
+) -> list[dict[str, Any]]:
+    """返回用户可见的文档：可访问知识库（kb_id 集合）下的所有文档 + 其自有且未归属 kb 的文档。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        if kb_ids:
+            placeholders = ",".join(["%s"] * len(kb_ids))
+            sql = (
+                f"SELECT {_DOC_COLS} FROM documents WHERE kb_id IN ({placeholders})"
+                " OR (user_id = %s AND kb_id IS NULL) ORDER BY created_at DESC"
+            )
+            params = list(kb_ids) + [user_id]
+        else:
+            sql = (
+                f"SELECT {_DOC_COLS} FROM documents"
+                " WHERE user_id = %s AND kb_id IS NULL ORDER BY created_at DESC"
+            )
+            params = [user_id]
+        cur.execute(sql, params)
+        docs = [_doc_from_row(r) for r in cur.fetchall()]
+        for doc in docs:
+            doc["chunks"] = _load_chunks(cur, doc["id"])
+    return docs
+
+
 def get_document(doc_id: str) -> dict[str, Any] | None:
     conn = _connect()
     with conn.cursor() as cur:
@@ -344,6 +382,40 @@ def list_folders(
         if conds:
             sql += " WHERE " + " AND ".join(conds)
         sql += " ORDER BY created_at"
+        cur.execute(sql, params)
+        return [
+            {
+                "id": r[0],
+                "name": r[1],
+                "parent_id": r[2],
+                "created_at": r[3],
+                "kb_id": r[4],
+                "user_id": r[5],
+            }
+            for r in cur.fetchall()
+        ]
+
+
+def list_folders_for_user(
+    user_id: str, kb_ids: set[str] | None
+) -> list[dict[str, Any]]:
+    """返回用户可见的文件夹：可访问知识库下的所有文件夹 + 其自有且未归属 kb 的文件夹。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        if kb_ids:
+            placeholders = ",".join(["%s"] * len(kb_ids))
+            sql = (
+                "SELECT id, name, parent_id, created_at, kb_id, user_id FROM folders"
+                f" WHERE kb_id IN ({placeholders}) OR (user_id = %s AND kb_id IS NULL)"
+                " ORDER BY created_at"
+            )
+            params = list(kb_ids) + [user_id]
+        else:
+            sql = (
+                "SELECT id, name, parent_id, created_at, kb_id, user_id FROM folders"
+                " WHERE user_id = %s AND kb_id IS NULL ORDER BY created_at"
+            )
+            params = [user_id]
         cur.execute(sql, params)
         return [
             {
@@ -498,16 +570,97 @@ def count_docs(kb_id: str) -> int:
 
 
 def delete_kb(kb_id: str) -> bool:
-    """级联删除知识库：删除其下文档（chunks 随外键级联）、文件夹与最近浏览记录。"""
+    """级联删除知识库：删除其下文档（chunks 随外键级联）、文件夹、共享与最近浏览记录。"""
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute("DELETE FROM documents WHERE kb_id = %s", (kb_id,))
         cur.execute("DELETE FROM folders WHERE kb_id = %s", (kb_id,))
         cur.execute("DELETE FROM recent_views WHERE kb_id = %s", (kb_id,))
+        cur.execute("DELETE FROM kb_shares WHERE kb_id = %s", (kb_id,))
         cur.execute("DELETE FROM knowledge_bases WHERE id = %s", (kb_id,))
         deleted = cur.rowcount > 0
     conn.commit()
     return deleted
+
+
+# ---------- 知识库共享 ----------
+
+def add_share(kb_id: str, user_id: str, permission: str) -> dict[str, Any]:
+    """新增/更新共享（upsert）。permission: read/write。"""
+    share_id = uuid.uuid4().hex
+    created_at = time.time()
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM kb_shares WHERE kb_id = %s AND user_id = %s",
+            (kb_id, user_id),
+        )
+        cur.execute(
+            "INSERT INTO kb_shares (id, kb_id, user_id, permission, created_at)"
+            " VALUES (%s, %s, %s, %s, %s)",
+            (share_id, kb_id, user_id, permission, created_at),
+        )
+    conn.commit()
+    return {
+        "id": share_id,
+        "kb_id": kb_id,
+        "user_id": user_id,
+        "permission": permission,
+        "created_at": created_at,
+    }
+
+
+def remove_share(kb_id: str, user_id: str) -> bool:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM kb_shares WHERE kb_id = %s AND user_id = %s",
+            (kb_id, user_id),
+        )
+        deleted = cur.rowcount > 0
+    conn.commit()
+    return deleted
+
+
+def list_shares(kb_id: str) -> list[dict[str, Any]]:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT kb_id, user_id, permission, created_at FROM kb_shares WHERE kb_id = %s ORDER BY created_at",
+            (kb_id,),
+        )
+        return [
+            {
+                "kb_id": r[0],
+                "user_id": r[1],
+                "permission": r[2],
+                "created_at": r[3],
+            }
+            for r in cur.fetchall()
+        ]
+
+
+def get_share_permission(kb_id: str, user_id: str) -> str | None:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT permission FROM kb_shares WHERE kb_id = %s AND user_id = %s",
+            (kb_id, user_id),
+        )
+        row = cur.fetchone()
+    return row[0] if row else None
+
+
+def list_shared_kbs(user_id: str) -> list[dict[str, Any]]:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT kb_id, permission FROM kb_shares WHERE user_id = %s",
+            (user_id,),
+        )
+        return [
+            {"kb_id": r[0], "permission": r[1]} for r in cur.fetchall()
+        ]
 
 
 # ---------- 最近浏览 ----------
@@ -577,38 +730,51 @@ def list_recent(limit: int = 20, user_id: str | None = None) -> list[dict[str, A
 
 
 def search_chunks(
-    query_vec: list[float], top_n: int, user_id: str | None = None
+    query_vec: list[float],
+    top_n: int,
+    user_id: str | None = None,
+    kb_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """用 pgvector 余弦距离（<=>）做 top 候选召回，返回 chunk 级候选。
 
-    user_id 提供时仅在该用户文档内召回。返回结构与 JSON 路径的候选一致。
+    kb_ids 提供时按「知识库可见性」召回（该 kb 集合内的所有文档 + 用户自有未归属 kb 的文档）；
+    否则 user_id 提供时按文档属主召回。返回结构与 JSON 路径的候选一致。
     """
     conn = _connect()
     with conn.cursor() as cur:
-        if user_id is None:
-            cur.execute(
-                """
-                SELECT d.id, d.title, d.source, c.segment_index, c.text, c.vector
-                FROM chunks c
-                JOIN documents d ON d.id = c.doc_id
-                WHERE c.vector IS NOT NULL
-                ORDER BY c.vector <=> %s::vector
-                LIMIT %s
-                """,
-                (_vec_to_str(query_vec), top_n),
+        if kb_ids is not None:
+            placeholders = ",".join(["%s"] * len(kb_ids))
+            sql = (
+                "SELECT d.id, d.title, d.source, c.segment_index, c.text, c.vector"
+                " FROM chunks c"
+                " JOIN documents d ON d.id = c.doc_id"
+                f" WHERE c.vector IS NOT NULL AND (d.kb_id IN ({placeholders})"
+                " OR (d.user_id = %s AND d.kb_id IS NULL))"
+                " ORDER BY c.vector <=> %s::vector"
+                " LIMIT %s"
             )
+            params = list(kb_ids) + [user_id, _vec_to_str(query_vec), top_n]
+        elif user_id is None:
+            sql = (
+                "SELECT d.id, d.title, d.source, c.segment_index, c.text, c.vector"
+                " FROM chunks c"
+                " JOIN documents d ON d.id = c.doc_id"
+                " WHERE c.vector IS NOT NULL"
+                " ORDER BY c.vector <=> %s::vector"
+                " LIMIT %s"
+            )
+            params = [_vec_to_str(query_vec), top_n]
         else:
-            cur.execute(
-                """
-                SELECT d.id, d.title, d.source, c.segment_index, c.text, c.vector
-                FROM chunks c
-                JOIN documents d ON d.id = c.doc_id
-                WHERE c.vector IS NOT NULL AND d.user_id = %s
-                ORDER BY c.vector <=> %s::vector
-                LIMIT %s
-                """,
-                (user_id, _vec_to_str(query_vec), top_n),
+            sql = (
+                "SELECT d.id, d.title, d.source, c.segment_index, c.text, c.vector"
+                " FROM chunks c"
+                " JOIN documents d ON d.id = c.doc_id"
+                " WHERE c.vector IS NOT NULL AND d.user_id = %s"
+                " ORDER BY c.vector <=> %s::vector"
+                " LIMIT %s"
             )
+            params = [user_id, _vec_to_str(query_vec), top_n]
+        cur.execute(sql, params)
         rows = cur.fetchall()
     return [
         {

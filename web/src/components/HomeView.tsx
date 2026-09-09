@@ -5,7 +5,19 @@ import type { Kb, RecentDoc, User } from "@/lib/api";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Tooltip } from "./Tooltip";
 import { UserMenu } from "./UserMenu";
+import { ThemeToggle } from "./ThemeToggle";
 import { PlusIcon, TrashIcon, HistoryIcon, FolderIcon, EditIcon } from "./icons";
+
+function ShareIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
+    </svg>
+  );
+}
 
 function formatTime(ts: number): string {
   const ms = ts && ts < 1e12 ? ts * 1000 : ts;
@@ -31,6 +43,7 @@ export function HomeView({
   onCreateKb,
   onEditKb,
   onDeleteKb,
+  onShareKb,
   onOpenRecent,
   user,
   onOpenProfile,
@@ -48,6 +61,7 @@ export function HomeView({
   onCreateKb: () => void;
   onEditKb: (kb: Kb) => void;
   onDeleteKb: (id: string) => void;
+  onShareKb: (kb: Kb) => void;
   onOpenRecent: (docId: string, kbId: string | null) => void;
   user?: User;
   onOpenProfile?: () => void;
@@ -94,37 +108,7 @@ export function HomeView({
             </kbd>
           </button>
 
-          <Tooltip content="切换主题">
-            <button
-              onClick={onToggleTheme}
-              className="grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-hover hover:text-text"
-            >
-            {theme === "light" ? (
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
-              </svg>
-            ) : (
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <circle cx="12" cy="12" r="4" />
-                <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-              </svg>
-            )}
-            </button>
-          </Tooltip>
+          <ThemeToggle theme={theme} onToggle={onToggleTheme} className="h-8 w-8" />
 
           {user && onLogout && (
             <div className="border-l border-line pl-1.5">
@@ -185,46 +169,72 @@ export function HomeView({
                       <span className="grid h-9 w-9 place-items-center rounded-lg bg-accent-soft text-sm font-semibold text-accent">
                         {(kb.name || "知").slice(0, 1)}
                       </span>
-                      <div className="flex items-center gap-0.5">
-                        <Tooltip content="编辑知识库">
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onEditKb(kb);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
+                      {kb.permission === "owner" ? (
+                        <div className="flex items-center gap-0.5">
+                          <Tooltip content="共享 / 协作">
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onShareKb(kb);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.stopPropagation();
+                                  onShareKb(kb);
+                                }
+                              }}
+                              className="grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-hover hover:text-accent group-hover:opacity-100"
+                            >
+                              <ShareIcon size={13} />
+                            </span>
+                          </Tooltip>
+                          <Tooltip content="编辑知识库">
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => {
                                 e.stopPropagation();
                                 onEditKb(kb);
-                              }
-                            }}
-                            className="grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-hover hover:text-accent group-hover:opacity-100"
-                          >
-                            <EditIcon size={13} />
-                          </span>
-                        </Tooltip>
-                        <Tooltip content="删除知识库">
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPendingDelete(kb);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.stopPropagation();
+                                  onEditKb(kb);
+                                }
+                              }}
+                              className="grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-hover hover:text-accent group-hover:opacity-100"
+                            >
+                              <EditIcon size={13} />
+                            </span>
+                          </Tooltip>
+                          <Tooltip content="删除知识库">
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => {
                                 e.stopPropagation();
                                 setPendingDelete(kb);
-                              }
-                            }}
-                            className="grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-danger-soft hover:text-danger group-hover:opacity-100"
-                          >
-                            <TrashIcon size={13} />
-                          </span>
-                        </Tooltip>
-                      </div>
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.stopPropagation();
+                                  setPendingDelete(kb);
+                                }
+                              }}
+                              className="grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-danger-soft hover:text-danger group-hover:opacity-100"
+                            >
+                              <TrashIcon size={13} />
+                            </span>
+                          </Tooltip>
+                        </div>
+                      ) : (
+                        <span className="flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-medium text-accent">
+                          <ShareIcon size={11} />
+                          {kb.permission === "write" ? "共享 · 可编辑" : "共享 · 只读"}
+                        </span>
+                      )}
                     </div>
                     <div className="min-w-0">
                       <div className="truncate text-sm font-semibold text-text">

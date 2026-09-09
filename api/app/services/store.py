@@ -54,6 +54,7 @@ class DocStore:
         self._kbs: list[dict[str, Any]] = []
         self._recent: list[dict[str, Any]] = []
         self._users: list[dict[str, Any]] = []
+        self._shares: list[dict[str, Any]] = []
         # 启动时判定存储后端：PostgreSQL 可用则用库，否则 JSON 降级
         if db.available():
             self._backend = "db"
@@ -75,12 +76,14 @@ class DocStore:
                 self._kbs = []
                 self._recent = []
                 self._users = []
+                self._shares = []
             else:
                 self._docs = data.get("documents", [])
                 self._folders = data.get("folders", [])
                 self._kbs = data.get("kbs", [])
                 self._recent = data.get("recent", [])
                 self._users = data.get("users", [])
+                self._shares = data.get("shares", [])
         # 补齐旧数据缺失的字段，保证 all() 返回结构一致
         for d in self._docs:
             d.setdefault("folder_id", None)
@@ -111,6 +114,7 @@ class DocStore:
                     "kbs": self._kbs,
                     "recent": self._recent,
                     "users": self._users,
+                    "shares": self._shares,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -127,6 +131,106 @@ class DocStore:
             {"text": c, "vector": vectors[i] if vectors else None}
             for i, c in enumerate(chunks)
         ]
+
+    # ---------- 可见性与权限 ----------
+
+    def _is_admin(self, user_id: str | None) -> bool:
+        if user_id is None:
+            return False
+        u = self.get_user_by_id(user_id)
+        return bool(u and u.get("role") == "admin")
+
+    def get_share_permission(self, kb_id: str, user_id: str | None) -> str | None:
+        """返回共享权限 read/write，无共享返回 None。"""
+        if user_id is None:
+            return None
+        if self._backend == "db":
+            return db.get_share_permission(kb_id, user_id)
+        for s in self._shares:
+            if s["kb_id"] == kb_id and s["user_id"] == user_id:
+                return s["permission"]
+        return None
+
+    def kb_permission(self, kb_id: str, user_id: str | None) -> str | None:
+        """返回用户对知识库的权限：owner/read/write；无权限返回 None。管理员视为 owner。"""
+        if user_id is None:
+            return None
+        if self._is_admin(user_id):
+            return "owner"
+        kb = self.get_kb(kb_id)
+        if kb is None:
+            return None
+        if kb.get("user_id") == user_id:
+            return "owner"
+        return self.get_share_permission(kb_id, user_id)
+
+    def _accessible_kb_ids(self, user_id: str | None) -> set[str]:
+        """返回用户可访问的知识库 id 集合（属主 + 被共享；管理员为全部）。"""
+        if user_id is None:
+            return set()
+        if self._backend == "db":
+            kbs = db.list_kbs(None)
+            shared = db.list_shared_kbs(user_id)
+        else:
+            kbs = self._kbs
+            shared = [s for s in self._shares if s["user_id"] == user_id]
+        is_admin = self._is_admin(user_id)
+        ids: set[str] = set()
+        for k in kbs:
+            if is_admin or k.get("user_id") == user_id:
+                ids.add(k["id"])
+        for s in shared:
+            ids.add(s["kb_id"])
+        return ids
+
+    def _can_write_doc(self, doc: dict[str, Any], user_id: str | None) -> bool:
+        if doc.get("user_id") == user_id:
+            return True
+        kb_id = doc.get("kb_id")
+        return self.kb_permission(kb_id, user_id) in ("write", "owner") if kb_id else False
+
+    def _can_write_folder(self, folder: dict[str, Any], user_id: str | None) -> bool:
+        if folder.get("user_id") == user_id:
+            return True
+        kb_id = folder.get("kb_id")
+        return self.kb_permission(kb_id, user_id) in ("write", "owner") if kb_id else False
+
+    # ---------- 共享 ----------
+
+    def add_share(self, kb_id: str, user_id: str, permission: str) -> dict[str, Any]:
+        """新增/更新共享（upsert）。permission: read/write。"""
+        if self._backend == "db":
+            return db.add_share(kb_id, user_id, permission)
+        self._shares = [
+            s for s in self._shares if not (s["kb_id"] == kb_id and s["user_id"] == user_id)
+        ]
+        share = {
+            "id": uuid.uuid4().hex,
+            "kb_id": kb_id,
+            "user_id": user_id,
+            "permission": permission,
+            "created_at": time.time(),
+        }
+        self._shares.append(share)
+        self._save()
+        return share
+
+    def remove_share(self, kb_id: str, user_id: str) -> bool:
+        if self._backend == "db":
+            return db.remove_share(kb_id, user_id)
+        before = len(self._shares)
+        self._shares = [
+            s for s in self._shares if not (s["kb_id"] == kb_id and s["user_id"] == user_id)
+        ]
+        if len(self._shares) != before:
+            self._save()
+            return True
+        return False
+
+    def list_shares(self, kb_id: str) -> list[dict[str, Any]]:
+        if self._backend == "db":
+            return db.list_shares(kb_id)
+        return [dict(s) for s in self._shares if s["kb_id"] == kb_id]
 
     def add(
         self,
@@ -166,10 +270,13 @@ class DocStore:
         kb_id: Any = _UNSET,
         user_id: str | None = None,
     ) -> dict[str, Any] | None:
-        """更新文档字段。title/text 提供时更新并重建分片 + 向量；folder_id/kb_id 提供时移动。找不到返回 None。"""
+        """更新文档字段。title/text 提供时更新并重建分片 + 向量；folder_id/kb_id 提供时移动。
+
+        权限：文档属主，或对文档所在知识库有 write/owner 权限。找不到或无权限返回 None。
+        """
         if self._backend == "db":
             doc = db.get_document(doc_id)
-            if doc is None or (user_id is not None and doc.get("user_id") != user_id):
+            if doc is None or (user_id is not None and not self._can_write_doc(doc, user_id)):
                 return None
             if title is not _UNSET:
                 doc["title"] = title
@@ -183,7 +290,7 @@ class DocStore:
             return db.update_document(doc_id, doc)
         for d in self._docs:
             if d["id"] == doc_id:
-                if user_id is not None and d.get("user_id") != user_id:
+                if user_id is not None and not self._can_write_doc(d, user_id):
                     return None
                 if title is not _UNSET:
                     d["title"] = title
@@ -215,41 +322,63 @@ class DocStore:
         return docs
 
     def all(self, kb_id: str | None = None, user_id: str | None = None) -> list[dict[str, Any]]:
-        """返回全部文档；kb_id / user_id 提供时按对应维度过滤。"""
+        """返回用户可见的文档（知识库级可见性）。
+
+        - kb_id 提供：用户对该 kb 有权限则返回该 kb 下全部文档，否则空。
+        - kb_id 为空、user_id 提供：返回可访问知识库下的全部文档 + 自有且未归属 kb 的文档。
+        - user_id 为空：返回全部（内部/未登录场景）。
+        """
         if self._backend == "db":
-            return db.all_documents(kb_id, user_id)
+            if kb_id is not None:
+                if user_id is not None and self.kb_permission(kb_id, user_id) is None:
+                    return []
+                return db.all_documents(kb_id=kb_id)
+            if user_id is not None:
+                return db.all_documents_for_user(user_id, self._accessible_kb_ids(user_id))
+            return db.all_documents()
         docs = self._docs
         if kb_id is not None:
-            docs = [d for d in docs if d.get("kb_id") == kb_id]
+            if user_id is not None and self.kb_permission(kb_id, user_id) is None:
+                return []
+            return [d for d in docs if d.get("kb_id") == kb_id]
         if user_id is not None:
-            docs = [d for d in docs if d.get("user_id") == user_id]
+            kb_ids = self._accessible_kb_ids(user_id)
+            return [
+                d
+                for d in docs
+                if (d.get("kb_id") in kb_ids) or (d.get("user_id") == user_id and not d.get("kb_id"))
+            ]
         return list(docs)
 
     def get(self, doc_id: str, user_id: str | None = None) -> dict[str, Any] | None:
         if self._backend == "db":
             doc = db.get_document(doc_id)
-            if doc is None or (user_id is not None and doc.get("user_id") != user_id):
-                return None
+        else:
+            doc = next((d for d in self._docs if d["id"] == doc_id), None)
+        if doc is None:
+            return None
+        if user_id is None:
             return doc
-        for d in self._docs:
-            if d["id"] == doc_id:
-                if user_id is not None and d.get("user_id") != user_id:
-                    return None
-                return d
+        # 属主可见；或文档所在知识库可访问（共享/管理员）
+        if doc.get("user_id") == user_id:
+            return doc
+        kb_id = doc.get("kb_id")
+        if kb_id and self.kb_permission(kb_id, user_id) is not None:
+            return doc
         return None
 
     def delete(self, doc_id: str, user_id: str | None = None) -> bool:
         if self._backend == "db":
             if user_id is not None:
                 doc = db.get_document(doc_id)
-                if doc is None or doc.get("user_id") != user_id:
+                if doc is None or not self._can_write_doc(doc, user_id):
                     return False
             return db.delete_document(doc_id)
         before = len(self._docs)
         self._docs = [
             d
             for d in self._docs
-            if not (d["id"] == doc_id and (user_id is None or d.get("user_id") == user_id))
+            if not (d["id"] == doc_id and (user_id is None or self._can_write_doc(d, user_id)))
         ]
         if len(self._docs) != before:
             self._save()
@@ -261,17 +390,31 @@ class DocStore:
     def list_folders(
         self, kb_id: str | None = None, user_id: str | None = None
     ) -> list[dict[str, Any]]:
-        """返回全部文件夹（扁平列表，含 parent_id，供前端组装树）。
+        """返回用户可见的文件夹（扁平列表，含 parent_id，供前端组装树）。
 
-        kb_id / user_id 提供时按对应维度过滤。
+        - kb_id 提供：用户对该 kb 有权限则返回该 kb 下全部文件夹，否则空。
+        - kb_id 为空、user_id 提供：返回可访问知识库下的全部文件夹 + 自有且未归属 kb 的文件夹。
         """
         if self._backend == "db":
-            return db.list_folders(kb_id, user_id)
+            if kb_id is not None:
+                if user_id is not None and self.kb_permission(kb_id, user_id) is None:
+                    return []
+                return db.list_folders(kb_id=kb_id)
+            if user_id is not None:
+                return db.list_folders_for_user(user_id, self._accessible_kb_ids(user_id))
+            return db.list_folders()
         folders = self._folders
         if kb_id is not None:
-            folders = [f for f in folders if f.get("kb_id") == kb_id]
+            if user_id is not None and self.kb_permission(kb_id, user_id) is None:
+                return []
+            return [f for f in folders if f.get("kb_id") == kb_id]
         if user_id is not None:
-            folders = [f for f in folders if f.get("user_id") == user_id]
+            kb_ids = self._accessible_kb_ids(user_id)
+            return [
+                f
+                for f in folders
+                if (f.get("kb_id") in kb_ids) or (f.get("user_id") == user_id and not f.get("kb_id"))
+            ]
         return list(folders)
 
     def create_folder(
@@ -299,15 +442,15 @@ class DocStore:
     def rename_folder(
         self, folder_id: str, name: str, user_id: str | None = None
     ) -> dict[str, Any] | None:
-        """重命名文件夹，不存在返回 None。"""
+        """重命名文件夹，不存在或无权限返回 None。"""
         if self._backend == "db":
             f = db.rename_folder(folder_id, name)
-            if f is None or (user_id is not None and f.get("user_id") != user_id):
+            if f is None or (user_id is not None and not self._can_write_folder(f, user_id)):
                 return None
             return f
         for f in self._folders:
             if f["id"] == folder_id:
-                if user_id is not None and f.get("user_id") != user_id:
+                if user_id is not None and not self._can_write_folder(f, user_id):
                     return None
                 f["name"] = name
                 self._save()
@@ -318,14 +461,15 @@ class DocStore:
         """删除文件夹：级联删除子文件夹，其下文档 folder_id 置空（移回根目录）。"""
         if self._backend == "db":
             if user_id is not None:
-                folders = db.list_folders(user_id=user_id)
-                if not any(f["id"] == folder_id for f in folders):
+                folders = db.list_folders()
+                target = next((f for f in folders if f["id"] == folder_id), None)
+                if target is None or not self._can_write_folder(target, user_id):
                     return False
             return db.delete_folder(folder_id)
-        # 校验归属
+        # 校验归属/权限
         if user_id is not None:
             target = next((f for f in self._folders if f["id"] == folder_id), None)
-            if target is None or target.get("user_id") != user_id:
+            if target is None or not self._can_write_folder(target, user_id):
                 return False
         # 收集自身 + 所有后代文件夹 id
         ids = [folder_id]
@@ -351,13 +495,29 @@ class DocStore:
     # ---------- 知识库 ----------
 
     def list_kbs(self, user_id: str | None = None) -> list[dict[str, Any]]:
-        """返回全部知识库（不含 doc_count，由调用方补齐）。"""
+        """返回用户可见的知识库（属主 + 被共享），每个 kb 附 permission 字段。
+
+        permission: owner/read/write。user_id 为 None 时返回全部（无 permission）。
+        """
         if self._backend == "db":
-            return db.list_kbs(user_id)
-        kbs = self._kbs
-        if user_id is not None:
-            kbs = [k for k in kbs if k.get("user_id") == user_id]
-        return [dict(k) for k in kbs]
+            kbs = db.list_kbs(None)
+        else:
+            kbs = list(self._kbs)
+        if user_id is None:
+            return [dict(k) for k in kbs]
+        is_admin = self._is_admin(user_id)
+        result: list[dict[str, Any]] = []
+        for k in kbs:
+            if is_admin or k.get("user_id") == user_id:
+                perm = "owner"
+            else:
+                perm = self.get_share_permission(k["id"], user_id)
+                if perm is None:
+                    continue
+            kk = dict(k)
+            kk["permission"] = perm
+            result.append(kk)
+        return result
 
     def create_kb(
         self, name: str, description: str | None = None, user_id: str | None = None
@@ -379,14 +539,15 @@ class DocStore:
     def get_kb(self, kb_id: str, user_id: str | None = None) -> dict[str, Any] | None:
         if self._backend == "db":
             kb = db.get_kb(kb_id)
-            if kb is None or (user_id is not None and kb.get("user_id") != user_id):
-                return None
+        else:
+            kb = next((k for k in self._kbs if k["id"] == kb_id), None)
+            kb = dict(kb) if kb else None
+        if kb is None:
+            return None
+        if user_id is None:
             return kb
-        for k in self._kbs:
-            if k["id"] == kb_id:
-                if user_id is not None and k.get("user_id") != user_id:
-                    return None
-                return dict(k)
+        if self.kb_permission(kb_id, user_id) is not None:
+            return kb
         return None
 
     def update_kb(
@@ -396,46 +557,43 @@ class DocStore:
         description: Any = _UNSET,
         user_id: str | None = None,
     ) -> dict[str, Any] | None:
-        """更新知识库字段，_UNSET 表示不修改。不存在返回 None。"""
+        """更新知识库字段，_UNSET 表示不修改。仅属主/管理员可改，否则返回 None。"""
         if self._backend == "db":
             kb = db.get_kb(kb_id)
-            if kb is None or (user_id is not None and kb.get("user_id") != user_id):
-                return None
+        else:
+            kb = next((k for k in self._kbs if k["id"] == kb_id), None)
+        if kb is None:
+            return None
+        if user_id is not None and self.kb_permission(kb_id, user_id) != "owner":
+            return None
+        if self._backend == "db":
             return db.update_kb(kb_id, name, description)
-        for k in self._kbs:
-            if k["id"] == kb_id:
-                if user_id is not None and k.get("user_id") != user_id:
-                    return None
-                if name is not _UNSET:
-                    k["name"] = name
-                if description is not _UNSET:
-                    k["description"] = description
-                self._save()
-                return dict(k)
-        return None
+        if name is not _UNSET:
+            kb["name"] = name
+        if description is not _UNSET:
+            kb["description"] = description
+        self._save()
+        return dict(kb)
 
     def count_docs(self, kb_id: str, user_id: str | None = None) -> int:
         if self._backend == "db":
             return db.count_docs(kb_id)
-        return sum(
-            1
-            for d in self._docs
-            if d.get("kb_id") == kb_id and (user_id is None or d.get("user_id") == user_id)
-        )
+        return sum(1 for d in self._docs if d.get("kb_id") == kb_id)
 
     def delete_kb(self, kb_id: str, user_id: str | None = None) -> bool:
-        """级联删除知识库：删除其下所有文档、文件夹与最近浏览记录。
+        """级联删除知识库：删除其下所有文档、文件夹、共享与最近浏览记录。仅属主/管理员可删。
 
         媒体文件采用内容寻址去重（可能被其它知识库/文档共享），此处不物理删除。
         """
         if self._backend == "db":
             if user_id is not None:
                 kb = db.get_kb(kb_id)
-                if kb is None or kb.get("user_id") != user_id:
+                if kb is None or self.kb_permission(kb_id, user_id) != "owner":
                     return False
             return db.delete_kb(kb_id)
         existed = any(
-            k["id"] == kb_id and (user_id is None or k.get("user_id") == user_id)
+            k["id"] == kb_id
+            and (user_id is None or self.kb_permission(kb_id, user_id) == "owner")
             for k in self._kbs
         )
         if not existed:
@@ -444,6 +602,7 @@ class DocStore:
         self._docs = [d for d in self._docs if d.get("kb_id") != kb_id]
         self._folders = [f for f in self._folders if f.get("kb_id") != kb_id]
         self._recent = [r for r in self._recent if r.get("kb_id") != kb_id]
+        self._shares = [s for s in self._shares if s["kb_id"] != kb_id]
         self._save()
         return True
 
@@ -703,7 +862,8 @@ def search(query: str, top_k: int = 5, user_id: str | None = None) -> list[dict[
     # 候选召回：DB 路径用 pgvector <=> 召回；JSON 路径全量扫描
     if db.available():
         if query_vec is not None:
-            candidates = db.search_chunks(query_vec, max(20, top_k * 4), user_id)
+            kb_ids = store._accessible_kb_ids(user_id) if user_id is not None else None
+            candidates = db.search_chunks(query_vec, max(20, top_k * 4), user_id, kb_ids)
         else:
             candidates = _candidates_from_docs(store.all(user_id=user_id))
     else:

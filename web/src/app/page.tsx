@@ -16,6 +16,7 @@ import { HomeView } from "@/components/HomeView";
 import { LoginView } from "@/components/LoginView";
 import { ProfileDialog } from "@/components/ProfileDialog";
 import { UserManagementView } from "@/components/UserManagementView";
+import { ShareDialog } from "@/components/ShareDialog";
 import type { Doc, TreeNode, SortBy } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
 import { buildTree } from "@/lib/buildTree";
@@ -104,6 +105,7 @@ export default function Home() {
   // 视图路由 + 当前知识库
   const [view, setView] = useState<"home" | "kb" | "users">("home");
   const [profileOpen, setProfileOpen] = useState(false);
+  const [shareKb, setShareKb] = useState<Kb | null>(null);
   const [currentKbId, setCurrentKbId] = useState<string | null>(null);
   const [kbs, setKbs] = useState<Kb[]>([]);
   const [recent, setRecent] = useState<RecentDoc[]>([]);
@@ -433,6 +435,19 @@ export default function Home() {
   const activeDoc = activeKey ? docs[activeKey] ?? null : null;
   const wordCount = activeDoc ? countWords(activeDoc.body) : 0;
   const currentKb = kbs.find((k) => k.id === currentKbId) ?? null;
+  const readOnly = currentKb?.permission === "read";
+
+  // 命令面板全文搜索
+  const paletteSearch = useCallback(
+    async (q: string) => {
+      try {
+        return await searchDocuments(q, currentKbId);
+      } catch {
+        return [];
+      }
+    },
+    [currentKbId],
+  );
 
   const commands: Command[] = [
     {
@@ -526,6 +541,7 @@ export default function Home() {
               onOpenSearchResult={handleOpenSearchResult}
               sortBy={sortBy}
               onSortChange={setSortBy}
+              readOnly={readOnly}
             />
             <Editor
               doc={activeDoc}
@@ -533,6 +549,7 @@ export default function Home() {
               onSaved={handleSaved}
               highlight={highlight}
               theme={theme}
+              readOnly={readOnly}
             />
             <AiPanel theme={theme} />
           </div>
@@ -556,6 +573,7 @@ export default function Home() {
           onCreateKb={() => setNewKbOpen(true)}
           onEditKb={handleEditKb}
           onDeleteKb={handleDeleteKb}
+          onShareKb={(kb) => setShareKb(kb)}
           onOpenRecent={openRecent}
           user={user}
           onOpenProfile={handleOpenProfile}
@@ -568,6 +586,11 @@ export default function Home() {
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         commands={commands}
+        onSearch={paletteSearch}
+        onOpenResult={(docId) => {
+          setPaletteOpen(false);
+          openDoc(docId);
+        }}
       />
 
       <ImportDialog
@@ -623,6 +646,13 @@ export default function Home() {
         user={user}
         onClose={() => setProfileOpen(false)}
         onUpdated={(u) => setUser(u)}
+      />
+
+      <ShareDialog
+        open={shareKb !== null}
+        kb={shareKb}
+        onClose={() => setShareKb(null)}
+        onChanged={() => refreshKbs()}
       />
     </div>
   );

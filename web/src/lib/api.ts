@@ -20,6 +20,8 @@ export interface Kb {
   description?: string;
   created_at?: number;
   doc_count?: number;
+  permission?: "owner" | "read" | "write";
+  owner_id?: string;
 }
 
 export interface RecentDoc {
@@ -339,6 +341,50 @@ export async function updateKb(
 
 export async function deleteKb(id: string): Promise<void> {
   await request(`/kbs/${id}`, { method: "DELETE" });
+}
+
+// —— 知识库共享 ——
+
+export interface KbShare {
+  user_id: string;
+  username?: string;
+  nickname?: string;
+  permission: "read" | "write";
+  created_at?: number;
+}
+
+export async function listShares(kbId: string): Promise<KbShare[]> {
+  const data = await request<{ shares: KbShare[] }>(`/kbs/${kbId}/shares`);
+  return Array.isArray(data?.shares) ? data.shares : [];
+}
+
+export async function addShare(
+  kbId: string,
+  username: string,
+  permission: "read" | "write",
+): Promise<KbShare> {
+  return request(`/kbs/${kbId}/shares`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, permission }),
+  });
+}
+
+export async function removeShare(kbId: string, userId: string): Promise<void> {
+  await request(`/kbs/${kbId}/shares/${userId}`, { method: "DELETE" });
+}
+
+export interface UserBrief {
+  id: string;
+  username: string;
+  nickname?: string;
+}
+
+export async function searchUsers(q: string): Promise<UserBrief[]> {
+  const data = await request<{ users: UserBrief[] }>(
+    `/users/search?q=${encodeURIComponent(q)}`,
+  );
+  return Array.isArray(data?.users) ? data.users : [];
 }
 
 // —— 最近浏览 ——

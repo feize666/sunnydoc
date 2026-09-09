@@ -152,6 +152,39 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
+class AddShareRequest(BaseModel):
+    username: str
+    permission: str  # read / write
+
+
+def _kb_permission(kb_id: str, user: dict) -> str:
+    """返回用户对知识库的权限（owner/read/write），无权限或不存在时抛异常。"""
+    kb = store.get_kb(kb_id)
+    if kb is None:
+        raise HTTPException(status_code=404, detail="知识库不存在")
+    perm = store.kb_permission(kb_id, user["id"])
+    if perm is None:
+        raise HTTPException(status_code=404, detail="知识库不存在")
+    return perm
+
+
+def _require_kb_owner(kb_id: str, user: dict) -> dict:
+    """仅属主/管理员可访问（用于共享管理与知识库编辑/删除）。"""
+    kb = store.get_kb(kb_id)
+    if kb is None:
+        raise HTTPException(status_code=404, detail="知识库不存在")
+    if store.kb_permission(kb_id, user["id"]) != "owner":
+        raise HTTPException(status_code=403, detail="仅知识库所有者可执行此操作")
+    return kb
+
+
+def _require_kb_write(kb_id: str, user: dict) -> None:
+    """要求对该知识库有 write/owner 权限，否则 403。"""
+    perm = _kb_permission(kb_id, user)
+    if perm not in ("write", "owner"):
+        raise HTTPException(status_code=403, detail="没有权限修改该知识库的内容")
+
+
 def _dedupe_title(store, title: str, user_id: str | None = None) -> str:
     """若 title 已存在则自动追加「(2)」「(3)」…后缀，直到不重名（按 user 范围去重）"""
     existing = {d["title"] for d in store.all(user_id=user_id)}
@@ -445,6 +478,8 @@ def create_document(req: CreateDocumentRequest, current_user: dict = Depends(get
     title = req.title.strip()
     if not title:
         raise HTTPException(status_code=400, detail="标题不能为空")
+    if req.kb_id:
+        _require_kb_write(req.kb_id, current_user)
 
     title = _dedupe_title(store, title, current_user["id"])
     doc = store.add(
@@ -488,6 +523,9 @@ async def import_documents(
     GET /documents/import/{task_id} 查询。
     """
     filename = file.filename or "untitled"
+
+    if kb_id:
+        _require_kb_write(kb_id, current_user)
 
     # 流式落盘，不 await file.read() 整读内存
     fd, tmp_path = tempfile.mkstemp(dir=str(TMP_DIR))
@@ -679,6 +717,8 @@ def create_folder(
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="文件夹名称不能为空")
+    if req.kb_id:
+        _require_kb_write(req.kb_id, current_user)
     folder = store.create_folder(
         name=name, parent_id=req.parent_id, kb_id=req.kb_id, user_id=current_user["id"]
     )
@@ -712,7 +752,7 @@ def delete_folder(folder_id: str, current_user: dict = Depends(get_current_user)
 
 @router.get("/kbs")
 def list_kbs(current_user: dict = Depends(get_current_user)):
-    """知识库列表，含各自文档数。"""
+    """知识库列表，含各自文档数与权限（owner/read/write）。"""
     kbs = store.list_kbs(current_user["id"])
     return {
         "kbs": [
@@ -722,6 +762,8 @@ def list_kbs(current_user: dict = Depends(get_current_user)):
                 "description": k.get("description"),
                 "created_at": k["created_at"],
                 "doc_count": store.count_docs(k["id"], current_user["id"]),
+                "permission": k.get("permission", "owner"),
+                "owner_id": k.get("user_id"),
             }
             for k in kbs
         ]
@@ -747,7 +789,14 @@ def get_kb(kb_id: str, current_user: dict = Depends(get_current_user)):
     kb = store.get_kb(kb_id, current_user["id"])
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
-    return kb
+    return {
+        "id": kb["id"],
+        "name": kb["name"],
+        "description": kb.get("description"),
+        "created_at": kb["created_at"],
+        "permission": _kb_permission(kb_id, current_user),
+        "owner_id": kb.get("user_id"),
+    }
 
 
 @router.put("/kbs/{kb_id}")
@@ -773,6 +822,89 @@ def delete_kb(kb_id: str, current_user: dict = Depends(get_current_user)):
     if store.delete_kb(kb_id, current_user["id"]):
         return {"deleted": kb_id}
     raise HTTPException(status_code=404, detail="知识库不存在")
+
+
+# ---------- 知识库共享（属主/管理员） ----------
+
+@router.get("/kbs/{kb_id}/shares")
+def list_shares(kb_id: str, current_user: dict = Depends(get_current_user)):
+    """列出该知识库的共享成员（附用户信息）。"""
+    _require_kb_owner(kb_id, current_user)
+    shares = store.list_shares(kb_id)
+    result = []
+    for s in shares:
+        u = store.get_user_by_id(s["user_id"])
+        result.append(
+            {
+                "user_id": s["user_id"],
+                "username": u["username"] if u else None,
+                "nickname": (u.get("nickname") if u else None),
+                "permission": s["permission"],
+                "created_at": s["created_at"],
+            }
+        )
+    return {"shares": result}
+
+
+@router.post("/kbs/{kb_id}/shares")
+def add_share(
+    kb_id: str, req: AddShareRequest, current_user: dict = Depends(get_current_user)
+):
+    """把知识库共享给某用户（read/write）。属主/管理员可调。"""
+    _require_kb_owner(kb_id, current_user)
+    username = (req.username or "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="用户名不能为空")
+    permission = req.permission if req.permission in ("read", "write") else "read"
+    target = store.get_user_by_username(username)
+    if target is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    if target["id"] == current_user["id"]:
+        raise HTTPException(status_code=400, detail="无需共享给自己")
+    share = store.add_share(kb_id, target["id"], permission)
+    return {
+        "user_id": target["id"],
+        "username": target["username"],
+        "nickname": target.get("nickname"),
+        "permission": share["permission"],
+    }
+
+
+@router.delete("/kbs/{kb_id}/shares/{user_id}")
+def remove_share(
+    kb_id: str, user_id: str, current_user: dict = Depends(get_current_user)
+):
+    """移除共享成员。属主/管理员可调。"""
+    _require_kb_owner(kb_id, current_user)
+    if store.remove_share(kb_id, user_id):
+        return {"removed": user_id}
+    raise HTTPException(status_code=404, detail="共享记录不存在")
+
+
+@router.get("/users/search")
+def search_users(q: str = "", current_user: dict = Depends(get_current_user)):
+    """按用户名/昵称搜索用户（供共享对话框选择协作者，仅返回基本信息）。"""
+    query = (q or "").strip().lower()
+    users = store.list_users()
+    matched = [
+        u
+        for u in users
+        if query
+        and (
+            query in (u.get("username") or "").lower()
+            or query in (u.get("nickname") or "").lower()
+        )
+    ]
+    return {
+        "users": [
+            {
+                "id": u["id"],
+                "username": u["username"],
+                "nickname": u.get("nickname") or u["username"],
+            }
+            for u in matched[:20]
+        ]
+    }
 
 
 # ---------- 最近浏览 ----------

@@ -80,6 +80,7 @@ export function AiPanel({ theme }: { theme: "light" | "dark" }) {
   const [loading, setLoading] = useState(false);
   const [enableWeb, setEnableWeb] = useState(true);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
 
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -333,10 +334,42 @@ export function AiPanel({ theme }: { theme: "light" | "dark" }) {
 
   const sortedSessions = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
 
+  // 折叠态：渲染窄竖条，点击展开
+  if (collapsed) {
+    return (
+      <aside className="relative flex w-10 shrink-0 flex-col items-center border-l border-line bg-surface">
+        <Tooltip content="展开 AI 问答">
+          <button
+            onClick={() => setCollapsed(false)}
+            className="mt-3 grid h-7 w-7 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
+        </Tooltip>
+        <div
+          className="mt-3 select-none text-[11px] font-medium tracking-wide text-faint"
+          style={{ writingMode: "vertical-rl" }}
+        >
+          AI 问答
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside className="relative flex w-[320px] shrink-0 flex-col border-l border-line bg-surface">
-      <div className="flex items-center justify-between border-b border-line px-3.5 py-3 text-[13px] font-semibold">
-        AI 问答
+      <div className="flex items-center justify-between border-b border-line px-3 py-3">
+        <button
+          onClick={() => setCollapsed(true)}
+          className="flex items-center gap-1 text-[13px] font-semibold text-text transition-colors hover:text-accent"
+        >
+          AI 问答
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-faint">
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+        </button>
         <div className="flex items-center gap-1">
           <Tooltip content="历史会话">
             <button
