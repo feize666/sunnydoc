@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import {
   SendIcon,
   LinkIcon,
@@ -89,6 +95,9 @@ export function AiPanel({
   const [enableWeb, setEnableWeb] = useState(true);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  // 浮窗位置（null 表示用默认右下角定位）
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
 
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -345,13 +354,48 @@ export function AiPanel({
 
   const sortedSessions = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
 
+  const startDrag = (e: ReactMouseEvent<HTMLElement>) => {
+    // 仅左键拖动，且忽略 header 内按钮的点击
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest("button")) return;
+    e.preventDefault();
+    const rect = panelRef.current?.getBoundingClientRect();
+    const baseX = pos?.x ?? rect?.left ?? 0;
+    const baseY = pos?.y ?? rect?.top ?? 0;
+    const offsetX = e.clientX - baseX;
+    const offsetY = e.clientY - baseY;
+
+    const onMove = (ev: MouseEvent) => {
+      const x = Math.min(
+        Math.max(0, ev.clientX - offsetX),
+        window.innerWidth - 120,
+      );
+      const y = Math.min(
+        Math.max(0, ev.clientY - offsetY),
+        window.innerHeight - 48,
+      );
+      setPos({ x, y });
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
   if (!open) return null;
 
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} />
-      <aside className="fixed bottom-6 right-6 z-50 flex h-[600px] max-h-[85vh] w-[380px] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-glow">
-      <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2.5">
+    <aside
+      ref={panelRef}
+      style={pos ? { left: pos.x, top: pos.y } : { right: 24, bottom: 24 }}
+      className="fixed z-50 flex h-[78vh] max-h-[820px] min-h-[480px] w-[460px] max-w-[92vw] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-glow"
+    >
+      <div
+        className="relative z-30 flex cursor-move items-center justify-between gap-2 border-b border-line px-3 py-2.5 select-none"
+        onMouseDown={startDrag}
+      >
         <div className="flex items-center gap-2">
           <span className="text-[13px] font-semibold text-text">AI 问答</span>
           <Tooltip content={enableWeb ? "联网搜索已开启（点击关闭）" : "联网搜索已关闭（点击开启）"}>
@@ -416,7 +460,7 @@ export function AiPanel({
 
       {showHistory && (
         <>
-          <div className="fixed inset-0 z-10" onClick={() => setShowHistory(false)} />
+          <div className="absolute inset-0 z-10" onClick={() => setShowHistory(false)} />
           <div className="absolute left-3 right-3 top-11 z-20 overflow-hidden rounded-xl border border-line bg-background shadow-lg">
             <div className="flex items-center justify-between border-b border-line px-3 py-2">
               <span className="text-[12px] font-semibold text-text">历史会话</span>
@@ -602,7 +646,6 @@ export function AiPanel({
         onConfirm={doClearChat}
         onCancel={() => setConfirmClear(false)}
       />
-      </aside>
-    </>
+    </aside>
   );
 }
