@@ -161,6 +161,28 @@ def init() -> None:
             )
             """
         )
+        # 文档收藏（user_id + doc_id，同一用户同一文档只收藏一次）
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS favorites (
+                id varchar PRIMARY KEY,
+                user_id varchar,
+                doc_id varchar,
+                created_at double precision
+            )
+            """
+        )
+        # 文档分享链接（token 唯一，公开只读访问）
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS share_links (
+                id varchar PRIMARY KEY,
+                token varchar UNIQUE,
+                doc_id varchar,
+                created_at double precision
+            )
+            """
+        )
     conn.commit()
 
 
@@ -943,6 +965,119 @@ def delete_user(user_id: str) -> bool:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        deleted = cur.rowcount > 0
+    conn.commit()
+    return deleted
+
+
+# ---------- 文档收藏 ----------
+
+def add_favorite(user_id: str, doc_id: str) -> dict[str, Any] | None:
+    """收藏文档（幂等：已收藏返回已有记录）。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM favorites WHERE user_id = %s AND doc_id = %s",
+            (user_id, doc_id),
+        )
+        row = cur.fetchone()
+        if row is None:
+            fav_id = uuid.uuid4().hex
+            created_at = time.time()
+            cur.execute(
+                "INSERT INTO favorites (id, user_id, doc_id, created_at)"
+                " VALUES (%s, %s, %s, %s)",
+                (fav_id, user_id, doc_id, created_at),
+            )
+        else:
+            fav_id = row[0]
+            created_at = None
+    conn.commit()
+    return {"id": fav_id, "user_id": user_id, "doc_id": doc_id, "created_at": created_at}
+
+
+def remove_favorite(user_id: str, doc_id: str) -> bool:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM favorites WHERE user_id = %s AND doc_id = %s",
+            (user_id, doc_id),
+        )
+        deleted = cur.rowcount > 0
+    conn.commit()
+    return deleted
+
+
+def list_favorites(user_id: str) -> list[str]:
+    """返回用户收藏的 doc_id 列表（按收藏时间倒序）。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT doc_id FROM favorites WHERE user_id = %s ORDER BY created_at DESC",
+            (user_id,),
+        )
+        return [r[0] for r in cur.fetchall()]
+
+
+def is_favorite(user_id: str, doc_id: str) -> bool:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM favorites WHERE user_id = %s AND doc_id = %s",
+            (user_id, doc_id),
+        )
+        return cur.fetchone() is not None
+
+
+# ---------- 文档分享链接 ----------
+
+def create_share(doc_id: str, token: str) -> dict[str, Any]:
+    """创建分享链接。"""
+    share_id = uuid.uuid4().hex
+    created_at = time.time()
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO share_links (id, token, doc_id, created_at)"
+            " VALUES (%s, %s, %s, %s)",
+            (share_id, token, doc_id, created_at),
+        )
+    conn.commit()
+    return {"id": share_id, "token": token, "doc_id": doc_id, "created_at": created_at}
+
+
+def get_share_by_token(token: str) -> dict[str, Any] | None:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT doc_id, token, created_at FROM share_links WHERE token = %s",
+            (token,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return {"doc_id": row[0], "token": row[1], "created_at": row[2]}
+
+
+def get_share_by_doc(doc_id: str) -> dict[str, Any] | None:
+    """返回某文档的分享记录（用于幂等/复用），无则 None。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT doc_id, token, created_at FROM share_links WHERE doc_id = %s",
+            (doc_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return {"doc_id": row[0], "token": row[1], "created_at": row[2]}
+
+
+def delete_share(doc_id: str) -> bool:
+    """撤销某文档的分享链接。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM share_links WHERE doc_id = %s", (doc_id,))
         deleted = cur.rowcount > 0
     conn.commit()
     return deleted

@@ -278,3 +278,29 @@ export async function renderMarkdown(
 export function countWords(src: string): number {
   return src.replace(/\s/g, "").length;
 }
+
+export interface TocItem {
+  level: number;
+  text: string;
+}
+
+/** 提取文档标题大纲（H1~H4），返回顺序与渲染后 DOM 中的标题顺序一致。 */
+export function extractToc(src: string): TocItem[] {
+  const tokens = md.parse(src, {});
+  const toc: TocItem[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.type !== "heading_open") continue;
+    const level = parseInt(t.tag.slice(1), 10);
+    if (level < 1 || level > 4) continue;
+    const inline = tokens[i + 1];
+    const text =
+      inline && inline.type === "inline" && inline.children
+        ? md.renderer
+            .renderInline(inline.children, md.options, {})
+            .replace(/<[^>]+>/g, "")
+        : "";
+    toc.push({ level, text: text.trim() || "未命名" });
+  }
+  return toc;
+}

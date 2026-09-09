@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Kb, RecentDoc, User } from "@/lib/api";
+import type { Kb, RecentDoc, User, DocMeta } from "@/lib/api";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Tooltip } from "./Tooltip";
 import { UserMenu } from "./UserMenu";
@@ -45,6 +45,8 @@ export function HomeView({
   onDeleteKb,
   onShareKb,
   onOpenRecent,
+  favorites,
+  onOpenFavorite,
   user,
   onOpenProfile,
   onOpenUsers,
@@ -63,6 +65,8 @@ export function HomeView({
   onDeleteKb: (id: string) => void;
   onShareKb: (kb: Kb) => void;
   onOpenRecent: (docId: string, kbId: string | null) => void;
+  favorites: DocMeta[];
+  onOpenFavorite: (doc: DocMeta) => void;
   user?: User;
   onOpenProfile?: () => void;
   onOpenUsers?: () => void;
@@ -304,6 +308,48 @@ export function HomeView({
                       </span>
                     </button>
                     {i < recent.length - 1 && <div className="border-b border-line" />}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* 我的收藏 */}
+          <section className="mt-10">
+            <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-text">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-muted">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+              </svg>
+              我的收藏
+            </h2>
+
+            {favorites.length === 0 ? (
+              <div className="rounded-xl border border-line bg-surface px-4 py-8 text-center text-xs text-faint">
+                暂无收藏，在文档右上角点击「收藏」即可加入
+              </div>
+            ) : (
+              <ul className="overflow-hidden rounded-xl border border-line bg-background">
+                {favorites.map((d, i) => (
+                  <li key={d.id}>
+                    <button
+                      onClick={() => onOpenFavorite(d)}
+                      className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-hover"
+                    >
+                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                        </svg>
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] text-text group-hover:text-accent">
+                          {d.title}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[11px] text-faint">
+                          {kbNameOf(d.kb_id ?? null)}
+                        </span>
+                      </span>
+                    </button>
+                    {i < favorites.length - 1 && <div className="border-b border-line" />}
                   </li>
                 ))}
               </ul>

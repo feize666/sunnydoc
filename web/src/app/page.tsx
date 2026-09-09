@@ -17,6 +17,8 @@ import { LoginView } from "@/components/LoginView";
 import { ProfileDialog } from "@/components/ProfileDialog";
 import { UserManagementView } from "@/components/UserManagementView";
 import { ShareDialog } from "@/components/ShareDialog";
+import { ShareDocDialog } from "@/components/ShareDocDialog";
+import { ShareView } from "@/components/ShareView";
 import type { Doc, TreeNode, SortBy } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
 import { buildTree } from "@/lib/buildTree";
@@ -36,6 +38,9 @@ import {
   logout,
   getToken,
   setToken,
+  addFavorite,
+  removeFavorite,
+  listFavorites,
   type DocMeta,
   type Folder,
   type Kb,
@@ -106,13 +111,22 @@ export default function Home() {
   const [view, setView] = useState<"home" | "kb" | "users">("home");
   const [profileOpen, setProfileOpen] = useState(false);
   const [shareKb, setShareKb] = useState<Kb | null>(null);
+  const [shareDoc, setShareDoc] = useState<{ id: string; title: string } | null>(null);
   const [currentKbId, setCurrentKbId] = useState<string | null>(null);
   const [kbs, setKbs] = useState<Kb[]>([]);
   const [recent, setRecent] = useState<RecentDoc[]>([]);
+  const [favorites, setFavorites] = useState<DocMeta[]>([]);
+  const [favIds, setFavIds] = useState<Set<string>>(new Set());
   const [kbsLoading, setKbsLoading] = useState(false);
   const [kbsError, setKbsError] = useState<string | null>(null);
   const restoredRef = useRef(false);
   const kbsFetchedRef = useRef(false);
+
+  // 公开分享视图：检测 URL ?share=token（无需登录）
+  const [shareToken] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("share");
+  });
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -190,10 +204,19 @@ export default function Home() {
     }
   }, []);
 
+  const refreshFavorites = useCallback(async () => {
+    try {
+      setFavorites(await listFavorites());
+    } catch {
+      /* 收藏加载失败不影响首页 */
+    }
+  }, []);
+
   useEffect(() => {
     refreshKbs();
     refreshRecent();
-  }, [refreshKbs, refreshRecent]);
+    refreshFavorites();
+  }, [refreshKbs, refreshRecent, refreshFavorites]);
 
   // 知识库加载完成后，尝试恢复上次打开的知识库
   useEffect(() => {
@@ -216,6 +239,7 @@ export default function Home() {
       ]);
       setMetas(list);
       setFolders(folderList);
+      setFavIds(new Set(list.filter((d) => d.is_favorite).map((d) => d.id)));
     } catch (e) {
       setListError(e instanceof Error ? e.message : "加载文档列表失败");
     }
@@ -429,6 +453,48 @@ export default function Home() {
     [currentKbId, refreshKbs, refreshRecent],
   );
 
+  // 切换收藏
+  const handleToggleFavorite = useCallback(
+    async (docId: string) => {
+      const isFav = favIds.has(docId);
+      // 乐观更新
+      setFavIds((prev) => {
+        const next = new Set(prev);
+        if (isFav) next.delete(docId);
+        else next.add(docId);
+        return next;
+      });
+      try {
+        if (isFav) await removeFavorite(docId);
+        else await addFavorite(docId);
+        refreshFavorites();
+      } catch (e) {
+        alert(`收藏操作失败：${e instanceof Error ? e.message : "未知错误"}`);
+        // 失败回滚
+        setFavIds((prev) => {
+          const next = new Set(prev);
+          if (isFav) next.add(docId);
+          else next.delete(docId);
+          return next;
+        });
+      }
+    },
+    [favIds, refreshFavorites],
+  );
+
+  // 打开文档分享
+  const handleShareDoc = useCallback((docId: string, title: string) => {
+    setShareDoc({ id: docId, title });
+  }, []);
+
+  // 从收藏打开文档
+  const openFavorite = useCallback(
+    (doc: DocMeta) => {
+      openRecent(doc.id, doc.kb_id ?? null);
+    },
+    [openRecent],
+  );
+
   // 构建多级文件树
   const tree: TreeNode[] = buildTree(metas, folders, sortBy);
 
@@ -478,6 +544,11 @@ export default function Home() {
     { icon: "⚙️", label: "设置", hint: "Ctrl+," },
   ];
 
+  // 公开分享视图（优先，无需登录）
+  if (shareToken) {
+    return <ShareView token={shareToken} />;
+  }
+
   // 登录态守卫：校验中 / 未登录
   if (authLoading) {
     return (
@@ -520,7 +591,7 @@ export default function Home() {
               activeKey={activeKey}
               onSelect={openDoc}
               collapsed={sidebarCollapsed}
-              onToggleCollapse={() => setSidebarCollapsed(false)}
+              onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
               folders={folders}
               onImport={() => setImportOpen(true)}
               onNewDoc={() => setNewDocOpen(true)}
@@ -550,6 +621,15 @@ export default function Home() {
               highlight={highlight}
               theme={theme}
               readOnly={readOnly}
+              isFavorite={activeKey ? favIds.has(activeKey) : false}
+              onToggleFavorite={
+                activeKey ? () => handleToggleFavorite(activeKey) : undefined
+              }
+              onShare={
+                activeDoc
+                  ? () => handleShareDoc(activeDoc.key, activeDoc.title)
+                  : undefined
+              }
             />
             <AiPanel theme={theme} />
           </div>
@@ -575,6 +655,8 @@ export default function Home() {
           onDeleteKb={handleDeleteKb}
           onShareKb={(kb) => setShareKb(kb)}
           onOpenRecent={openRecent}
+          favorites={favorites}
+          onOpenFavorite={openFavorite}
           user={user}
           onOpenProfile={handleOpenProfile}
           onOpenUsers={handleOpenUsers}
@@ -653,6 +735,12 @@ export default function Home() {
         kb={shareKb}
         onClose={() => setShareKb(null)}
         onChanged={() => refreshKbs()}
+      />
+
+      <ShareDocDialog
+        open={shareDoc !== null}
+        doc={shareDoc}
+        onClose={() => setShareDoc(null)}
       />
     </div>
   );

@@ -55,6 +55,8 @@ class DocStore:
         self._recent: list[dict[str, Any]] = []
         self._users: list[dict[str, Any]] = []
         self._shares: list[dict[str, Any]] = []
+        self._favorites: list[dict[str, Any]] = []
+        self._share_links: list[dict[str, Any]] = []
         # 启动时判定存储后端：PostgreSQL 可用则用库，否则 JSON 降级
         if db.available():
             self._backend = "db"
@@ -77,6 +79,8 @@ class DocStore:
                 self._recent = []
                 self._users = []
                 self._shares = []
+                self._favorites = []
+                self._share_links = []
             else:
                 self._docs = data.get("documents", [])
                 self._folders = data.get("folders", [])
@@ -84,6 +88,8 @@ class DocStore:
                 self._recent = data.get("recent", [])
                 self._users = data.get("users", [])
                 self._shares = data.get("shares", [])
+                self._favorites = data.get("favorites", [])
+                self._share_links = data.get("share_links", [])
         # 补齐旧数据缺失的字段，保证 all() 返回结构一致
         for d in self._docs:
             d.setdefault("folder_id", None)
@@ -115,6 +121,8 @@ class DocStore:
                     "recent": self._recent,
                     "users": self._users,
                     "shares": self._shares,
+                    "favorites": self._favorites,
+                    "share_links": self._share_links,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -231,6 +239,92 @@ class DocStore:
         if self._backend == "db":
             return db.list_shares(kb_id)
         return [dict(s) for s in self._shares if s["kb_id"] == kb_id]
+
+    # ---------- 文档收藏 ----------
+
+    def add_favorite(self, user_id: str, doc_id: str) -> dict[str, Any] | None:
+        if self._backend == "db":
+            return db.add_favorite(user_id, doc_id)
+        if any(f["user_id"] == user_id and f["doc_id"] == doc_id for f in self._favorites):
+            return next(f for f in self._favorites if f["user_id"] == user_id and f["doc_id"] == doc_id)
+        fav = {
+            "id": uuid.uuid4().hex,
+            "user_id": user_id,
+            "doc_id": doc_id,
+            "created_at": time.time(),
+        }
+        self._favorites.append(fav)
+        self._save()
+        return fav
+
+    def remove_favorite(self, user_id: str, doc_id: str) -> bool:
+        if self._backend == "db":
+            return db.remove_favorite(user_id, doc_id)
+        before = len(self._favorites)
+        self._favorites = [
+            f for f in self._favorites if not (f["user_id"] == user_id and f["doc_id"] == doc_id)
+        ]
+        if len(self._favorites) != before:
+            self._save()
+            return True
+        return False
+
+    def list_favorites(self, user_id: str) -> list[str]:
+        if self._backend == "db":
+            return db.list_favorites(user_id)
+        items = sorted(
+            (f for f in self._favorites if f["user_id"] == user_id),
+            key=lambda f: f.get("created_at", 0),
+            reverse=True,
+        )
+        return [f["doc_id"] for f in items]
+
+    def is_favorite(self, user_id: str, doc_id: str) -> bool:
+        if self._backend == "db":
+            return db.is_favorite(user_id, doc_id)
+        return any(f["user_id"] == user_id and f["doc_id"] == doc_id for f in self._favorites)
+
+    # ---------- 文档分享链接 ----------
+
+    def create_share(self, doc_id: str, token: str) -> dict[str, Any]:
+        if self._backend == "db":
+            return db.create_share(doc_id, token)
+        self._share_links = [s for s in self._share_links if s["doc_id"] != doc_id]
+        share = {
+            "id": uuid.uuid4().hex,
+            "token": token,
+            "doc_id": doc_id,
+            "created_at": time.time(),
+        }
+        self._share_links.append(share)
+        self._save()
+        return share
+
+    def get_share_by_token(self, token: str) -> dict[str, Any] | None:
+        if self._backend == "db":
+            return db.get_share_by_token(token)
+        for s in self._share_links:
+            if s["token"] == token:
+                return dict(s)
+        return None
+
+    def get_share_by_doc(self, doc_id: str) -> dict[str, Any] | None:
+        if self._backend == "db":
+            return db.get_share_by_doc(doc_id)
+        for s in self._share_links:
+            if s["doc_id"] == doc_id:
+                return dict(s)
+        return None
+
+    def delete_share(self, doc_id: str) -> bool:
+        if self._backend == "db":
+            return db.delete_share(doc_id)
+        before = len(self._share_links)
+        self._share_links = [s for s in self._share_links if s["doc_id"] != doc_id]
+        if len(self._share_links) != before:
+            self._save()
+            return True
+        return False
 
     def add(
         self,

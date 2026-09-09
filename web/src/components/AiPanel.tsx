@@ -81,6 +81,7 @@ export function AiPanel({ theme }: { theme: "light" | "dark" }) {
   const [enableWeb, setEnableWeb] = useState(true);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [collapsed, setCollapsed] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -208,10 +209,13 @@ export function AiPanel({ theme }: { theme: "light" | "dark" }) {
 
   const clearChat = () => {
     if (loading) return;
-    if (window.confirm("确定清空当前对话吗？")) {
-      setMessages(initialMessages.map((m) => ({ ...m })));
-      setCopiedIndex(null);
-    }
+    setConfirmClear(true);
+  };
+
+  const doClearChat = () => {
+    setMessages(initialMessages.map((m) => ({ ...m })));
+    setCopiedIndex(null);
+    setConfirmClear(false);
   };
 
   const switchSession = (id: string) => {
@@ -360,51 +364,64 @@ export function AiPanel({ theme }: { theme: "light" | "dark" }) {
 
   return (
     <aside className="relative flex w-[320px] shrink-0 flex-col border-l border-line bg-surface">
-      <div className="flex items-center justify-between border-b border-line px-3 py-3">
-        <button
-          onClick={() => setCollapsed(true)}
-          className="flex items-center gap-1 text-[13px] font-semibold text-text transition-colors hover:text-accent"
-        >
-          AI 问答
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-faint">
-            <path d="M9 18l6-6-6-6" />
-          </svg>
-        </button>
+      <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2.5">
+        <div className="flex items-center gap-2">
+          <span className="text-[13px] font-semibold text-text">AI 问答</span>
+          <Tooltip content={enableWeb ? "联网搜索已开启（点击关闭）" : "联网搜索已关闭（点击开启）"}>
+            <button
+              onClick={() => setEnableWeb((v) => !v)}
+              className={`flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-medium transition-colors ${
+                enableWeb
+                  ? "border-accent/40 bg-accent-soft text-accent"
+                  : "border-line bg-background text-faint"
+              }`}
+            >
+              <span
+                className={`relative inline-block h-3.5 w-6 shrink-0 rounded-full transition-colors ${
+                  enableWeb ? "bg-accent" : "bg-line-strong"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 h-2.5 w-2.5 rounded-full bg-white shadow-sm transition-all ${
+                    enableWeb ? "left-3" : "left-0.5"
+                  }`}
+                />
+              </span>
+              {enableWeb ? "联网" : "离线"}
+            </button>
+          </Tooltip>
+        </div>
+
         <div className="flex items-center gap-1">
           <Tooltip content="历史会话">
             <button
               onClick={() => setShowHistory((v) => !v)}
-              className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-muted"
+              className={`flex items-center gap-1 rounded-md px-2 py-1.5 text-xs transition-colors ${
+                showHistory ? "bg-active text-accent" : "text-muted hover:bg-hover hover:text-text"
+              }`}
             >
               <HistoryIcon size={14} />
+              历史
             </button>
           </Tooltip>
           <Tooltip content="清空对话">
             <button
               onClick={clearChat}
               disabled={loading}
-              className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-muted disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-muted transition-colors hover:bg-danger-soft hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
             >
               <TrashIcon size={14} />
+              清空
             </button>
           </Tooltip>
-          <Tooltip
-            content={enableWeb ? "联网搜索已开启（点击关闭）" : "联网搜索已关闭（点击开启）"}
-          >
+          <Tooltip content="收起 AI 栏">
             <button
-              onClick={() => setEnableWeb((v) => !v)}
-              className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                enableWeb
-                  ? "bg-accent-soft text-accent"
-                  : "bg-surface-2 text-faint"
-              }`}
+              onClick={() => setCollapsed(true)}
+              className="grid h-7 w-7 place-items-center rounded-md border border-line text-faint transition-colors hover:bg-hover hover:text-text"
             >
-            <span
-              className={`inline-block h-1.5 w-1.5 rounded-full ${
-                enableWeb ? "bg-accent" : "bg-faint"
-              }`}
-            />
-              联网
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 18l6-6-6-6" />
+              </svg>
             </button>
           </Tooltip>
         </div>
@@ -587,6 +604,16 @@ export function AiPanel({ theme }: { theme: "light" | "dark" }) {
         cancelText="取消"
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTargetId(null)}
+      />
+
+      <ConfirmDialog
+        open={confirmClear}
+        title="清空对话"
+        message="确定清空当前对话的全部内容吗？此操作不可恢复。"
+        confirmText="清空"
+        cancelText="取消"
+        onConfirm={doClearChat}
+        onCancel={() => setConfirmClear(false)}
       />
     </aside>
   );

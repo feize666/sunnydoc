@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, type ReactNode } from "react";
-import { renderMarkdown } from "@/lib/markdown";
+import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
+import { renderMarkdown, extractToc, type TocItem } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
 import { updateDocument } from "@/lib/api";
@@ -15,6 +15,8 @@ import {
   ImageIcon,
   MinusIcon,
   LinkIcon,
+  CopyIcon,
+  CheckIcon,
 } from "./icons";
 
 type Mode = "preview" | "edit";
@@ -27,6 +29,25 @@ const COLORS = [
   { name: "蓝色", value: "#3b82f6" },
   { name: "紫色", value: "#a855f7" },
 ];
+
+function ShareIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
+    </svg>
+  );
+}
+
+function StarIcon({ size = 15, filled = false }: { size?: number; filled?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+    </svg>
+  );
+}
 
 function ToolButton({
   title,
@@ -63,6 +84,9 @@ export function Editor({
   highlight,
   theme,
   readOnly,
+  isFavorite,
+  onToggleFavorite,
+  onShare,
 }: {
   doc: Doc | null;
   loading?: boolean;
@@ -70,13 +94,24 @@ export function Editor({
   highlight?: string;
   theme: "light" | "dark";
   readOnly?: boolean;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
+  onShare?: () => void;
 }) {
   const [mode, setMode] = useState<Mode>("preview");
   const [draftTitle, setDraftTitle] = useState("");
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
+  const [copied, setCopied] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // 大纲（随正文变化重算）
+  const toc: TocItem[] = useMemo(
+    () => (doc?.body ? extractToc(doc.body) : []),
+    [doc?.body],
+  );
 
   // 异步渲染预览（代码块用 shiki 高亮）；切换文档 / 保存 / 主题变化后重渲染
   useEffect(() => {
@@ -150,9 +185,26 @@ export function Editor({
     }
   };
 
+  const copyMarkdown = async () => {
+    if (!doc) return;
+    try {
+      await navigator.clipboard.writeText(doc.body);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* 剪贴板不可用时静默降级 */
+    }
+  };
+
+  const scrollToHeading = (index: number) => {
+    const container = contentRef.current;
+    if (!container) return;
+    const headings = container.querySelectorAll("h1, h2, h3, h4");
+    headings[index]?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   // —— 选区工具函数 ——
 
-  // 用前后缀包裹选中文本；无选中则插入占位并选中它
   const applyWrap = (prefix: string, suffix: string, placeholder: string) => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -169,7 +221,6 @@ export function Editor({
     });
   };
 
-  // 对选中行（或光标所在行）的每一行行首加前缀（标题/列表/引用）
   const applyLinePrefix = (prefix: string) => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -191,7 +242,6 @@ export function Editor({
     });
   };
 
-  // 插入代码块
   const insertCodeBlock = () => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -207,7 +257,6 @@ export function Editor({
     });
   };
 
-  // 插入分割线
   const insertHr = () => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -223,7 +272,6 @@ export function Editor({
     });
   };
 
-  // 插入链接
   const insertLink = () => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -239,7 +287,6 @@ export function Editor({
     });
   };
 
-  // 插入图片
   const insertImage = () => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -255,7 +302,6 @@ export function Editor({
     });
   };
 
-  // 字体颜色：选中文字包裹 <span style="color:...">，未选中插入占位
   const applyColor = (color: string) => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -352,13 +398,48 @@ export function Editor({
   );
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col bg-background">
-      {mode === "preview" ? (
-        <div className="flex items-center gap-2 border-b border-line bg-surface px-4 py-1.5">
-          <span className="rounded-md bg-background px-2.5 py-1 text-xs font-medium text-accent shadow-[0_0_0_1px_var(--line)]">
-            预览
-          </span>
+    <main className="flex min-w-0 flex-1">
+      <div className="flex min-w-0 flex-1 flex-col bg-background">
+        {/* 操作栏（始终显示）：复制 Markdown / 分享 / 收藏 + 编辑/完成 */}
+        <div className="flex h-11 shrink-0 items-center gap-1 border-b border-line bg-surface px-4">
+          <div className="flex items-center gap-1">
+            <Tooltip content={copied ? "已复制" : "复制 Markdown"}>
+              <button
+                onClick={copyMarkdown}
+                className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted transition-colors hover:bg-hover hover:text-text"
+              >
+                {copied ? <CheckIcon size={14} className="text-accent" /> : <CopyIcon size={14} />}
+                复制
+              </button>
+            </Tooltip>
+            {onShare && (
+              <Tooltip content="分享">
+                <button
+                  onClick={onShare}
+                  className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted transition-colors hover:bg-hover hover:text-text"
+                >
+                  <ShareIcon size={14} />
+                  分享
+                </button>
+              </Tooltip>
+            )}
+            {onToggleFavorite && (
+              <Tooltip content={isFavorite ? "取消收藏" : "收藏"}>
+                <button
+                  onClick={onToggleFavorite}
+                  className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors ${
+                    isFavorite ? "text-accent hover:bg-hover" : "text-muted hover:bg-hover hover:text-text"
+                  }`}
+                >
+                  <StarIcon size={14} filled={isFavorite} />
+                  收藏
+                </button>
+              </Tooltip>
+            )}
+          </div>
+
           <div className="flex-1" />
+
           {readOnly ? (
             <span className="flex items-center gap-1 text-xs text-faint">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -367,75 +448,108 @@ export function Editor({
               </svg>
               只读
             </span>
+          ) : mode === "preview" ? (
+            <Tooltip content="编辑文档">
+              <button
+                onClick={() => handleSwitch("edit")}
+                className="btn-accent rounded-md px-3.5 py-1.5 text-xs font-medium text-white"
+              >
+                编辑
+              </button>
+            </Tooltip>
           ) : (
-            <button
-              onClick={() => handleSwitch("edit")}
-              className="btn-accent rounded-md px-3.5 py-1.5 text-xs font-medium text-white"
-            >
-              编辑
-            </button>
+            <Tooltip content="完成并保存">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="btn-accent rounded-md px-3.5 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+              >
+                {saving ? "保存中…" : "完成"}
+              </button>
+            </Tooltip>
           )}
         </div>
-      ) : (
-        <div className="flex items-center gap-2 border-b border-line bg-surface px-3 py-1.5">
-          <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
-            {toolbar}
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <button
-              onClick={() => setMode("preview")}
-              className="rounded-md px-3 py-1.5 text-xs text-muted transition-colors hover:bg-hover hover:text-text"
-            >
-              取消
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="btn-accent rounded-md px-3.5 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-            >
-              {saving ? "保存中…" : "保存"}
-            </button>
-          </div>
-        </div>
-      )}
 
-      <div className="flex-1 overflow-y-auto py-8">
-        <div className="mx-auto max-w-[760px] px-10">
-          {mode === "preview" ? (
-            <>
+        {/* 格式工具栏（仅编辑态显示） */}
+        {mode === "edit" && !readOnly && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-1.5">
+            <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+              {toolbar}
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Tooltip content="放弃编辑">
+                <button
+                  onClick={() => setMode("preview")}
+                  className="rounded-md px-3 py-1.5 text-xs text-muted transition-colors hover:bg-hover hover:text-text"
+                >
+                  取消
+                </button>
+              </Tooltip>
+            </div>
+          </div>
+        )}
+
+        {/* 正文 */}
+        <div className="flex-1 overflow-y-auto py-8">
+          <div className="mx-auto max-w-[760px] px-10">
+            {mode === "preview" ? (
               <h1 className="text-[32px] font-bold leading-[1.25] tracking-[-0.01em] text-text">
                 {doc.title}
               </h1>
-              <p className="mt-3 text-[13px] text-faint">
-                {doc.path} · 更新于 {doc.updated}
-              </p>
-              <div className="mt-4 border-b border-line" />
+            ) : (
+              <input
+                value={draftTitle}
+                onChange={(e) => setDraftTitle(e.target.value)}
+                className="w-full bg-transparent text-[32px] font-bold leading-[1.25] tracking-[-0.01em] text-text outline-none placeholder:text-faint"
+                placeholder="标题"
+                spellCheck={false}
+              />
+            )}
+            <p className="mt-3 text-[13px] text-faint">
+              {doc.path} · 更新于 {doc.updated}
+            </p>
+            <div className="mt-4 border-b border-line" />
+            {mode === "preview" ? (
               <div
+                ref={contentRef}
                 className="md-body mt-6"
                 onClick={handleCodeBlockCopy}
                 dangerouslySetInnerHTML={{ __html: previewHtml }}
               />
-            </>
-          ) : (
-            <>
-              <input
-                value={draftTitle}
-                onChange={(e) => setDraftTitle(e.target.value)}
-                className="mb-4 w-full bg-transparent text-[28px] font-bold leading-tight tracking-[-0.01em] text-text outline-none placeholder:text-faint"
-                placeholder="标题"
-                spellCheck={false}
-              />
+            ) : (
               <textarea
                 ref={textareaRef}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                className="h-[calc(100vh-280px)] w-full resize-none bg-transparent font-mono text-[14px] leading-relaxed text-text outline-none"
+                className="mt-6 h-[calc(100vh-300px)] w-full resize-none bg-transparent font-mono text-[14px] leading-relaxed text-text outline-none"
                 spellCheck={false}
               />
-            </>
-          )}
+            )}
+          </div>
         </div>
       </div>
+
+      {/* 右侧大纲（预览态 + 有标题时显示） */}
+      {mode === "preview" && toc.length > 0 && (
+        <aside className="hidden w-48 shrink-0 overflow-y-auto border-l border-line bg-surface lg:block">
+          <div className="sticky top-0 border-b border-line bg-surface px-3 py-2.5 text-[12px] font-semibold text-muted">
+            大纲
+          </div>
+          <ul className="p-1.5">
+            {toc.map((item, i) => (
+              <li key={i}>
+                <button
+                  onClick={() => scrollToHeading(i)}
+                  className="flex w-full items-center rounded-md py-1 text-left text-[12px] leading-snug text-faint transition-colors hover:bg-hover hover:text-text"
+                  style={{ paddingLeft: 8 + (item.level - 1) * 12 }}
+                >
+                  <span className="line-clamp-1">{item.text}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </aside>
+      )}
     </main>
   );
 }

@@ -455,6 +455,7 @@ def list_documents(
     kb_id: str | None = None, current_user: dict = Depends(get_current_user)
 ):
     docs = store.all(kb_id, current_user["id"])
+    fav_ids = set(store.list_favorites(current_user["id"]))
     return {
         "total": len(docs),
         "documents": [
@@ -466,6 +467,7 @@ def list_documents(
                 "created_at": d["created_at"],
                 "folder_id": d.get("folder_id"),
                 "kb_id": d.get("kb_id"),
+                "is_favorite": d["id"] in fav_ids,
             }
             for d in docs
         ],
@@ -507,6 +509,83 @@ def get_document(doc_id: str, current_user: dict = Depends(get_current_user)):
         "created_at": doc["created_at"],
         "folder_id": doc.get("folder_id"),
         "kb_id": doc.get("kb_id"),
+        "is_favorite": store.is_favorite(current_user["id"], doc_id),
+    }
+
+
+# ---------- 收藏 / 分享 ----------
+
+@router.post("/documents/{doc_id}/favorite")
+def add_favorite(doc_id: str, current_user: dict = Depends(get_current_user)):
+    """收藏文档。"""
+    if store.get(doc_id, current_user["id"]) is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    store.add_favorite(current_user["id"], doc_id)
+    return {"ok": True, "favorited": True}
+
+
+@router.delete("/documents/{doc_id}/favorite")
+def remove_favorite(doc_id: str, current_user: dict = Depends(get_current_user)):
+    """取消收藏。"""
+    store.remove_favorite(current_user["id"], doc_id)
+    return {"ok": True, "favorited": False}
+
+
+@router.get("/favorites")
+def list_favorites(current_user: dict = Depends(get_current_user)):
+    """收藏列表（返回收藏的文档 meta）。"""
+    doc_ids = store.list_favorites(current_user["id"])
+    docs = [store.get(did, current_user["id"]) for did in doc_ids]
+    return {
+        "documents": [
+            {
+                "id": d["id"],
+                "title": d["title"],
+                "source": d["source"],
+                "kb_id": d.get("kb_id"),
+                "created_at": d["created_at"],
+                "is_favorite": True,
+            }
+            for d in docs
+            if d is not None
+        ]
+    }
+
+
+@router.post("/documents/{doc_id}/share")
+def create_share(doc_id: str, current_user: dict = Depends(get_current_user)):
+    """生成/复用文档分享链接，返回 token（前端拼接 URL）。"""
+    if store.get(doc_id, current_user["id"]) is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    existing = store.get_share_by_doc(doc_id)
+    if existing is not None:
+        return {"token": existing["token"], "url": None}
+    token = uuid.uuid4().hex
+    store.create_share(doc_id, token)
+    return {"token": token, "url": None}
+
+
+@router.delete("/documents/{doc_id}/share")
+def revoke_share(doc_id: str, current_user: dict = Depends(get_current_user)):
+    """撤销文档分享链接。"""
+    store.delete_share(doc_id)
+    return {"ok": True}
+
+
+@router.get("/share/{token}")
+def get_shared_doc(token: str):
+    """公开只读访问：通过分享链接查看文档（无需登录）。"""
+    share = store.get_share_by_token(token)
+    if share is None:
+        raise HTTPException(status_code=404, detail="分享链接不存在或已失效")
+    doc = store.get(share["doc_id"])
+    if doc is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    return {
+        "id": doc["id"],
+        "title": doc["title"],
+        "text": doc["text"],
+        "created_at": doc["created_at"],
     }
 
 

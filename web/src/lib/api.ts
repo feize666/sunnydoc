@@ -12,6 +12,7 @@ export interface DocMeta {
   created_at: number;
   folder_id?: string | null;
   kb_id?: string | null;
+  is_favorite?: boolean;
 }
 
 export interface Kb {
@@ -41,6 +42,7 @@ export interface Folder {
 
 export interface DocDetail extends DocMeta {
   text: string;
+  is_favorite?: boolean;
 }
 
 export interface Citation {
@@ -311,6 +313,40 @@ export async function chat(
 
 export async function deleteDocument(id: string): Promise<void> {
   await request(`/documents/${id}`, { method: "DELETE" });
+}
+
+// —— 收藏 / 分享 ——
+
+export async function addFavorite(docId: string): Promise<void> {
+  await request(`/documents/${docId}/favorite`, { method: "POST" });
+}
+
+export async function removeFavorite(docId: string): Promise<void> {
+  await request(`/documents/${docId}/favorite`, { method: "DELETE" });
+}
+
+export async function listFavorites(): Promise<DocMeta[]> {
+  const data = await request<{ documents: DocMeta[] }>("/favorites");
+  return Array.isArray(data?.documents) ? data.documents : [];
+}
+
+export async function createShare(docId: string): Promise<{ token: string }> {
+  return request(`/documents/${docId}/share`, { method: "POST" });
+}
+
+export async function revokeShare(docId: string): Promise<void> {
+  await request(`/documents/${docId}/share`, { method: "DELETE" });
+}
+
+export interface SharedDoc {
+  id: string;
+  title: string;
+  text: string;
+  created_at: number;
+}
+
+export async function getSharedDoc(token: string): Promise<SharedDoc> {
+  return request(`/share/${token}`);
 }
 
 // —— 知识库 ——

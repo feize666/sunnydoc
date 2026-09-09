@@ -119,7 +119,7 @@ export function Sidebar({
         <Tooltip content="展开侧栏">
           <button
             onClick={onToggleCollapse}
-            className="mt-3 grid h-7 w-7 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
+            className="mt-2.5 grid h-8 w-8 place-items-center rounded-md border border-line text-faint transition-colors hover:bg-hover hover:text-text"
           >
             <svg
               width="15"
@@ -138,15 +138,15 @@ export function Sidebar({
         <Tooltip content="展开侧栏">
           <button
             onClick={onToggleCollapse}
-            className="mt-3 grid h-7 w-7 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
+            className="mt-3 grid h-8 w-8 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-accent"
           >
             <svg
-              width="15"
-              height="15"
+              width="17"
+              height="17"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2"
+              strokeWidth="1.75"
               strokeLinecap="round"
               strokeLinejoin="round"
             >
@@ -209,10 +209,31 @@ export function Sidebar({
               {kbName ?? "知识库 · 全部文档"}
             </span>
           </div>
-          {onRefresh && (
-            <Tooltip content="刷新文档列表">
+          <div className="flex items-center gap-0.5">
+            {onRefresh && (
+              <Tooltip content="刷新文档列表">
+                <button
+                  onClick={onRefresh}
+                  className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
+                  </svg>
+                </button>
+              </Tooltip>
+            )}
+            <Tooltip content="折叠侧栏">
               <button
-                onClick={onRefresh}
+                onClick={onToggleCollapse}
                 className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
               >
                 <svg
@@ -225,11 +246,11 @@ export function Sidebar({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 >
-                  <path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
+                  <path d="M15 18l-6-6 6-6" />
                 </svg>
               </button>
             </Tooltip>
-          )}
+          </div>
         </div>
 
         {readOnly ? (
