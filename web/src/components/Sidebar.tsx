@@ -364,7 +364,7 @@ export function Sidebar({
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="搜索文档内容…"
-              className="w-full rounded-lg border border-line bg-background py-1.5 pl-8 pr-7 text-[14px] text-text outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
+              className="w-full rounded-lg border border-line bg-background py-1.5 pl-8 pr-7 text-[15px] text-text outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
             />
             {searchQuery && (
               <Tooltip
@@ -448,7 +448,7 @@ export function Sidebar({
                 className="flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-hover"
               >
                 <span
-                  className="truncate text-[14px] text-text"
+                  className="truncate text-[15px] text-text"
                   dangerouslySetInnerHTML={{
                     __html: highlightKw(r.title, searchQuery.trim()),
                   }}

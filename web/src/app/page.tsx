@@ -275,6 +275,7 @@ export default function Home() {
             },
           }));
           void recordRecent(detail.id);
+          refreshRecent();
         } catch {
           // 加载失败，保持空
         } finally {
@@ -282,9 +283,10 @@ export default function Home() {
         }
       } else {
         void recordRecent(key);
+        refreshRecent();
       }
     },
-    [docs],
+    [docs, refreshRecent],
   );
 
   const closeDoc = useCallback(
@@ -634,6 +636,8 @@ export default function Home() {
                   ? () => handleShareDoc(activeDoc.key, activeDoc.title)
                   : undefined
               }
+              recent={recent}
+              onOpenRecent={openRecent}
             />
           </div>
 

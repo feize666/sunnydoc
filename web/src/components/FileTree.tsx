@@ -64,10 +64,10 @@ function FileTreeNode({
         }}
       >
         <div
-          className={`group flex w-full items-center gap-1.5 rounded-md py-1 text-left text-[14px] transition-colors ${
+          className={`group flex w-full items-center gap-1.5 rounded-md py-1 text-left text-[15px] transition-colors ${
             dragOver
               ? "bg-active ring-1 ring-inset ring-accent text-text"
-              : "text-muted hover:bg-hover"
+              : "text-text hover:bg-hover"
           }`}
         >
           <button
@@ -143,10 +143,10 @@ function FileTreeNode({
         e.dataTransfer.setData("text/plain", node.key);
         e.dataTransfer.effectAllowed = "move";
       }}
-      className={`group flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-left text-[14px] transition-colors ${
+      className={`group flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-left text-[15px] transition-colors ${
         active
           ? "bg-active text-accent"
-          : "text-muted hover:bg-hover hover:text-text"
+          : "text-text hover:bg-hover"
       }`}
       style={{ paddingLeft: 8 + depth * 12 + 18 }}
     >

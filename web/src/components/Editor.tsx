@@ -6,6 +6,7 @@ import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
 import { updateDocument } from "@/lib/api";
 import type { Doc } from "@/data/docs";
+import type { RecentDoc } from "@/lib/api";
 import { RichEditor } from "./RichEditor";
 import { CopyIcon, CheckIcon, EditIcon } from "./icons";
 
@@ -40,6 +41,8 @@ export function Editor({
   isFavorite,
   onToggleFavorite,
   onShare,
+  recent,
+  onOpenRecent,
 }: {
   doc: Doc | null;
   loading?: boolean;
@@ -50,6 +53,8 @@ export function Editor({
   isFavorite?: boolean;
   onToggleFavorite?: () => void;
   onShare?: () => void;
+  recent?: RecentDoc[];
+  onOpenRecent?: (docId: string, kbId: string | null) => void;
 }) {
   const [mode, setMode] = useState<Mode>("preview");
   const [draftTitle, setDraftTitle] = useState("");
@@ -104,8 +109,40 @@ export function Editor({
 
   if (!doc) {
     return (
-      <main className="flex flex-1 items-center justify-center bg-background text-muted">
-        <p className="text-sm">从左侧选择一个文档开始阅读</p>
+      <main className="flex-1 overflow-y-auto bg-background">
+        <div className="mx-auto max-w-[760px] px-10 py-10">
+          <h2 className="mb-4 text-base font-semibold text-text">最近浏览</h2>
+          {!recent || recent.length === 0 ? (
+            <p className="text-sm text-muted">暂无浏览记录，从左侧选择一个文档开始阅读</p>
+          ) : (
+            <ul className="overflow-hidden rounded-xl border border-line bg-surface">
+              {recent.map((r, i) => (
+                <li key={`${r.doc_id}-${i}`}>
+                  <button
+                    onClick={() => onOpenRecent?.(r.doc_id, r.kb_id)}
+                    className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-hover"
+                  >
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-surface-2 text-muted">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <path d="M14 2v6h6" />
+                      </svg>
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[14px] text-text group-hover:text-accent">
+                        {r.title}
+                      </span>
+                      <span className="mt-0.5 block truncate text-[12px] text-faint">
+                        {r.source ?? ""}
+                      </span>
+                    </span>
+                  </button>
+                  {i < recent.length - 1 && <div className="border-b border-line" />}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </main>
     );
   }
@@ -289,8 +326,8 @@ export function Editor({
 
       {/* 右侧大纲（预览态 + 有标题时显示） */}
       {mode === "preview" && toc.length > 0 && (
-        <aside className="hidden w-52 shrink-0 overflow-y-auto border-l border-line bg-surface lg:block">
-          <div className="sticky top-0 border-b border-line bg-surface px-3 py-2.5 text-[13px] font-semibold text-muted">
+        <aside className="hidden w-56 shrink-0 overflow-y-auto border-l border-line bg-surface lg:block">
+          <div className="sticky top-0 border-b border-line bg-surface px-3 py-2.5 text-[14px] font-semibold text-text">
             大纲
           </div>
           <ul className="p-1.5">
@@ -298,7 +335,7 @@ export function Editor({
               <li key={i}>
                 <button
                   onClick={() => scrollToHeading(i)}
-                  className="flex w-full items-center rounded-md py-1 text-left text-[13px] leading-snug text-faint transition-colors hover:bg-hover hover:text-text"
+                  className="flex w-full items-center rounded-md py-1 text-left text-[14px] leading-snug text-text transition-colors hover:bg-hover"
                   style={{ paddingLeft: 8 + (item.level - 1) * 12 }}
                 >
                   <span className="line-clamp-1">{item.text}</span>
