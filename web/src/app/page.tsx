@@ -116,6 +116,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [searchType, setSearchType] = useState<string>("");
   const [highlight, setHighlight] = useState("");
   const [sortBy, setSortBy] = useState<SortBy>("numeric");
 
@@ -329,7 +330,7 @@ export default function Home() {
     [activeKey],
   );
 
-  // 全文搜索（防抖 300ms）
+  // 全文搜索（防抖 300ms，支持类型过滤）
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) {
@@ -340,7 +341,7 @@ export default function Home() {
     setSearching(true);
     const timer = setTimeout(async () => {
       try {
-        setSearchResults(await searchDocuments(q, currentKbId));
+        setSearchResults(await searchDocuments(q, currentKbId, searchType || null));
       } catch {
         setSearchResults([]);
       } finally {
@@ -348,7 +349,7 @@ export default function Home() {
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchQuery, currentKbId]);
+  }, [searchQuery, currentKbId, searchType]);
 
   // 点击搜索结果：打开文档并高亮关键词
   const handleOpenSearchResult = useCallback(
@@ -790,6 +791,8 @@ export default function Home() {
               onBackHome={goHome}
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
+              searchType={searchType}
+              onSearchTypeChange={setSearchType}
               searchResults={searchResults}
               searching={searching}
               onOpenSearchResult={handleOpenSearchResult}

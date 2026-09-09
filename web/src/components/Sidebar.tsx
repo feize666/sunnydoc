@@ -37,6 +37,54 @@ function highlightKw(text: string, kw: string): string {
   return out;
 }
 
+const TYPE_FILTERS: { value: string; label: string }[] = [
+  { value: "", label: "全部" },
+  { value: "doc", label: "文档" },
+  { value: "table", label: "表格" },
+  { value: "board", label: "画板" },
+  { value: "datasheet", label: "数据表" },
+];
+
+function TypeIcon({ type }: { type?: string }) {
+  const common = {
+    width: 14,
+    height: 14,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.75,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+  if (type === "table") {
+    return (
+      <svg {...common}>
+        <path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18" />
+      </svg>
+    );
+  }
+  if (type === "board") {
+    return (
+      <svg {...common}>
+        <path d="M3 3h18v18H3zM7 16l4-4 3 2 4-5" />
+      </svg>
+    );
+  }
+  if (type === "datasheet") {
+    return (
+      <svg {...common}>
+        <path d="M4 5h16v14H4zM4 9h16M9 9v10" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+    </svg>
+  );
+}
+
 export function Sidebar({
   data,
   activeKey,
@@ -64,6 +112,8 @@ export function Sidebar({
   onBackHome,
   searchQuery,
   onSearchChange,
+  searchType,
+  onSearchTypeChange,
   searchResults,
   searching,
   onOpenSearchResult,
@@ -99,6 +149,8 @@ export function Sidebar({
   onOpenTrash?: () => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
+  searchType: string;
+  onSearchTypeChange: (t: string) => void;
   searchResults: SearchResult[];
   searching: boolean;
   onOpenSearchResult: (docId: string) => void;
@@ -110,6 +162,7 @@ export function Sidebar({
   const menuRef = useRef<HTMLDivElement>(null);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
+  const [selIndex, setSelIndex] = useState(0);
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -380,8 +433,27 @@ export function Sidebar({
             />
             <input
               value={searchQuery}
-              onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="搜索文档内容…"
+              onChange={(e) => {
+                onSearchChange(e.target.value);
+                setSelIndex(0);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setSelIndex((i) => Math.min(i + 1, searchResults.length - 1));
+                } else if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setSelIndex((i) => Math.max(i - 1, 0));
+                } else if (e.key === "Enter") {
+                  e.preventDefault();
+                  const r = searchResults[Math.max(0, Math.min(selIndex, searchResults.length - 1))];
+                  if (r) onOpenSearchResult(r.doc_id);
+                } else if (e.key === "Escape") {
+                  onSearchChange("");
+                  setSelIndex(0);
+                }
+              }}
+              placeholder="搜索文档内容…（↑↓ 选择，回车打开）"
               className="w-full rounded-lg border border-line bg-background py-1.5 pl-8 pr-7 text-[15px] text-text outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
             />
             {searchQuery && (
@@ -449,6 +521,21 @@ export function Sidebar({
       <div className="flex-1 overflow-y-auto px-1.5 py-2">
         {searchQuery.trim() !== "" ? (
           <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-1 px-1 py-1">
+              {TYPE_FILTERS.map((t) => (
+                <button
+                  key={t.value}
+                  onClick={() => onSearchTypeChange(t.value)}
+                  className={`rounded-full px-2.5 py-0.5 text-[11px] transition-colors ${
+                    searchType === t.value
+                      ? "bg-accent text-white"
+                      : "text-muted hover:bg-hover hover:text-text"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
             <div className="px-2 py-1 text-[11px] text-faint">
               {searching
                 ? "搜索中…"
@@ -459,24 +546,32 @@ export function Sidebar({
                 无匹配结果
               </div>
             )}
-            {searchResults.map((r) => (
+            {searchResults.map((r, i) => (
               <button
                 key={r.doc_id}
                 onClick={() => onOpenSearchResult(r.doc_id)}
-                className="flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-hover"
+                onMouseEnter={() => setSelIndex(i)}
+                className={`flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
+                  i === selIndex ? "bg-hover" : "hover:bg-hover"
+                }`}
               >
-                <span
-                  className="truncate text-[15px] text-text"
-                  dangerouslySetInnerHTML={{
-                    __html: highlightKw(r.title, searchQuery.trim()),
-                  }}
-                />
-                <span
-                  className="line-clamp-2 text-[12px] leading-snug text-faint"
-                  dangerouslySetInnerHTML={{
-                    __html: highlightKw(r.snippet, searchQuery.trim()),
-                  }}
-                />
+                <span className="mt-0.5 shrink-0 text-faint">
+                  <TypeIcon type={r.type} />
+                </span>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span
+                    className="truncate text-[15px] text-text"
+                    dangerouslySetInnerHTML={{
+                      __html: highlightKw(r.title, searchQuery.trim()),
+                    }}
+                  />
+                  <span
+                    className="line-clamp-2 text-[12px] leading-snug text-faint"
+                    dangerouslySetInnerHTML={{
+                      __html: highlightKw(r.snippet, searchQuery.trim()),
+                    }}
+                  />
+                </span>
               </button>
             ))}
           </div>

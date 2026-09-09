@@ -99,14 +99,17 @@ export interface SearchResult {
   folder_id?: string | null;
   kb_id?: string | null;
   source?: string;
+  type?: string;
 }
 
 export async function searchDocuments(
   q: string,
   kbId?: string | null,
+  type?: string | null,
 ): Promise<SearchResult[]> {
   const params = new URLSearchParams({ q });
   if (kbId) params.set("kb_id", kbId);
+  if (type) params.set("type", type);
   const data = await request<{ total: number; results: SearchResult[] }>(
     `/search?${params.toString()}`,
   );

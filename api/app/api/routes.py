@@ -414,11 +414,13 @@ def search_documents(
     q: str,
     kb_id: str | None = None,
     limit: int = 50,
+    type: str | None = None,
     current_user: dict = Depends(get_current_user),
 ):
     """全文搜索：在文档标题/正文中大小写不敏感地匹配关键词，返回带片段的命中列表。
 
-    kb_id 提供时仅在指定知识库内搜索；结果按「标题命中优先 → 标题字典序」排序。
+    kb_id 提供时仅在指定知识库内搜索；type 提供时按节点类型过滤（doc/table/board/datasheet）；
+    结果按「标题命中优先 → 标题字典序」排序。
     """
     query = q.strip()
     if not query:
@@ -427,6 +429,8 @@ def search_documents(
     ql = query.lower()
     results: list[dict] = []
     for d in store.all(kb_id, current_user["id"]):
+        if type and d.get("type", "doc") != type:
+            continue
         title = d.get("title") or ""
         text = d.get("text") or ""
         title_idx = title.lower().find(ql)
@@ -446,6 +450,7 @@ def search_documents(
                 "folder_id": d.get("folder_id"),
                 "kb_id": d.get("kb_id"),
                 "source": d.get("source"),
+                "type": d.get("type", "doc"),
             }
         )
 
