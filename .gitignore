@@ -14,6 +14,7 @@ __pycache__/
 venv/
 
 # 后端数据
+api/data
 api/data/
 
 # 部署产物（服务器上 nginx 托管目录）
