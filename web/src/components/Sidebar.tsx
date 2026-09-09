@@ -458,8 +458,8 @@ export function Sidebar({
         <div className="mt-2 flex items-center gap-1.5">
           <div className="relative flex-1">
             <SearchIcon
-              size={14}
-              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint"
+              size={15}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
             />
             <input
               value={searchQuery}
@@ -489,20 +489,16 @@ export function Sidebar({
                 }
               }}
               placeholder="搜索文档内容…"
-              className="w-full rounded-lg border border-line bg-background py-1.5 pl-8 pr-7 text-[15px] text-text outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
+              className="h-9 w-full rounded-lg border border-line bg-background pl-9 pr-9 text-[14px] text-text outline-none placeholder:text-faint transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20"
             />
             {searchQuery && (
-              <Tooltip
-                content="清除"
-                className="absolute right-1.5 top-1/2 -translate-y-1/2"
+              <button
+                onClick={() => onSearchChange("")}
+                className="absolute right-1.5 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full text-faint transition-colors hover:bg-hover hover:text-text"
+                title="清除"
               >
-                <button
-                  onClick={() => onSearchChange("")}
-                  className="grid h-5 w-5 place-items-center rounded text-faint hover:bg-hover hover:text-text"
-                >
-                  <CloseIcon size={12} />
-                </button>
-              </Tooltip>
+                <CloseIcon size={14} />
+              </button>
             )}
 
             {focused && searchQuery.trim() === "" && history.length > 0 && (
@@ -529,7 +525,7 @@ export function Sidebar({
             <Tooltip content="排序方式">
               <button
                 onClick={() => setSortMenuOpen((v) => !v)}
-                className="flex items-center gap-1 rounded-lg border border-line px-2 py-1.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text"
+                className="flex h-9 items-center gap-1 rounded-lg border border-line px-2.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text"
               >
                 <svg
                   width="13"
