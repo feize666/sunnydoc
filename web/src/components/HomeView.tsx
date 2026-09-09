@@ -51,6 +51,7 @@ export function HomeView({
   onOpenProfile,
   onOpenUsers,
   onLogout,
+  onOpenSettings,
 }: {
   kbs: Kb[];
   recent: RecentDoc[];
@@ -71,6 +72,7 @@ export function HomeView({
   onOpenProfile?: () => void;
   onOpenUsers?: () => void;
   onLogout?: () => void;
+  onOpenSettings?: () => void;
 }) {
   const [pendingDelete, setPendingDelete] = useState<Kb | null>(null);
 
@@ -113,17 +115,6 @@ export function HomeView({
           </button>
 
           <ThemeToggle theme={theme} onToggle={onToggleTheme} className="h-8 w-8" />
-
-          {user && onLogout && (
-            <div className="border-l border-line pl-1.5">
-              <UserMenu
-                user={user}
-                onOpenProfile={onOpenProfile ?? (() => {})}
-                onOpenUsers={onOpenUsers ?? (() => {})}
-                onLogout={onLogout}
-              />
-            </div>
-          )}
         </div>
       </header>
 
@@ -357,6 +348,30 @@ export function HomeView({
           </section>
         </div>
       </div>
+
+      <footer className="flex h-10 shrink-0 items-center gap-2 border-t border-line bg-surface px-3">
+        {user && onLogout && (
+          <UserMenu
+            user={user}
+            onOpenProfile={onOpenProfile ?? (() => {})}
+            onOpenUsers={onOpenUsers ?? (() => {})}
+            onLogout={onLogout}
+            direction="up"
+          />
+        )}
+        {onOpenSettings && (
+          <button
+            onClick={onOpenSettings}
+            className="grid h-7 w-7 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
+            title="设置"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+        )}
+      </footer>
 
       <ConfirmDialog
         open={pendingDelete !== null}

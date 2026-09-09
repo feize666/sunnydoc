@@ -2,9 +2,7 @@
 
 import { CloseIcon } from "./icons";
 import { Tooltip } from "./Tooltip";
-import { UserMenu } from "./UserMenu";
 import { ThemeToggle } from "./ThemeToggle";
-import type { User } from "@/lib/api";
 
 export function TitleBar({
   openDocs,
@@ -16,10 +14,9 @@ export function TitleBar({
   theme,
   onToggleTheme,
   onBackHome,
-  user,
-  onOpenProfile,
-  onOpenUsers,
-  onLogout,
+  onToggleAi,
+  aiOpen,
+  onOpenFavorites,
 }: {
   openDocs: { key: string; title: string }[];
   activeKey: string | null;
@@ -30,10 +27,9 @@ export function TitleBar({
   theme: "light" | "dark";
   onToggleTheme: () => void;
   onBackHome?: () => void;
-  user?: User;
-  onOpenProfile?: () => void;
-  onOpenUsers?: () => void;
-  onLogout?: () => void;
+  onToggleAi: () => void;
+  aiOpen: boolean;
+  onOpenFavorites: () => void;
 }) {
   return (
     <header className="flex h-11 items-center gap-2 border-b border-line bg-background px-2.5 select-none">
@@ -121,18 +117,34 @@ export function TitleBar({
         </kbd>
       </button>
 
+      <Tooltip content="我的收藏">
+        <button
+          onClick={onOpenFavorites}
+          className="grid h-[30px] w-[30px] place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-text"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+          </svg>
+        </button>
+      </Tooltip>
+
       <ThemeToggle theme={theme} onToggle={onToggleTheme} className="h-[30px] w-[30px]" />
 
-      {user && onLogout && (
-        <div className="border-l border-line pl-1.5">
-          <UserMenu
-            user={user}
-            onOpenProfile={onOpenProfile ?? (() => {})}
-            onOpenUsers={onOpenUsers ?? (() => {})}
-            onLogout={onLogout}
-          />
-        </div>
-      )}
+      <Tooltip content={aiOpen ? "收起 AI 问答" : "打开 AI 问答"}>
+        <button
+          onClick={onToggleAi}
+          className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+            aiOpen
+              ? "bg-accent text-white shadow-glow"
+              : "bg-accent-soft text-accent hover:bg-accent hover:text-white"
+          }`}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2a4 4 0 0 1 4 4c1.7 0 3 1.3 3 3 0 .8-.3 1.5-.8 2 .5.5.8 1.2.8 2 0 1.7-1.3 3-3 3a4 4 0 0 1-8 0c-1.7 0-3-1.3-3-3 0-.8.3-1.5.8-2-.5-.5-.8-1.2-.8-2 0-1.7 1.3-3 3-3z" />
+          </svg>
+          AI 问答
+        </button>
+      </Tooltip>
     </header>
   );
 }

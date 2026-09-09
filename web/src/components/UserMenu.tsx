@@ -8,11 +8,15 @@ export function UserMenu({
   onOpenProfile,
   onOpenUsers,
   onLogout,
+  compact = false,
+  direction = "down",
 }: {
   user: User;
   onOpenProfile: () => void;
   onOpenUsers: () => void;
   onLogout: () => void;
+  compact?: boolean;
+  direction?: "down" | "up";
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -34,25 +38,35 @@ export function UserMenu({
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2.5 rounded-full border border-line bg-surface py-1 pl-1.5 pr-2.5 transition-colors hover:border-accent/40 hover:bg-hover"
+        className={`flex items-center rounded-full border border-line bg-surface transition-colors hover:border-accent/40 hover:bg-hover ${
+          compact ? "gap-1.5 py-0.5 pl-0.5 pr-2" : "gap-2.5 py-1 pl-1.5 pr-2.5"
+        }`}
         title={name}
       >
-        <span className="avatar-ring grid h-9 w-9 place-items-center rounded-full text-[15px] font-semibold">
+        <span
+          className={`avatar-ring grid place-items-center rounded-full font-semibold ${
+            compact ? "h-6 w-6 text-[11px]" : "h-9 w-9 text-[15px]"
+          }`}
+        >
           {user.avatar?.trim() || name.slice(0, 1)}
         </span>
-        <span className="flex flex-col items-start leading-tight">
-          <span className="flex items-center gap-1.5">
-            <span className="max-w-[110px] truncate text-[13px] font-semibold text-text">
-              {name}
-            </span>
-            {isAdmin && (
-              <span className="rounded bg-accent-soft px-1 py-px text-[9px] font-medium leading-none text-accent">
-                管理员
+        {!compact ? (
+          <span className="flex flex-col items-start leading-tight">
+            <span className="flex items-center gap-1.5">
+              <span className="max-w-[110px] truncate text-[13px] font-semibold text-text">
+                {name}
               </span>
-            )}
+              {isAdmin && (
+                <span className="rounded bg-accent-soft px-1 py-px text-[9px] font-medium leading-none text-accent">
+                  管理员
+                </span>
+              )}
+            </span>
+            <span className="text-[10px] text-faint">@{user.username}</span>
           </span>
-          <span className="text-[10px] text-faint">@{user.username}</span>
-        </span>
+        ) : (
+          <span className="max-w-[90px] truncate text-xs font-medium text-text">{name}</span>
+        )}
         <svg
           width="13"
           height="13"
@@ -69,7 +83,11 @@ export function UserMenu({
       </button>
 
       {open && (
-        <div className="menu-panel absolute right-0 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-xl py-1">
+        <div
+          className={`menu-panel absolute right-0 z-50 w-44 overflow-hidden rounded-xl py-1 ${
+            direction === "up" ? "bottom-full mb-1.5" : "top-full mt-1.5"
+          }`}
+        >
           <button
             onClick={() => {
               setOpen(false);

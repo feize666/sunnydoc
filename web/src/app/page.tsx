@@ -19,6 +19,8 @@ import { UserManagementView } from "@/components/UserManagementView";
 import { ShareDialog } from "@/components/ShareDialog";
 import { ShareDocDialog } from "@/components/ShareDocDialog";
 import { ShareView } from "@/components/ShareView";
+import { FavoritesPopover } from "@/components/FavoritesPopover";
+import { SettingsDialog } from "@/components/SettingsDialog";
 import type { Doc, TreeNode, SortBy } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
 import { buildTree } from "@/lib/buildTree";
@@ -112,6 +114,9 @@ export default function Home() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [shareKb, setShareKb] = useState<Kb | null>(null);
   const [shareDoc, setShareDoc] = useState<{ id: string; title: string } | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [favoritesOpen, setFavoritesOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [currentKbId, setCurrentKbId] = useState<string | null>(null);
   const [kbs, setKbs] = useState<Kb[]>([]);
   const [recent, setRecent] = useState<RecentDoc[]>([]);
@@ -579,10 +584,9 @@ export default function Home() {
               setTheme((t) => (t === "light" ? "dark" : "light"))
             }
             onBackHome={goHome}
-            user={user}
-            onOpenProfile={handleOpenProfile}
-            onOpenUsers={handleOpenUsers}
-            onLogout={handleLogout}
+            onToggleAi={() => setAiOpen((v) => !v)}
+            aiOpen={aiOpen}
+            onOpenFavorites={() => setFavoritesOpen(true)}
           />
 
           <div className="flex min-h-0 flex-1">
@@ -631,10 +635,17 @@ export default function Home() {
                   : undefined
               }
             />
-            <AiPanel theme={theme} />
           </div>
 
-          <StatusBar wordCount={wordCount} openCount={openKeys.length} />
+          <StatusBar
+            wordCount={wordCount}
+            openCount={openKeys.length}
+            user={user}
+            onOpenProfile={handleOpenProfile}
+            onOpenUsers={handleOpenUsers}
+            onLogout={handleLogout}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
         </>
       ) : view === "users" ? (
         <UserManagementView currentUserId={user.id} onBack={goHome} />
@@ -661,6 +672,7 @@ export default function Home() {
           onOpenProfile={handleOpenProfile}
           onOpenUsers={handleOpenUsers}
           onLogout={handleLogout}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
       )}
 
@@ -742,6 +754,22 @@ export default function Home() {
         doc={shareDoc}
         onClose={() => setShareDoc(null)}
       />
+
+      <FavoritesPopover
+        open={favoritesOpen}
+        onClose={() => setFavoritesOpen(false)}
+        favorites={favorites}
+        onOpen={openFavorite}
+      />
+
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        theme={theme}
+        onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+      />
+
+      <AiPanel theme={theme} open={aiOpen} onClose={() => setAiOpen(false)} />
     </div>
   );
 }
