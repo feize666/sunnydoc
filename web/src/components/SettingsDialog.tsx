@@ -19,7 +19,7 @@ export function SettingsDialog({
   return (
     <div className="dialog-overlay" onClick={onClose}>
       <div
-        className="dialog-panel w-[420px] max-w-[92vw]"
+        className="dialog-panel flex max-h-[85vh] w-[480px] max-w-[92vw] flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
@@ -32,7 +32,7 @@ export function SettingsDialog({
           </button>
         </div>
 
-        <div className="px-5 py-4">
+        <div className="flex-1 overflow-y-auto px-5 py-4">
           <div className="text-[12px] font-semibold text-muted">外观</div>
           <div className="mt-2 flex items-center justify-between rounded-lg border border-line bg-surface px-3 py-2.5">
             <div>

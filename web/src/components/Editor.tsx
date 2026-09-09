@@ -17,6 +17,7 @@ import {
   LinkIcon,
   CopyIcon,
   CheckIcon,
+  EditIcon,
 } from "./icons";
 
 type Mode = "preview" | "edit";
@@ -400,13 +401,16 @@ export function Editor({
   return (
     <main className="flex min-w-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col bg-background">
-        {/* 操作栏（始终显示）：复制 Markdown / 分享 / 收藏 + 编辑/完成 */}
-        <div className="flex h-11 shrink-0 items-center gap-1 border-b border-line bg-surface px-4">
-          <div className="flex items-center gap-1">
+        {/* 操作栏（始终显示）：复制 / 分享 / 收藏 / 编辑 卡片按钮，右侧一排 */}
+        <div className="flex h-12 shrink-0 items-center border-b border-line bg-surface px-4">
+          <div className="flex-1" />
+          <div className="flex items-center gap-2">
             <Tooltip content={copied ? "已复制" : "复制 Markdown"}>
               <button
                 onClick={copyMarkdown}
-                className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted transition-colors hover:bg-hover hover:text-text"
+                className={`flex items-center gap-1.5 rounded-lg border border-line bg-background px-3 py-1.5 text-xs text-text shadow-sm transition-all hover:border-accent/40 hover:text-accent hover:shadow-glow ${
+                  copied ? "border-accent/40 text-accent" : ""
+                }`}
               >
                 {copied ? <CheckIcon size={14} className="text-accent" /> : <CopyIcon size={14} />}
                 复制
@@ -416,7 +420,7 @@ export function Editor({
               <Tooltip content="分享">
                 <button
                   onClick={onShare}
-                  className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted transition-colors hover:bg-hover hover:text-text"
+                  className="flex items-center gap-1.5 rounded-lg border border-line bg-background px-3 py-1.5 text-xs text-text shadow-sm transition-all hover:border-accent/40 hover:text-accent hover:shadow-glow"
                 >
                   <ShareIcon size={14} />
                   分享
@@ -427,8 +431,10 @@ export function Editor({
               <Tooltip content={isFavorite ? "取消收藏" : "收藏"}>
                 <button
                   onClick={onToggleFavorite}
-                  className={`flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors ${
-                    isFavorite ? "text-accent hover:bg-hover" : "text-muted hover:bg-hover hover:text-text"
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs shadow-sm transition-all hover:shadow-glow ${
+                    isFavorite
+                      ? "border-accent/40 bg-accent-soft text-accent"
+                      : "border-line bg-background text-text hover:border-accent/40 hover:text-accent"
                   }`}
                 >
                   <StarIcon size={14} filled={isFavorite} />
@@ -436,38 +442,38 @@ export function Editor({
                 </button>
               </Tooltip>
             )}
+
+            {readOnly ? (
+              <span className="flex items-center gap-1 rounded-lg border border-line bg-background px-3 py-1.5 text-xs text-faint">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+                只读
+              </span>
+            ) : mode === "preview" ? (
+              <Tooltip content="编辑文档">
+                <button
+                  onClick={() => handleSwitch("edit")}
+                  className="btn-accent flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium text-white"
+                >
+                  <EditIcon size={14} />
+                  编辑
+                </button>
+              </Tooltip>
+            ) : (
+              <Tooltip content="完成并保存">
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="btn-accent flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                >
+                  <CheckIcon size={14} />
+                  {saving ? "保存中…" : "完成"}
+                </button>
+              </Tooltip>
+            )}
           </div>
-
-          <div className="flex-1" />
-
-          {readOnly ? (
-            <span className="flex items-center gap-1 text-xs text-faint">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="11" width="18" height="11" rx="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
-              只读
-            </span>
-          ) : mode === "preview" ? (
-            <Tooltip content="编辑文档">
-              <button
-                onClick={() => handleSwitch("edit")}
-                className="btn-accent rounded-md px-3.5 py-1.5 text-xs font-medium text-white"
-              >
-                编辑
-              </button>
-            </Tooltip>
-          ) : (
-            <Tooltip content="完成并保存">
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="btn-accent rounded-md px-3.5 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-              >
-                {saving ? "保存中…" : "完成"}
-              </button>
-            </Tooltip>
-          )}
         </div>
 
         {/* 格式工具栏（仅编辑态显示） */}

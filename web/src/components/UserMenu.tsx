@@ -84,9 +84,9 @@ export function UserMenu({
 
       {open && (
         <div
-          className={`menu-panel absolute right-0 z-50 w-44 overflow-hidden rounded-xl py-1 ${
-            direction === "up" ? "bottom-full mb-1.5" : "top-full mt-1.5"
-          }`}
+          className={`menu-panel absolute z-50 w-52 overflow-hidden rounded-xl py-1 ${
+            compact ? "left-0" : "right-0"
+          } ${direction === "up" ? "bottom-full mb-1.5" : "top-full mt-1.5"}`}
         >
           <button
             onClick={() => {
