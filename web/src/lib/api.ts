@@ -132,11 +132,12 @@ export async function createDocument(
   title: string,
   content: string,
   kbId?: string | null,
+  folderId?: string | null,
 ): Promise<{ id: string; title: string }> {
   return request("/documents", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, content, kb_id: kbId ?? undefined }),
+    body: JSON.stringify({ title, content, kb_id: kbId ?? undefined, folder_id: folderId ?? null }),
   });
 }
 
@@ -414,6 +415,18 @@ export async function generateSummary(docId: string): Promise<string> {
     method: "POST",
   });
   return data.summary;
+}
+
+export async function duplicateDocument(docId: string): Promise<{ id: string; title: string }> {
+  return request(`/documents/${docId}/duplicate`, { method: "POST" });
+}
+
+export async function renameDocument(docId: string, title: string): Promise<void> {
+  await request(`/documents/${docId}/rename`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
 }
 
 // —— 知识库 ——

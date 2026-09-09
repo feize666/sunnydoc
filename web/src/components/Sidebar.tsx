@@ -6,6 +6,7 @@ import { Tooltip } from "./Tooltip";
 import { PlusIcon, SearchIcon, CloseIcon } from "./icons";
 import type { TreeNode, SortBy } from "@/data/docs";
 import type { Folder, SearchResult } from "@/lib/api";
+import type { NodeType } from "./NewNodeMenu";
 
 function escapeHtml(s: string): string {
   return s
@@ -52,6 +53,11 @@ export function Sidebar({
   onDeleteFolder,
   onRenameFolder,
   onMoveDoc,
+  onNew,
+  onRenameDoc,
+  onDuplicateDoc,
+  onPinDoc,
+  onExportDoc,
   listError,
   kbName,
   onBackHome,
@@ -78,8 +84,13 @@ export function Sidebar({
   onRefresh?: () => void;
   onDeleteDoc?: (key: string) => void;
   onDeleteFolder?: (id: string) => void;
-  onRenameFolder?: () => void;
+  onRenameFolder?: (folderId: string, name: string) => Promise<void> | void;
   onMoveDoc?: (docId: string, folderId: string | null) => void;
+  onNew?: (type: NodeType, parentFolderId: string | null) => void;
+  onRenameDoc?: (docId: string, name: string) => Promise<void> | void;
+  onDuplicateDoc?: (docId: string) => void;
+  onPinDoc?: (docId: string, pinned: boolean) => void;
+  onExportDoc?: (docId: string) => void;
   listError?: string | null;
   kbName?: string;
   onBackHome?: () => void;
@@ -481,9 +492,14 @@ export function Sidebar({
               activeKey={activeKey}
               onSelect={onSelect}
               folders={folders}
+              onNew={readOnly ? undefined : onNew}
+              onRenameDoc={readOnly ? undefined : onRenameDoc}
+              onRenameFolder={readOnly ? undefined : onRenameFolder}
+              onDuplicateDoc={readOnly ? undefined : onDuplicateDoc}
+              onPinDoc={readOnly ? undefined : onPinDoc}
+              onExportDoc={readOnly ? undefined : onExportDoc}
               onDeleteDoc={readOnly ? undefined : onDeleteDoc}
               onDeleteFolder={readOnly ? undefined : onDeleteFolder}
-              onRenameFolder={readOnly ? undefined : onRenameFolder}
               onMoveDoc={readOnly ? undefined : onMoveDoc}
             />
           </>

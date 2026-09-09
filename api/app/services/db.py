@@ -85,6 +85,8 @@ def init() -> None:
         cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS tags varchar")
         cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS pinned boolean DEFAULT false")
         cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS summary text")
+        # 节点类型（doc/table/board/... 预留）
+        cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS type varchar DEFAULT 'doc'")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS folders (
@@ -233,6 +235,7 @@ def _doc_from_row(row: Any) -> dict[str, Any]:
         "tags": tags,
         "pinned": bool(row[11]) if len(row) > 11 else False,
         "summary": row[12] if len(row) > 12 else None,
+        "type": row[13] if len(row) > 13 else "doc",
     }
 
 
@@ -247,7 +250,7 @@ def _load_chunks(cur: Any, doc_id: str) -> list[dict[str, Any]]:
     ]
 
 
-_DOC_COLS = "id, title, text, source, ext, created_at, folder_id, kb_id, user_id, deleted_at, tags, pinned, summary"
+_DOC_COLS = "id, title, text, source, ext, created_at, folder_id, kb_id, user_id, deleted_at, tags, pinned, summary, type"
 
 
 def add_document(doc: dict[str, Any]) -> dict[str, Any]:
@@ -255,8 +258,8 @@ def add_document(doc: dict[str, Any]) -> dict[str, Any]:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO documents (id, title, text, source, ext, created_at, folder_id, kb_id, user_id)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO documents (id, title, text, source, ext, created_at, folder_id, kb_id, user_id, type)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 doc["id"],
                 doc["title"],
@@ -267,6 +270,7 @@ def add_document(doc: dict[str, Any]) -> dict[str, Any]:
                 doc.get("folder_id"),
                 doc.get("kb_id"),
                 doc.get("user_id"),
+                doc.get("type", "doc"),
             ),
         )
         for i, chunk in enumerate(doc["chunks"]):

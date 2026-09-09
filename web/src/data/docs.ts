@@ -12,6 +12,8 @@ export interface TreeNode {
   key?: string;
   children?: TreeNode[];
   createdAt?: number;
+  folder_id?: string | null;
+  pinned?: boolean;
 }
 
 export type SortBy = "numeric" | "name" | "created";

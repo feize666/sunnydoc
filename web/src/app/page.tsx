@@ -23,6 +23,7 @@ import { FavoritesPopover } from "@/components/FavoritesPopover";
 import { TrashView } from "@/components/TrashView";
 import { TagsDialog } from "@/components/TagsDialog";
 import { SettingsDialog } from "@/components/SettingsDialog";
+import type { NodeType } from "@/components/NewNodeMenu";
 import type { Doc, TreeNode, SortBy } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
 import { buildTree } from "@/lib/buildTree";
@@ -33,6 +34,12 @@ import {
   deleteDocument,
   deleteFolder,
   moveDocument,
+  createDocument,
+  createFolder,
+  renameFolder,
+  exportDocuments,
+  duplicateDocument,
+  renameDocument,
   listKbs,
   deleteKb,
   listRecent,
@@ -414,6 +421,88 @@ export default function Home() {
     [refreshList],
   );
 
+  // 语雀式「+」快速新建（默认标题）
+  const handleNew = useCallback(
+    async (type: NodeType, parentFolderId: string | null) => {
+      try {
+        if (type === "folder") {
+          await createFolder("未命名文件夹", parentFolderId, currentKbId);
+          refreshList();
+        } else if (type === "table") {
+          const doc = await createDocument(
+            "未命名表格",
+            "| 列1 | 列2 |\n| --- | --- |\n|  |  |\n",
+            currentKbId,
+            parentFolderId,
+          );
+          refreshList();
+          openDoc(doc.id);
+        } else {
+          const doc = await createDocument("未命名文档", "", currentKbId, parentFolderId);
+          refreshList();
+          openDoc(doc.id);
+        }
+      } catch (e) {
+        alert(`新建失败：${e instanceof Error ? e.message : "未知错误"}`);
+      }
+    },
+    [currentKbId, refreshList, openDoc],
+  );
+
+  // 重命名文档
+  const handleRenameDoc = useCallback(
+    async (docId: string, name: string) => {
+      try {
+        await renameDocument(docId, name);
+        refreshList();
+      } catch (e) {
+        alert(`重命名失败：${e instanceof Error ? e.message : "未知错误"}`);
+      }
+    },
+    [refreshList],
+  );
+
+  // 重命名文件夹
+  const handleRenameFolder = useCallback(
+    async (folderId: string, name: string) => {
+      try {
+        await renameFolder(folderId, name);
+        refreshList();
+      } catch (e) {
+        alert(`重命名失败：${e instanceof Error ? e.message : "未知错误"}`);
+      }
+    },
+    [refreshList],
+  );
+
+  // 复制文档
+  const handleDuplicateDoc = useCallback(
+    async (docId: string) => {
+      try {
+        await duplicateDocument(docId);
+        refreshList();
+      } catch (e) {
+        alert(`复制失败：${e instanceof Error ? e.message : "未知错误"}`);
+      }
+    },
+    [refreshList],
+  );
+
+  // 导出单文档（markdown）
+  const handleExportDoc = useCallback(async (docId: string) => {
+    try {
+      const { filename, blob } = await exportDocuments("md", [docId]);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(`导出失败：${e instanceof Error ? e.message : "未知错误"}`);
+    }
+  }, []);
+
   // 进入知识库
   const enterKb = useCallback((id: string) => {
     saveSessionKbId(id);
@@ -648,8 +737,13 @@ export default function Home() {
               onRefresh={refreshList}
               onDeleteDoc={handleDelete}
               onDeleteFolder={handleDeleteFolder}
-              onRenameFolder={refreshList}
+              onRenameFolder={handleRenameFolder}
               onMoveDoc={handleMoveDoc}
+              onNew={handleNew}
+              onRenameDoc={handleRenameDoc}
+              onDuplicateDoc={handleDuplicateDoc}
+              onPinDoc={handleTogglePin}
+              onExportDoc={handleExportDoc}
               listError={listError}
               kbName={currentKb?.name}
               onBackHome={goHome}

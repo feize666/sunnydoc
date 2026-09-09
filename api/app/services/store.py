@@ -99,6 +99,7 @@ class DocStore:
             d.setdefault("tags", [])
             d.setdefault("pinned", False)
             d.setdefault("summary", None)
+            d.setdefault("type", "doc")
         for f in self._folders:
             f.setdefault("kb_id", None)
             f.setdefault("user_id", None)
@@ -341,6 +342,7 @@ class DocStore:
         folder_id: str | None = None,
         kb_id: str | None = None,
         user_id: str | None = None,
+        type: str = "doc",
     ) -> dict[str, Any]:
         doc = {
             "id": uuid.uuid4().hex,
@@ -352,6 +354,7 @@ class DocStore:
             "folder_id": folder_id,
             "kb_id": kb_id,
             "user_id": user_id,
+            "type": type,
             "chunks": self._build_chunks(text),
         }
         if self._backend == "db":
@@ -360,6 +363,23 @@ class DocStore:
             self._docs.append(doc)
             self._save()
         return doc
+
+    def duplicate(self, doc_id: str, user_id: str | None = None) -> dict[str, Any] | None:
+        """复制文档：新标题加「（副本）」，内容/归属/位置一致。"""
+        doc = self.get(doc_id, user_id)
+        if doc is None:
+            return None
+        title = f"{doc['title']}（副本）"
+        return self.add(
+            title=title,
+            text=doc["text"],
+            source=doc["source"],
+            ext=doc["ext"],
+            folder_id=doc.get("folder_id"),
+            kb_id=doc.get("kb_id"),
+            user_id=doc.get("user_id"),
+            type=doc.get("type", "doc"),
+        )
 
     def update(
         self,

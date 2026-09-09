@@ -74,6 +74,7 @@ class CreateDocumentRequest(BaseModel):
     title: str
     content: str = ""
     kb_id: str | None = None
+    folder_id: str | None = None
 
 
 class UpdateDocumentRequest(BaseModel):
@@ -496,6 +497,7 @@ def create_document(req: CreateDocumentRequest, current_user: dict = Depends(get
         text=req.content,
         source="手动创建",
         ext=".md",
+        folder_id=req.folder_id,
         kb_id=req.kb_id,
         user_id=current_user["id"],
     )
@@ -1248,6 +1250,33 @@ def reset_password(
 
 class SetTagsRequest(BaseModel):
     tags: list[str]
+
+
+class RenameDocumentRequest(BaseModel):
+    title: str
+
+
+@router.post("/documents/{doc_id}/duplicate")
+def duplicate_document(doc_id: str, current_user: dict = Depends(get_current_user)):
+    """复制文档（标题加「（副本）」）。"""
+    new_doc = store.duplicate(doc_id, current_user["id"])
+    if new_doc is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    return {"id": new_doc["id"], "title": new_doc["title"], "kb_id": new_doc.get("kb_id")}
+
+
+@router.put("/documents/{doc_id}/rename")
+def rename_document(
+    doc_id: str, req: RenameDocumentRequest, current_user: dict = Depends(get_current_user)
+):
+    """目录树内直接重命名文档。"""
+    title = req.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="标题不能为空")
+    doc = store.update(doc_id, title=title, user_id=current_user["id"])
+    if doc is None:
+        raise HTTPException(status_code=404, detail="文档不存在或无权限")
+    return {"id": doc_id, "title": title}
 
 
 @router.get("/trash")

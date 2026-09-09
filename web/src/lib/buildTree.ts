@@ -79,6 +79,8 @@ export function buildTree(
       name: d.title,
       key: d.id,
       createdAt: d.created_at,
+      folder_id: d.folder_id,
+      pinned: !!d.pinned,
     };
     const parent = d.folder_id ? folderNodes.get(d.folder_id) : undefined;
     if (parent) {
