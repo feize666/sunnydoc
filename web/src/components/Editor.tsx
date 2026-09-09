@@ -219,16 +219,27 @@ export function Editor({
                 </button>
               </Tooltip>
             ) : (
-              <Tooltip content="完成并保存">
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="btn-accent flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                >
-                  <CheckIcon size={14} />
-                  {saving ? "保存中…" : "完成"}
-                </button>
-              </Tooltip>
+              <>
+                <Tooltip content="放弃编辑">
+                  <button
+                    onClick={() => setMode("preview")}
+                    disabled={saving}
+                    className="flex items-center gap-1.5 rounded-lg border border-line bg-background px-3 py-1.5 text-xs text-muted shadow-sm transition-all hover:border-accent/40 hover:text-text disabled:opacity-50"
+                  >
+                    取消
+                  </button>
+                </Tooltip>
+                <Tooltip content="完成并保存">
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="btn-accent flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                  >
+                    <CheckIcon size={14} />
+                    {saving ? "保存中…" : "完成"}
+                  </button>
+                </Tooltip>
+              </>
             )}
           </div>
         </div>
