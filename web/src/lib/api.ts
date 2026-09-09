@@ -100,16 +100,22 @@ export interface SearchResult {
   kb_id?: string | null;
   source?: string;
   type?: string;
+  tags?: string[];
+  created_at?: number;
 }
 
 export async function searchDocuments(
   q: string,
   kbId?: string | null,
   type?: string | null,
+  tag?: string | null,
+  sort?: string | null,
 ): Promise<SearchResult[]> {
   const params = new URLSearchParams({ q });
   if (kbId) params.set("kb_id", kbId);
   if (type) params.set("type", type);
+  if (tag) params.set("tag", tag);
+  if (sort) params.set("sort", sort);
   const data = await request<{ total: number; results: SearchResult[] }>(
     `/search?${params.toString()}`,
   );

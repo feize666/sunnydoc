@@ -110,6 +110,17 @@ export function Editor({
     };
   }, [doc?.body, highlight, theme]);
 
+  // 搜索命中定位：预览渲染后，滚动到第一个高亮标记
+  useEffect(() => {
+    if (!highlight || mode !== "preview") return;
+    const timer = setTimeout(() => {
+      const container = contentRef.current;
+      const hit = container?.querySelector("mark.search-hit, .search-hit");
+      hit?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [highlight, mode, previewHtml]);
+
   // 切换文档时重置为预览模式（表格/画板/数据表默认进编辑态）
   useEffect(() => {
     const t = doc?.type ?? "doc";

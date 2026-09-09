@@ -415,12 +415,14 @@ def search_documents(
     kb_id: str | None = None,
     limit: int = 50,
     type: str | None = None,
+    tag: str | None = None,
+    sort: str = "relevance",
     current_user: dict = Depends(get_current_user),
 ):
     """全文搜索：在文档标题/正文中大小写不敏感地匹配关键词，返回带片段的命中列表。
 
-    kb_id 提供时仅在指定知识库内搜索；type 提供时按节点类型过滤（doc/table/board/datasheet）；
-    结果按「标题命中优先 → 标题字典序」排序。
+    kb_id 提供时仅在指定知识库内搜索；type 按节点类型过滤；tag 按标签过滤；
+    sort=relevance（标题命中优先）/ created（按更新时间倒序）。
     """
     query = q.strip()
     if not query:
@@ -430,6 +432,8 @@ def search_documents(
     results: list[dict] = []
     for d in store.all(kb_id, current_user["id"]):
         if type and d.get("type", "doc") != type:
+            continue
+        if tag and tag not in (d.get("tags") or []):
             continue
         title = d.get("title") or ""
         text = d.get("text") or ""
@@ -451,10 +455,15 @@ def search_documents(
                 "kb_id": d.get("kb_id"),
                 "source": d.get("source"),
                 "type": d.get("type", "doc"),
+                "tags": d.get("tags") or [],
+                "created_at": d.get("created_at"),
             }
         )
 
-    results.sort(key=lambda r: (not r["match_in_title"], r["title"].lower()))
+    if sort == "created":
+        results.sort(key=lambda r: r.get("created_at") or 0, reverse=True)
+    else:
+        results.sort(key=lambda r: (not r["match_in_title"], r["title"].lower()))
     return {"query": q, "total": len(results), "results": results[:limit]}
 
 
