@@ -593,6 +593,38 @@ def rename_folder(folder_id: str, name: str) -> dict[str, Any] | None:
     }
 
 
+def update_folder_parent(folder_id: str, parent_id: str | None) -> bool:
+    """移动文件夹（改 parent_id），不存在返回 False。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE folders SET parent_id = %s WHERE id = %s",
+            (parent_id, folder_id),
+        )
+        updated = cur.rowcount > 0
+    conn.commit()
+    return updated
+
+
+def folder_descendant_ids(folder_id: str) -> set[str]:
+    """返回某文件夹的所有后代 id（不含自身）。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        ids: set[str] = set()
+        frontier = [folder_id]
+        while frontier:
+            placeholders = ",".join(["%s"] * len(frontier))
+            cur.execute(
+                f"SELECT id FROM folders WHERE parent_id IN ({placeholders})",
+                frontier,
+            )
+            children = [r[0] for r in cur.fetchall()]
+            new_children = [c for c in children if c not in ids]
+            ids.update(new_children)
+            frontier = new_children
+    return ids
+
+
 def delete_folder(folder_id: str) -> bool:
     """软删除文件夹：标记自身 + 后代文件夹 deleted_at，子级/本级文档 folder_id 置空。"""
     conn = _connect()

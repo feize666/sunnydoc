@@ -839,6 +839,20 @@ def delete_folder(folder_id: str, current_user: dict = Depends(get_current_user)
     raise HTTPException(status_code=404, detail="文件夹不存在")
 
 
+class MoveFolderRequest(BaseModel):
+    parent_id: str | None = None
+
+
+@router.put("/folders/{folder_id}/move")
+def move_folder(
+    folder_id: str, req: MoveFolderRequest, current_user: dict = Depends(get_current_user)
+):
+    """移动文件夹（parent_id=None 表示移到根目录）。"""
+    if store.move_folder(folder_id, req.parent_id, current_user["id"]):
+        return {"moved": folder_id}
+    raise HTTPException(status_code=400, detail="无法移动（目标位置非法或无权限）")
+
+
 # ---------- 知识库 ----------
 
 @router.get("/kbs")

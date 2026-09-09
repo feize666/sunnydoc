@@ -64,6 +64,7 @@ function FileTreeNode({
   onRequestDeleteDoc,
   onRequestDeleteFolder,
   onMoveDoc,
+  onMoveFolder,
   onDuplicateDoc,
   onPinDoc,
   onExportDoc,
@@ -78,6 +79,7 @@ function FileTreeNode({
   onRequestDeleteDoc?: (node: TreeNode) => void;
   onRequestDeleteFolder?: (node: TreeNode) => void;
   onMoveDoc?: (docId: string, folderId: string | null) => void;
+  onMoveFolder?: (folderId: string, parentId: string | null) => void;
   onDuplicateDoc?: (docId: string) => void;
   onPinDoc?: (docId: string, pinned: boolean) => void;
   onExportDoc?: (docId: string) => void;
@@ -100,6 +102,9 @@ function FileTreeNode({
     }
     if (onRequestRename && node.key) {
       folderItems.push({ label: "重命名", icon: <EditIcon size={14} />, onClick: () => onRequestRename({ kind: "folder", id: node.key!, name: node.name }) });
+    }
+    if (onMoveFolder && node.key) {
+      folderItems.push({ label: "移动到…", icon: <MoveIcon size={14} />, onClick: () => setMoveOpen(true) });
     }
     if (onRequestDeleteFolder && node.key) {
       folderItems.push({ label: "删除", icon: <TrashIcon size={14} />, danger: true, onClick: () => onRequestDeleteFolder(node) });
@@ -127,7 +132,7 @@ function FileTreeNode({
         }}
       >
         <div
-          className={`group flex w-full items-center gap-1 rounded-md py-1 text-left text-[15px] transition-colors ${
+          className={`group relative flex w-full items-center gap-1 rounded-md py-1 text-left text-[15px] transition-colors ${
             dragOver ? "bg-active ring-1 ring-inset ring-accent text-text" : "text-text hover:bg-hover"
           }`}
         >
@@ -162,6 +167,31 @@ function FileTreeNode({
               {menuOpen && <TreeNodeMenu items={folderItems} onClose={() => setMenuOpen(false)} />}
             </div>
           )}
+
+          {moveOpen && node.key && onMoveFolder && (
+            <div
+              className="menu-panel absolute right-0 top-full z-30 mt-1 max-h-56 w-44 overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => { onMoveFolder(node.key!, null); setMoveOpen(false); }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-muted hover:bg-hover hover:text-text"
+              >
+                <FolderIcon size={13} className="shrink-0 text-faint" />
+                根目录
+              </button>
+              {folders.filter((f) => f.id !== node.key).map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => { onMoveFolder(node.key!, f.id); setMoveOpen(false); }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-muted hover:bg-hover hover:text-text"
+                >
+                  <FolderIcon size={13} className="shrink-0 text-faint" />
+                  <span className="truncate">{f.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {open && node.children && (
@@ -178,6 +208,7 @@ function FileTreeNode({
                 onRequestDeleteDoc={onRequestDeleteDoc}
                 onRequestDeleteFolder={onRequestDeleteFolder}
                 onMoveDoc={onMoveDoc}
+                onMoveFolder={onMoveFolder}
                 onDuplicateDoc={onDuplicateDoc}
                 onPinDoc={onPinDoc}
                 onExportDoc={onExportDoc}
@@ -301,6 +332,7 @@ export function FileTree({
   onDeleteDoc,
   onDeleteFolder,
   onMoveDoc,
+  onMoveFolder,
   onDuplicateDoc,
   onPinDoc,
   onExportDoc,
@@ -315,6 +347,7 @@ export function FileTree({
   onDeleteDoc?: (key: string) => void;
   onDeleteFolder?: (id: string) => void;
   onMoveDoc?: (docId: string, folderId: string | null) => void;
+  onMoveFolder?: (folderId: string, parentId: string | null) => void;
   onDuplicateDoc?: (docId: string) => void;
   onPinDoc?: (docId: string, pinned: boolean) => void;
   onExportDoc?: (docId: string) => void;
@@ -357,6 +390,7 @@ export function FileTree({
             onRequestDeleteDoc={onDeleteDoc ? setPendingDeleteDoc : undefined}
             onRequestDeleteFolder={onDeleteFolder ? setPendingDeleteFolder : undefined}
             onMoveDoc={onMoveDoc}
+            onMoveFolder={onMoveFolder}
             onDuplicateDoc={onDuplicateDoc}
             onPinDoc={onPinDoc}
             onExportDoc={onExportDoc}

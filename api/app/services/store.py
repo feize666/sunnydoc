@@ -706,6 +706,55 @@ class DocStore:
                 return dict(f)
         return None
 
+    def move_folder(
+        self, folder_id: str, parent_id: str | None, user_id: str | None = None
+    ) -> bool:
+        """移动文件夹（改 parent_id）。parent_id=None 表示移到根目录。
+
+        禁止：移动到自己、或自己的后代（会造成循环）。
+        """
+        # 权限校验
+        if user_id is not None:
+            target = self._find_folder(folder_id)
+            if target is None or not self._can_write_folder(target, user_id):
+                return False
+        else:
+            target = self._find_folder(folder_id)
+            if target is None:
+                return False
+        # 防循环：不能移到自身或后代
+        if parent_id == folder_id:
+            return False
+        if parent_id:
+            descendants = self._folder_descendants(folder_id)
+            if parent_id in descendants:
+                return False
+        if self._backend == "db":
+            return db.update_folder_parent(folder_id, parent_id)
+        for f in self._folders:
+            if f["id"] == folder_id:
+                f["parent_id"] = parent_id
+                self._save()
+                return True
+        return False
+
+    def _find_folder(self, folder_id: str) -> dict[str, Any] | None:
+        if self._backend == "db":
+            return next((f for f in db.list_folders() if f["id"] == folder_id), None)
+        return next((f for f in self._folders if f["id"] == folder_id), None)
+
+    def _folder_descendants(self, folder_id: str) -> set[str]:
+        if self._backend == "db":
+            return db.folder_descendant_ids(folder_id)
+        ids: set[str] = set()
+        frontier = [folder_id]
+        while frontier:
+            children = [f["id"] for f in self._folders if f.get("parent_id") in frontier]
+            new_children = [c for c in children if c not in ids]
+            ids.update(new_children)
+            frontier = new_children
+        return ids
+
     def delete_folder(self, folder_id: str, user_id: str | None = None) -> bool:
         """软删除文件夹：标记自身 + 后代 deleted_at，其下文档 folder_id 置空（移回根目录）。"""
         if self._backend == "db":

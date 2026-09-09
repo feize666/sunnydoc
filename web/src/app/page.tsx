@@ -37,6 +37,7 @@ import {
   createDocument,
   createFolder,
   renameFolder,
+  moveFolder,
   exportDocuments,
   duplicateDocument,
   renameDocument,
@@ -421,6 +422,19 @@ export default function Home() {
     [refreshList],
   );
 
+  // 移动文件夹
+  const handleMoveFolder = useCallback(
+    async (folderId: string, parentId: string | null) => {
+      try {
+        await moveFolder(folderId, parentId);
+        refreshList();
+      } catch (e) {
+        alert(`移动文件夹失败：${e instanceof Error ? e.message : "未知错误"}`);
+      }
+    },
+    [refreshList],
+  );
+
   // 语雀式「+」快速新建（默认标题）
   const handleNew = useCallback(
     async (type: NodeType, parentFolderId: string | null) => {
@@ -739,6 +753,7 @@ export default function Home() {
               onDeleteFolder={handleDeleteFolder}
               onRenameFolder={handleRenameFolder}
               onMoveDoc={handleMoveDoc}
+              onMoveFolder={handleMoveFolder}
               onNew={handleNew}
               onRenameDoc={handleRenameDoc}
               onDuplicateDoc={handleDuplicateDoc}

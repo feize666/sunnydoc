@@ -184,6 +184,14 @@ export async function renameFolder(id: string, name: string): Promise<Folder> {
   });
 }
 
+export async function moveFolder(id: string, parentId: string | null): Promise<void> {
+  await request(`/folders/${id}/move`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ parent_id: parentId }),
+  });
+}
+
 export async function deleteFolder(id: string): Promise<void> {
   await request(`/folders/${id}`, { method: "DELETE" });
 }
