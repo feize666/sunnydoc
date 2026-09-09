@@ -53,6 +53,9 @@ function ExportIcon({ size = 13 }: { size?: number }) {
 }
 
 type RenameTarget = { kind: "doc" | "folder"; id: string; name: string };
+type DropPos = "before" | "after" | "inside";
+
+const orderOf = (n: TreeNode) => n.sort_order ?? n.createdAt ?? 0;
 
 function FileTreeNode({
   node,
@@ -68,6 +71,8 @@ function FileTreeNode({
   onDuplicateDoc,
   onPinDoc,
   onExportDoc,
+  onReorder,
+  siblings = [],
   depth = 0,
 }: {
   node: TreeNode;
@@ -78,21 +83,103 @@ function FileTreeNode({
   onRequestRename?: (target: RenameTarget) => void;
   onRequestDeleteDoc?: (node: TreeNode) => void;
   onRequestDeleteFolder?: (node: TreeNode) => void;
-  onMoveDoc?: (docId: string, folderId: string | null) => void;
-  onMoveFolder?: (folderId: string, parentId: string | null) => void;
+  onMoveDoc?: (docId: string, folderId: string | null, sortOrder?: number | null) => void;
+  onMoveFolder?: (folderId: string, parentId: string | null, sortOrder?: number | null) => void;
   onDuplicateDoc?: (docId: string) => void;
   onPinDoc?: (docId: string, pinned: boolean) => void;
   onExportDoc?: (docId: string) => void;
+  onReorder?: (
+    draggedKey: string,
+    draggedKind: "folder" | "file",
+    target: TreeNode,
+    position: DropPos,
+    siblings: TreeNode[],
+  ) => void;
+  siblings?: TreeNode[];
   depth?: number;
 }) {
   const [open, setOpen] = useState(depth === 0);
   const [addOpen, setAddOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
+  const [dropPos, setDropPos] = useState<DropPos | null>(null);
+
+  const canDrag = !!onReorder;
+  const isFolder = node.type === "folder";
 
   const hoverBtn =
     "grid h-[22px] w-[22px] place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-hover hover:text-accent group-hover:opacity-100";
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!canDrag) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const h = rect.height;
+    if (isFolder && y > h * 0.3 && y < h * 0.7) {
+      setDropPos("inside");
+    } else if (y < h / 2) {
+      setDropPos("before");
+    } else {
+      setDropPos("after");
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setDropPos(null);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    if (!canDrag) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const draggedKey = e.dataTransfer.getData("text/plain");
+    const draggedKind = (e.dataTransfer.getData("application/x-kind") || "file") as "folder" | "file";
+    const pos = dropPos ?? (isFolder ? "inside" : "after");
+    setDropPos(null);
+    if (!draggedKey || draggedKey === node.key) return;
+    onReorder?.(draggedKey, draggedKind, node, pos, siblings);
+  };
+
+  const dropClass =
+    dropPos === "before"
+      ? "ring-2 ring-inset ring-accent ring-offset-0 [box-shadow:inset_0_2px_0_0_var(--accent,#378ADD)]"
+      : dropPos === "after"
+      ? "[box-shadow:inset_0_-2px_0_0_var(--accent,#378ADD)]"
+      : dropPos === "inside"
+      ? "bg-accent-soft ring-1 ring-inset ring-accent"
+      : "";
+
+  const renderMoveMenu = (onPick: (folderId: string | null) => void) => (
+    <div
+      className="menu-panel absolute right-0 top-full z-30 mt-1 max-h-56 w-44 overflow-y-auto"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button
+        onClick={() => { onPick(null); setMoveOpen(false); }}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-muted hover:bg-hover hover:text-text"
+      >
+        <FolderIcon size={13} className="shrink-0 text-faint" />
+        根目录
+      </button>
+      {folders.filter((f) => f.id !== node.key).map((f) => (
+        <button
+          key={f.id}
+          onClick={() => { onPick(f.id); setMoveOpen(false); }}
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-muted hover:bg-hover hover:text-text"
+        >
+          <FolderIcon size={13} className="shrink-0 text-faint" />
+          <span className="truncate">{f.name}</span>
+        </button>
+      ))}
+      {folders.length === 0 && (
+        <div className="px-3 py-1.5 text-[11px] text-faint">暂无文件夹，可先新建</div>
+      )}
+    </div>
+  );
 
   if (node.type === "folder") {
     const folderItems: MenuItem[] = [];
@@ -112,29 +199,21 @@ function FileTreeNode({
 
     return (
       <div
-        onDragOver={(e) => {
-          if (!onMoveDoc) return;
-          e.preventDefault();
-          e.stopPropagation();
-          e.dataTransfer.dropEffect = "move";
-          setDragOver(true);
+        draggable={canDrag}
+        onDragStart={(e) => {
+          if (!node.key) return;
+          e.dataTransfer.setData("text/plain", node.key);
+          e.dataTransfer.setData("application/x-kind", "folder");
+          e.dataTransfer.effectAllowed = "move";
         }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => {
-          if (!onMoveDoc) return;
-          e.preventDefault();
-          e.stopPropagation();
-          const docId = e.dataTransfer.getData("text/plain");
-          setDragOver(false);
-          if (docId && node.key && docId !== node.key) {
-            onMoveDoc(docId, node.key);
-          }
-        }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
         <div
           className={`group relative flex w-full items-center gap-1 rounded-md py-1 text-left text-[15px] transition-colors ${
-            dragOver ? "bg-active ring-1 ring-inset ring-accent text-text" : "text-text hover:bg-hover"
-          }`}
+            dropPos === "inside" ? "bg-accent-soft ring-1 ring-inset ring-accent" : "text-text hover:bg-hover"
+          } ${dropClass}`}
         >
           <button
             onClick={() => setOpen((v) => !v)}
@@ -168,35 +247,12 @@ function FileTreeNode({
             </div>
           )}
 
-          {moveOpen && node.key && onMoveFolder && (
-            <div
-              className="menu-panel absolute right-0 top-full z-30 mt-1 max-h-56 w-44 overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                onClick={() => { onMoveFolder(node.key!, null); setMoveOpen(false); }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-muted hover:bg-hover hover:text-text"
-              >
-                <FolderIcon size={13} className="shrink-0 text-faint" />
-                根目录
-              </button>
-              {folders.filter((f) => f.id !== node.key).map((f) => (
-                <button
-                  key={f.id}
-                  onClick={() => { onMoveFolder(node.key!, f.id); setMoveOpen(false); }}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-muted hover:bg-hover hover:text-text"
-                >
-                  <FolderIcon size={13} className="shrink-0 text-faint" />
-                  <span className="truncate">{f.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
+          {moveOpen && node.key && onMoveFolder && renderMoveMenu((fid) => onMoveFolder(node.key!, fid))}
         </div>
 
-        {open && node.children && (
+        {open && node.children && node.children.length > 0 && (
           <div>
-            {(node.children ?? []).map((child) => (
+            {node.children.map((child) => (
               <FileTreeNode
                 key={child.key ?? child.name}
                 node={child}
@@ -212,6 +268,8 @@ function FileTreeNode({
                 onDuplicateDoc={onDuplicateDoc}
                 onPinDoc={onPinDoc}
                 onExportDoc={onExportDoc}
+                onReorder={onReorder}
+                siblings={node.children}
                 depth={depth + 1}
               />
             ))}
@@ -249,15 +307,19 @@ function FileTreeNode({
   return (
     <div
       onClick={() => node.key && onSelect(node.key)}
-      draggable={!!onMoveDoc}
+      draggable={canDrag}
       onDragStart={(e) => {
         if (!node.key) return;
         e.dataTransfer.setData("text/plain", node.key);
+        e.dataTransfer.setData("application/x-kind", "file");
         e.dataTransfer.effectAllowed = "move";
       }}
-      className={`group flex w-full cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-left text-[15px] transition-colors ${
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`group relative flex w-full cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-left text-[15px] transition-colors ${
         active ? "bg-active text-accent" : "text-text hover:bg-hover"
-      }`}
+      } ${dropClass}`}
       style={{ paddingLeft: 8 + depth * 12 + 18 }}
     >
       <FileIcon size={16} className={`shrink-0 ${active ? "text-accent" : "text-faint"}`} />
@@ -284,39 +346,7 @@ function FileTreeNode({
         </div>
       )}
 
-      {moveOpen && node.key && (
-        <div
-          className="menu-panel absolute right-0 top-full z-30 mt-1 max-h-56 w-44 overflow-y-auto"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={() => {
-              onMoveDoc!(node.key!, null);
-              setMoveOpen(false);
-            }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-muted hover:bg-hover hover:text-text"
-          >
-            <FolderIcon size={13} className="shrink-0 text-faint" />
-            根目录
-          </button>
-          {(folders ?? []).map((f) => (
-            <button
-              key={f.id}
-              onClick={() => {
-                onMoveDoc!(node.key!, f.id);
-                setMoveOpen(false);
-              }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-muted hover:bg-hover hover:text-text"
-            >
-              <FolderIcon size={13} className="shrink-0 text-faint" />
-              <span className="truncate">{f.name}</span>
-            </button>
-          ))}
-          {folders.length === 0 && (
-            <div className="px-3 py-1.5 text-[11px] text-faint">暂无文件夹，可先新建</div>
-          )}
-        </div>
-      )}
+      {moveOpen && node.key && onMoveDoc && renderMoveMenu((fid) => onMoveDoc(node.key!, fid))}
     </div>
   );
 }
@@ -346,8 +376,8 @@ export function FileTree({
   onRenameFolder?: (folderId: string, name: string) => Promise<void> | void;
   onDeleteDoc?: (key: string) => void;
   onDeleteFolder?: (id: string) => void;
-  onMoveDoc?: (docId: string, folderId: string | null) => void;
-  onMoveFolder?: (folderId: string, parentId: string | null) => void;
+  onMoveDoc?: (docId: string, folderId: string | null, sortOrder?: number | null) => void;
+  onMoveFolder?: (folderId: string, parentId: string | null, sortOrder?: number | null) => void;
   onDuplicateDoc?: (docId: string) => void;
   onPinDoc?: (docId: string, pinned: boolean) => void;
   onExportDoc?: (docId: string) => void;
@@ -355,29 +385,49 @@ export function FileTree({
   const [pendingDeleteDoc, setPendingDeleteDoc] = useState<TreeNode | null>(null);
   const [pendingDeleteFolder, setPendingDeleteFolder] = useState<TreeNode | null>(null);
   const [pendingRename, setPendingRename] = useState<RenameTarget | null>(null);
-  const [dragOverRoot, setDragOverRoot] = useState(false);
+
+  const canReorder = !!(onMoveDoc && onMoveFolder);
+
+  const handleReorder = (
+    draggedKey: string,
+    draggedKind: "folder" | "file",
+    target: TreeNode,
+    position: DropPos,
+    siblings: TreeNode[],
+  ) => {
+    let parentId: string | null;
+    let sortOrder: number;
+
+    if (position === "inside" && target.type === "folder") {
+      parentId = target.key ?? null;
+      const children = target.children ?? [];
+      if (children.length > 0) {
+        sortOrder = Math.min(...children.map(orderOf)) - 1;
+      } else {
+        sortOrder = (target.sort_order ?? Date.now() / 1000) - 1;
+      }
+    } else {
+      parentId = target.folder_id ?? null;
+      const idx = siblings.findIndex((s) => s.key === target.key);
+      const prev = idx > 0 ? siblings[idx - 1] : null;
+      const next = idx < siblings.length - 1 ? siblings[idx + 1] : null;
+      if (position === "before") {
+        sortOrder = prev ? (orderOf(prev) + orderOf(target)) / 2 : orderOf(target) + 1;
+      } else {
+        sortOrder = next ? (orderOf(target) + orderOf(next)) / 2 : orderOf(target) - 1;
+      }
+    }
+
+    if (draggedKind === "folder") {
+      onMoveFolder?.(draggedKey, parentId, sortOrder);
+    } else {
+      onMoveDoc?.(draggedKey, parentId, sortOrder);
+    }
+  };
 
   return (
     <>
-      <nav
-        className={`flex flex-col gap-0.5 rounded-md ${dragOverRoot ? "bg-active ring-1 ring-inset ring-accent" : ""}`}
-        onDragOver={(e) => {
-          if (!onMoveDoc) return;
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-          setDragOverRoot(true);
-        }}
-        onDragLeave={(e) => {
-          if (e.currentTarget === e.target) setDragOverRoot(false);
-        }}
-        onDrop={(e) => {
-          if (!onMoveDoc) return;
-          e.preventDefault();
-          const docId = e.dataTransfer.getData("text/plain");
-          setDragOverRoot(false);
-          if (docId) onMoveDoc(docId, null);
-        }}
-      >
+      <nav className="flex flex-col gap-0.5 rounded-md">
         {(data ?? []).map((node) => (
           <FileTreeNode
             key={node.key ?? node.name}
@@ -394,6 +444,8 @@ export function FileTree({
             onDuplicateDoc={onDuplicateDoc}
             onPinDoc={onPinDoc}
             onExportDoc={onExportDoc}
+            onReorder={canReorder ? handleReorder : undefined}
+            siblings={data}
           />
         ))}
       </nav>

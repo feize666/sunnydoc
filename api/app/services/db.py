@@ -87,6 +87,8 @@ def init() -> None:
         cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS summary text")
         # 节点类型（doc/table/board/... 预留）
         cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS type varchar DEFAULT 'doc'")
+        # 手动排序（拖拽用）
+        cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS sort_order double precision")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS folders (
@@ -101,6 +103,7 @@ def init() -> None:
         cur.execute("ALTER TABLE folders ADD COLUMN IF NOT EXISTS kb_id varchar")
         cur.execute("ALTER TABLE folders ADD COLUMN IF NOT EXISTS user_id varchar")
         cur.execute("ALTER TABLE folders ADD COLUMN IF NOT EXISTS deleted_at double precision")
+        cur.execute("ALTER TABLE folders ADD COLUMN IF NOT EXISTS sort_order double precision")
         # vector 不固定维度，维度由实际 embedding 决定
         cur.execute(
             """
@@ -236,6 +239,7 @@ def _doc_from_row(row: Any) -> dict[str, Any]:
         "pinned": bool(row[11]) if len(row) > 11 else False,
         "summary": row[12] if len(row) > 12 else None,
         "type": row[13] if len(row) > 13 else "doc",
+        "sort_order": row[14] if len(row) > 14 else None,
     }
 
 
@@ -250,7 +254,7 @@ def _load_chunks(cur: Any, doc_id: str) -> list[dict[str, Any]]:
     ]
 
 
-_DOC_COLS = "id, title, text, source, ext, created_at, folder_id, kb_id, user_id, deleted_at, tags, pinned, summary, type"
+_DOC_COLS = "id, title, text, source, ext, created_at, folder_id, kb_id, user_id, deleted_at, tags, pinned, summary, type, sort_order"
 
 
 def add_document(doc: dict[str, Any]) -> dict[str, Any]:
@@ -258,8 +262,8 @@ def add_document(doc: dict[str, Any]) -> dict[str, Any]:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO documents (id, title, text, source, ext, created_at, folder_id, kb_id, user_id, type)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO documents (id, title, text, source, ext, created_at, folder_id, kb_id, user_id, type, sort_order)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 doc["id"],
                 doc["title"],
@@ -271,6 +275,7 @@ def add_document(doc: dict[str, Any]) -> dict[str, Any]:
                 doc.get("kb_id"),
                 doc.get("user_id"),
                 doc.get("type", "doc"),
+                doc.get("sort_order", doc["created_at"]),
             ),
         )
         for i, chunk in enumerate(doc["chunks"]):
@@ -303,7 +308,7 @@ def all_documents(
             params.append(user_id)
         if conds:
             sql += " WHERE " + " AND ".join(conds)
-        sql += " ORDER BY pinned DESC, created_at DESC"
+        sql += " ORDER BY pinned DESC, COALESCE(sort_order, created_at) DESC"
         cur.execute(sql, params)
         docs = [_doc_from_row(r) for r in cur.fetchall()]
         for doc in docs:
@@ -322,13 +327,13 @@ def all_documents_for_user(
             sql = (
                 f"SELECT {_DOC_COLS} FROM documents WHERE deleted_at IS NULL AND"
                 f" (kb_id IN ({placeholders})"
-                " OR (user_id = %s AND kb_id IS NULL)) ORDER BY pinned DESC, created_at DESC"
+                " OR (user_id = %s AND kb_id IS NULL)) ORDER BY pinned DESC, COALESCE(sort_order, created_at) DESC"
             )
             params = list(kb_ids) + [user_id]
         else:
             sql = (
                 f"SELECT {_DOC_COLS} FROM documents"
-                " WHERE deleted_at IS NULL AND user_id = %s AND kb_id IS NULL ORDER BY pinned DESC, created_at DESC"
+                " WHERE deleted_at IS NULL AND user_id = %s AND kb_id IS NULL ORDER BY pinned DESC, COALESCE(sort_order, created_at) DESC"
             )
             params = [user_id]
         cur.execute(sql, params)
@@ -358,8 +363,16 @@ def update_document(doc_id: str, doc: dict[str, Any]) -> dict[str, Any] | None:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE documents SET title = %s, text = %s, folder_id = %s, kb_id = %s WHERE id = %s",
-            (doc["title"], doc["text"], doc.get("folder_id"), doc.get("kb_id"), doc_id),
+            "UPDATE documents SET title = %s, text = %s, folder_id = %s, kb_id = %s,"
+            " sort_order = COALESCE(%s, sort_order) WHERE id = %s",
+            (
+                doc["title"],
+                doc["text"],
+                doc.get("folder_id"),
+                doc.get("kb_id"),
+                doc.get("sort_order"),
+                doc_id,
+            ),
         )
         if cur.rowcount == 0:
             return None
@@ -486,8 +499,8 @@ def create_folder(folder: dict[str, Any]) -> dict[str, Any]:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO folders (id, name, parent_id, created_at, kb_id, user_id)"
-            " VALUES (%s, %s, %s, %s, %s, %s)",
+            "INSERT INTO folders (id, name, parent_id, created_at, kb_id, user_id, sort_order)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 folder["id"],
                 folder["name"],
@@ -495,6 +508,7 @@ def create_folder(folder: dict[str, Any]) -> dict[str, Any]:
                 folder["created_at"],
                 folder.get("kb_id"),
                 folder.get("user_id"),
+                folder.get("sort_order", folder["created_at"]),
             ),
         )
     conn.commit()
@@ -510,7 +524,7 @@ def list_folders(
     """
     conn = _connect()
     with conn.cursor() as cur:
-        sql = "SELECT id, name, parent_id, created_at, kb_id, user_id FROM folders"
+        sql = "SELECT id, name, parent_id, created_at, kb_id, user_id, sort_order FROM folders"
         conds: list[str] = ["deleted_at IS NULL"]
         params: list[Any] = []
         if kb_id is not None:
@@ -521,7 +535,7 @@ def list_folders(
             params.append(user_id)
         if conds:
             sql += " WHERE " + " AND ".join(conds)
-        sql += " ORDER BY created_at"
+        sql += " ORDER BY COALESCE(sort_order, created_at)"
         cur.execute(sql, params)
         return [
             {
@@ -531,6 +545,7 @@ def list_folders(
                 "created_at": r[3],
                 "kb_id": r[4],
                 "user_id": r[5],
+                "sort_order": r[6],
             }
             for r in cur.fetchall()
         ]
@@ -545,15 +560,15 @@ def list_folders_for_user(
         if kb_ids:
             placeholders = ",".join(["%s"] * len(kb_ids))
             sql = (
-                "SELECT id, name, parent_id, created_at, kb_id, user_id FROM folders"
+                "SELECT id, name, parent_id, created_at, kb_id, user_id, sort_order FROM folders"
                 f" WHERE deleted_at IS NULL AND (kb_id IN ({placeholders}) OR (user_id = %s AND kb_id IS NULL))"
-                " ORDER BY created_at"
+                " ORDER BY COALESCE(sort_order, created_at)"
             )
             params = list(kb_ids) + [user_id]
         else:
             sql = (
-                "SELECT id, name, parent_id, created_at, kb_id, user_id FROM folders"
-                " WHERE deleted_at IS NULL AND user_id = %s AND kb_id IS NULL ORDER BY created_at"
+                "SELECT id, name, parent_id, created_at, kb_id, user_id, sort_order FROM folders"
+                " WHERE deleted_at IS NULL AND user_id = %s AND kb_id IS NULL ORDER BY COALESCE(sort_order, created_at)"
             )
             params = [user_id]
         cur.execute(sql, params)
@@ -565,6 +580,7 @@ def list_folders_for_user(
                 "created_at": r[3],
                 "kb_id": r[4],
                 "user_id": r[5],
+                "sort_order": r[6],
             }
             for r in cur.fetchall()
         ]
@@ -593,13 +609,13 @@ def rename_folder(folder_id: str, name: str) -> dict[str, Any] | None:
     }
 
 
-def update_folder_parent(folder_id: str, parent_id: str | None) -> bool:
-    """移动文件夹（改 parent_id），不存在返回 False。"""
+def update_folder_parent(folder_id: str, parent_id: str | None, sort_order: float | None = None) -> bool:
+    """移动文件夹（改 parent_id + 可选 sort_order），不存在返回 False。"""
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE folders SET parent_id = %s WHERE id = %s",
-            (parent_id, folder_id),
+            "UPDATE folders SET parent_id = %s, sort_order = COALESCE(%s, sort_order) WHERE id = %s",
+            (parent_id, sort_order, folder_id),
         )
         updated = cur.rowcount > 0
     conn.commit()

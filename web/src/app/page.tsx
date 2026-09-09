@@ -116,7 +116,7 @@ export default function Home() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [highlight, setHighlight] = useState("");
-  const [sortBy, setSortBy] = useState<SortBy>("numeric");
+  const [sortBy, setSortBy] = useState<SortBy>("manual");
 
   // 登录态
   const [user, setUser] = useState<User | null>(null);
@@ -411,9 +411,9 @@ export default function Home() {
 
   // 移动文档到文件夹
   const handleMoveDoc = useCallback(
-    async (docId: string, folderId: string | null) => {
+    async (docId: string, folderId: string | null, sortOrder?: number | null) => {
       try {
-        await moveDocument(docId, folderId);
+        await moveDocument(docId, folderId, sortOrder ?? undefined);
         refreshList();
       } catch (e) {
         alert(`移动文档失败：${e instanceof Error ? e.message : "未知错误"}`);
@@ -424,9 +424,9 @@ export default function Home() {
 
   // 移动文件夹
   const handleMoveFolder = useCallback(
-    async (folderId: string, parentId: string | null) => {
+    async (folderId: string, parentId: string | null, sortOrder?: number | null) => {
       try {
-        await moveFolder(folderId, parentId);
+        await moveFolder(folderId, parentId, sortOrder ?? undefined);
         refreshList();
       } catch (e) {
         alert(`移动文件夹失败：${e instanceof Error ? e.message : "未知错误"}`);

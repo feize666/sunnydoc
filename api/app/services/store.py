@@ -100,10 +100,12 @@ class DocStore:
             d.setdefault("pinned", False)
             d.setdefault("summary", None)
             d.setdefault("type", "doc")
+            d.setdefault("sort_order", d.get("created_at"))
         for f in self._folders:
             f.setdefault("kb_id", None)
             f.setdefault("user_id", None)
             f.setdefault("deleted_at", None)
+            f.setdefault("sort_order", f.get("created_at"))
         for k in self._kbs:
             k.setdefault("user_id", None)
             k.setdefault("deleted_at", None)
@@ -355,6 +357,7 @@ class DocStore:
             "kb_id": kb_id,
             "user_id": user_id,
             "type": type,
+            "sort_order": time.time(),
             "chunks": self._build_chunks(text),
         }
         if self._backend == "db":
@@ -388,9 +391,10 @@ class DocStore:
         text: Any = _UNSET,
         folder_id: Any = _UNSET,
         kb_id: Any = _UNSET,
+        sort_order: Any = _UNSET,
         user_id: str | None = None,
     ) -> dict[str, Any] | None:
-        """更新文档字段。title/text 提供时更新并重建分片 + 向量；folder_id/kb_id 提供时移动。
+        """更新文档字段。title/text 提供时更新并重建分片 + 向量；folder_id/kb_id/sort_order 提供时移动/排序。
 
         权限：文档属主，或对文档所在知识库有 write/owner 权限。找不到或无权限返回 None。
         """
@@ -407,6 +411,8 @@ class DocStore:
                 doc["folder_id"] = folder_id
             if kb_id is not _UNSET:
                 doc["kb_id"] = kb_id
+            if sort_order is not _UNSET:
+                doc["sort_order"] = sort_order
             return db.update_document(doc_id, doc)
         for d in self._docs:
             if d["id"] == doc_id:
@@ -421,6 +427,8 @@ class DocStore:
                     d["folder_id"] = folder_id
                 if kb_id is not _UNSET:
                     d["kb_id"] = kb_id
+                if sort_order is not _UNSET:
+                    d["sort_order"] = sort_order
                 self._save()
                 return d
         return None
@@ -680,6 +688,7 @@ class DocStore:
             "created_at": time.time(),
             "kb_id": kb_id,
             "user_id": user_id,
+            "sort_order": time.time(),
         }
         if self._backend == "db":
             db.create_folder(folder)
@@ -707,9 +716,13 @@ class DocStore:
         return None
 
     def move_folder(
-        self, folder_id: str, parent_id: str | None, user_id: str | None = None
+        self,
+        folder_id: str,
+        parent_id: str | None,
+        user_id: str | None = None,
+        sort_order: float | None = None,
     ) -> bool:
-        """移动文件夹（改 parent_id）。parent_id=None 表示移到根目录。
+        """移动文件夹（改 parent_id + 可选 sort_order）。parent_id=None 表示移到根目录。
 
         禁止：移动到自己、或自己的后代（会造成循环）。
         """
@@ -730,10 +743,12 @@ class DocStore:
             if parent_id in descendants:
                 return False
         if self._backend == "db":
-            return db.update_folder_parent(folder_id, parent_id)
+            return db.update_folder_parent(folder_id, parent_id, sort_order)
         for f in self._folders:
             if f["id"] == folder_id:
                 f["parent_id"] = parent_id
+                if sort_order is not None:
+                    f["sort_order"] = sort_order
                 self._save()
                 return True
         return False

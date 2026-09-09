@@ -86,8 +86,8 @@ export function Sidebar({
   onDeleteDoc?: (key: string) => void;
   onDeleteFolder?: (id: string) => void;
   onRenameFolder?: (folderId: string, name: string) => Promise<void> | void;
-  onMoveDoc?: (docId: string, folderId: string | null) => void;
-  onMoveFolder?: (folderId: string, parentId: string | null) => void;
+  onMoveDoc?: (docId: string, folderId: string | null, sortOrder?: number | null) => void;
+  onMoveFolder?: (folderId: string, parentId: string | null, sortOrder?: number | null) => void;
   onNew?: (type: NodeType, parentFolderId: string | null) => void;
   onRenameDoc?: (docId: string, name: string) => Promise<void> | void;
   onDuplicateDoc?: (docId: string) => void;
@@ -174,6 +174,7 @@ export function Sidebar({
   }
 
   const sortOptions: { value: SortBy; label: string }[] = [
+    { value: "manual", label: "手动排序" },
     { value: "numeric", label: "按数字" },
     { value: "name", label: "按名称" },
     { value: "created", label: "按创建时间" },

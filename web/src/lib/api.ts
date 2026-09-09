@@ -16,6 +16,7 @@ export interface DocMeta {
   pinned?: boolean;
   tags?: string[];
   summary?: string | null;
+  sort_order?: number | null;
 }
 
 export interface Kb {
@@ -41,6 +42,7 @@ export interface Folder {
   name: string;
   parent_id: string | null;
   created_at?: number;
+  sort_order?: number | null;
 }
 
 export interface DocDetail extends DocMeta {
@@ -156,11 +158,12 @@ export async function updateDocument(
 export async function moveDocument(
   id: string,
   folderId: string | null,
+  sortOrder?: number | null,
 ): Promise<{ id: string; title: string }> {
   return request(`/documents/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ folder_id: folderId }),
+    body: JSON.stringify({ folder_id: folderId, sort_order: sortOrder ?? undefined }),
   });
 }
 
@@ -184,11 +187,15 @@ export async function renameFolder(id: string, name: string): Promise<Folder> {
   });
 }
 
-export async function moveFolder(id: string, parentId: string | null): Promise<void> {
+export async function moveFolder(
+  id: string,
+  parentId: string | null,
+  sortOrder?: number | null,
+): Promise<void> {
   await request(`/folders/${id}/move`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ parent_id: parentId }),
+    body: JSON.stringify({ parent_id: parentId, sort_order: sortOrder ?? undefined }),
   });
 }
 

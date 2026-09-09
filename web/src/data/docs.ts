@@ -14,6 +14,7 @@ export interface TreeNode {
   createdAt?: number;
   folder_id?: string | null;
   pinned?: boolean;
+  sort_order?: number | null;
 }
 
-export type SortBy = "numeric" | "name" | "created";
+export type SortBy = "manual" | "numeric" | "name" | "created";

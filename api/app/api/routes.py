@@ -82,6 +82,7 @@ class UpdateDocumentRequest(BaseModel):
     content: str = ""
     folder_id: str | None = None
     kb_id: str | None = None
+    sort_order: float | None = None
 
 
 class CreateFolderRequest(BaseModel):
@@ -772,6 +773,8 @@ def update_document(
         kwargs["folder_id"] = req.folder_id
     if "kb_id" in req.model_fields_set:
         kwargs["kb_id"] = req.kb_id
+    if "sort_order" in req.model_fields_set:
+        kwargs["sort_order"] = req.sort_order
 
     doc = store.update(doc_id, user_id=current_user["id"], **kwargs)
     if not doc:
@@ -841,6 +844,7 @@ def delete_folder(folder_id: str, current_user: dict = Depends(get_current_user)
 
 class MoveFolderRequest(BaseModel):
     parent_id: str | None = None
+    sort_order: float | None = None
 
 
 @router.put("/folders/{folder_id}/move")
@@ -848,7 +852,7 @@ def move_folder(
     folder_id: str, req: MoveFolderRequest, current_user: dict = Depends(get_current_user)
 ):
     """移动文件夹（parent_id=None 表示移到根目录）。"""
-    if store.move_folder(folder_id, req.parent_id, current_user["id"]):
+    if store.move_folder(folder_id, req.parent_id, current_user["id"], req.sort_order):
         return {"moved": folder_id}
     raise HTTPException(status_code=400, detail="无法移动（目标位置非法或无权限）")
 

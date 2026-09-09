@@ -11,6 +11,13 @@ function compareNode(a: TreeNode, b: TreeNode, sortBy: SortBy): number {
   // 文件夹始终排在文档前面
   if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
 
+  if (sortBy === "manual") {
+    const sa = a.sort_order ?? a.createdAt ?? 0;
+    const sb = b.sort_order ?? b.createdAt ?? 0;
+    if (sa !== sb) return sb - sa; // 降序：sort_order 大的在上
+    return a.name.localeCompare(b.name, "zh-Hans-CN");
+  }
+
   if (sortBy === "created") {
     const ta = a.createdAt ?? 0;
     const tb = b.createdAt ?? 0;
@@ -56,6 +63,8 @@ export function buildTree(
       key: f.id,
       children: [],
       createdAt: f.created_at,
+      folder_id: f.parent_id,
+      sort_order: f.sort_order,
     });
   }
 
@@ -81,6 +90,7 @@ export function buildTree(
       createdAt: d.created_at,
       folder_id: d.folder_id,
       pinned: !!d.pinned,
+      sort_order: d.sort_order,
     };
     const parent = d.folder_id ? folderNodes.get(d.folder_id) : undefined;
     if (parent) {
