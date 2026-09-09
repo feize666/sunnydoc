@@ -20,8 +20,9 @@ from app.services import db, embedding, rerank
 
 STORE_FILE = DATA_DIR / "store.json"
 
-# 用于区分「未传参」与「显式传 None」的哨兵值
-_UNSET = object()
+# 用于区分「未传参」与「显式传 None」的哨兵值。
+# 复用 db 模块的 _UNSET，保证跨 store/db 转发时身份一致（否则会误把哨兵当真实值写入 SQL）。
+_UNSET = db._UNSET
 
 # 检索时的停用词（常见疑问词/虚词，避免干扰打分）
 STOPWORDS = {
