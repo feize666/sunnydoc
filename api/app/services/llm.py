@@ -92,6 +92,38 @@ def generate(
         return None
 
 
+def summarize(text: str) -> str | None:
+    """用 LLM 生成文档摘要；未配置时返回 None。"""
+    if not available():
+        return None
+    prompt = (
+        "请用 2~3 句简洁的中文总结下面文档的核心内容，"
+        "不要出现「本文」「该文档」等指代词，直接输出摘要：\n\n"
+        f"{text[:4000]}"
+    )
+    try:
+        resp = httpx.post(
+            f"{LLM_BASE_URL.rstrip('/')}/chat/completions",
+            headers={"Authorization": f"Bearer {LLM_API_KEY}"},
+            json={
+                "model": LLM_MODEL,
+                "messages": [
+                    {"role": "system", "content": "你是文档摘要助手，只输出简洁准确的中文摘要。"},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.3,
+                "max_tokens": 200,
+                "stream": False,
+            },
+            timeout=60.0,
+        )
+        resp.raise_for_status()
+        data: dict[str, Any] = resp.json()
+        return (data["choices"][0]["message"]["content"] or "").strip() or None
+    except (httpx.HTTPError, KeyError, IndexError, json.JSONDecodeError):
+        return None
+
+
 def generate_stream(
     query: str,
     contexts: list[str],

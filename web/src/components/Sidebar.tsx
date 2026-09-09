@@ -63,6 +63,7 @@ export function Sidebar({
   sortBy,
   onSortChange,
   readOnly,
+  onOpenTrash,
 }: {
   data: TreeNode[];
   activeKey: string | null;
@@ -82,6 +83,7 @@ export function Sidebar({
   listError?: string | null;
   kbName?: string;
   onBackHome?: () => void;
+  onOpenTrash?: () => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
   searchResults: SearchResult[];
@@ -487,6 +489,20 @@ export function Sidebar({
           </>
         )}
       </div>
+
+      {onOpenTrash && (
+        <div className="border-t border-line p-1.5">
+          <button
+            onClick={onOpenTrash}
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+            </svg>
+            回收站
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

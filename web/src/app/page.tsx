@@ -20,6 +20,8 @@ import { ShareDialog } from "@/components/ShareDialog";
 import { ShareDocDialog } from "@/components/ShareDocDialog";
 import { ShareView } from "@/components/ShareView";
 import { FavoritesPopover } from "@/components/FavoritesPopover";
+import { TrashView } from "@/components/TrashView";
+import { TagsDialog } from "@/components/TagsDialog";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import type { Doc, TreeNode, SortBy } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
@@ -43,6 +45,9 @@ import {
   addFavorite,
   removeFavorite,
   listFavorites,
+  pinDocument,
+  unpinDocument,
+  generateSummary,
   type DocMeta,
   type Folder,
   type Kb,
@@ -110,13 +115,14 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(true);
 
   // 视图路由 + 当前知识库
-  const [view, setView] = useState<"home" | "kb" | "users">("home");
+  const [view, setView] = useState<"home" | "kb" | "users" | "trash">("home");
   const [profileOpen, setProfileOpen] = useState(false);
   const [shareKb, setShareKb] = useState<Kb | null>(null);
   const [shareDoc, setShareDoc] = useState<{ id: string; title: string } | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [tagsOpen, setTagsOpen] = useState(false);
   const [currentKbId, setCurrentKbId] = useState<string | null>(null);
   const [kbs, setKbs] = useState<Kb[]>([]);
   const [recent, setRecent] = useState<RecentDoc[]>([]);
@@ -172,6 +178,12 @@ export default function Home() {
 
   const handleOpenUsers = useCallback(() => {
     setView("users");
+    setActiveKey(null);
+    setOpenKeys([]);
+  }, []);
+
+  const handleOpenTrash = useCallback(() => {
+    setView("trash");
     setActiveKey(null);
     setOpenKeys([]);
   }, []);
@@ -496,6 +508,33 @@ export default function Home() {
     setShareDoc({ id: docId, title });
   }, []);
 
+  // 置顶/取消置顶
+  const handleTogglePin = useCallback(
+    async (docId: string, pinned: boolean) => {
+      try {
+        if (pinned) await unpinDocument(docId);
+        else await pinDocument(docId);
+        refreshList();
+      } catch (e) {
+        alert(`置顶操作失败：${e instanceof Error ? e.message : "未知错误"}`);
+      }
+    },
+    [refreshList],
+  );
+
+  // 生成 AI 摘要
+  const handleGenerateSummary = useCallback(
+    async (docId: string) => {
+      try {
+        await generateSummary(docId);
+        refreshList();
+      } catch (e) {
+        alert(`生成摘要失败：${e instanceof Error ? e.message : "未知错误"}`);
+      }
+    },
+    [refreshList],
+  );
+
   // 从收藏打开文档
   const openFavorite = useCallback(
     (doc: DocMeta) => {
@@ -511,6 +550,7 @@ export default function Home() {
   const wordCount = activeDoc ? countWords(activeDoc.body) : 0;
   const currentKb = kbs.find((k) => k.id === currentKbId) ?? null;
   const readOnly = currentKb?.permission === "read";
+  const activeMeta = activeKey ? metas.find((m) => m.id === activeKey) ?? null : null;
 
   // 命令面板全文搜索
   const paletteSearch = useCallback(
@@ -621,6 +661,7 @@ export default function Home() {
               sortBy={sortBy}
               onSortChange={setSortBy}
               readOnly={readOnly}
+              onOpenTrash={handleOpenTrash}
             />
             <Editor
               doc={activeDoc}
@@ -640,6 +681,22 @@ export default function Home() {
               }
               recent={recent}
               onOpenRecent={openRecent}
+              pinned={activeMeta?.pinned ?? false}
+              tags={activeMeta?.tags ?? []}
+              summary={activeMeta?.summary ?? null}
+              onTogglePin={
+                activeKey && !readOnly
+                  ? () => handleTogglePin(activeKey, activeMeta?.pinned ?? false)
+                  : undefined
+              }
+              onEditTags={
+                activeKey && !readOnly ? () => setTagsOpen(true) : undefined
+              }
+              onGenerateSummary={
+                activeKey && !readOnly
+                  ? () => handleGenerateSummary(activeKey)
+                  : undefined
+              }
             />
           </div>
 
@@ -655,6 +712,8 @@ export default function Home() {
         </>
       ) : view === "users" ? (
         <UserManagementView currentUserId={user.id} onBack={goHome} />
+      ) : view === "trash" ? (
+        <TrashView onBack={goHome} />
       ) : (
         <HomeView
           kbs={kbs}
@@ -759,6 +818,14 @@ export default function Home() {
         open={shareDoc !== null}
         doc={shareDoc}
         onClose={() => setShareDoc(null)}
+      />
+
+      <TagsDialog
+        open={tagsOpen}
+        docId={activeKey}
+        initialTags={activeMeta?.tags ?? []}
+        onClose={() => setTagsOpen(false)}
+        onSaved={() => refreshList()}
       />
 
       <FavoritesPopover

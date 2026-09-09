@@ -452,9 +452,13 @@ def search_documents(
 
 @router.get("/documents")
 def list_documents(
-    kb_id: str | None = None, current_user: dict = Depends(get_current_user)
+    kb_id: str | None = None,
+    tag: str | None = None,
+    current_user: dict = Depends(get_current_user),
 ):
     docs = store.all(kb_id, current_user["id"])
+    if tag:
+        docs = [d for d in docs if tag in (d.get("tags") or [])]
     fav_ids = set(store.list_favorites(current_user["id"]))
     return {
         "total": len(docs),
@@ -468,6 +472,9 @@ def list_documents(
                 "folder_id": d.get("folder_id"),
                 "kb_id": d.get("kb_id"),
                 "is_favorite": d["id"] in fav_ids,
+                "pinned": bool(d.get("pinned")),
+                "tags": d.get("tags") or [],
+                "summary": d.get("summary"),
             }
             for d in docs
         ],
@@ -510,6 +517,9 @@ def get_document(doc_id: str, current_user: dict = Depends(get_current_user)):
         "folder_id": doc.get("folder_id"),
         "kb_id": doc.get("kb_id"),
         "is_favorite": store.is_favorite(current_user["id"], doc_id),
+        "pinned": bool(doc.get("pinned")),
+        "tags": doc.get("tags") or [],
+        "summary": doc.get("summary"),
     }
 
 
@@ -1232,3 +1242,82 @@ def reset_password(
     store.update_user(user_id, password_hash=auth.hash_password(new_password))
     auth.revoke_all_for_user(user_id)
     return {"ok": True}
+
+
+# ---------- 回收站 / 标签 / 置顶 / AI 摘要 ----------
+
+class SetTagsRequest(BaseModel):
+    tags: list[str]
+
+
+@router.get("/trash")
+def list_trash(current_user: dict = Depends(get_current_user)):
+    """回收站列表（文档/文件夹/知识库）。"""
+    return store.list_trash(current_user["id"])
+
+
+@router.post("/trash/{kind}/{obj_id}/restore")
+def restore_trash(kind: str, obj_id: str, current_user: dict = Depends(get_current_user)):
+    """从回收站恢复。kind: document/folder/kb。"""
+    if kind not in ("document", "folder", "kb"):
+        raise HTTPException(status_code=400, detail="无效的对象类型")
+    if store.restore(kind, obj_id, current_user["id"]):
+        return {"restored": obj_id}
+    raise HTTPException(status_code=404, detail="对象不存在或不在回收站")
+
+
+@router.delete("/trash/{kind}/{obj_id}")
+def purge_trash(kind: str, obj_id: str, current_user: dict = Depends(get_current_user)):
+    """彻底删除回收站对象。kind: document/folder/kb。"""
+    if kind not in ("document", "folder", "kb"):
+        raise HTTPException(status_code=400, detail="无效的对象类型")
+    if store.purge(kind, obj_id, current_user["id"]):
+        return {"purged": obj_id}
+    raise HTTPException(status_code=404, detail="对象不存在")
+
+
+@router.put("/documents/{doc_id}/tags")
+def set_document_tags(
+    doc_id: str, req: SetTagsRequest, current_user: dict = Depends(get_current_user)
+):
+    """设置文档标签。"""
+    if store.get(doc_id, current_user["id"]) is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    tags = [t.strip() for t in req.tags if t and t.strip()][:10]
+    store.set_tags(doc_id, tags)
+    return {"tags": tags}
+
+
+@router.get("/tags")
+def list_tags(current_user: dict = Depends(get_current_user)):
+    """列出当前用户可见的所有标签。"""
+    return {"tags": store.list_all_tags(current_user["id"])}
+
+
+@router.post("/documents/{doc_id}/pin")
+def pin_document(doc_id: str, current_user: dict = Depends(get_current_user)):
+    """置顶文档。"""
+    if store.get(doc_id, current_user["id"]) is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    store.set_pinned(doc_id, True)
+    return {"pinned": True}
+
+
+@router.post("/documents/{doc_id}/unpin")
+def unpin_document(doc_id: str, current_user: dict = Depends(get_current_user)):
+    """取消置顶。"""
+    store.set_pinned(doc_id, False)
+    return {"pinned": False}
+
+
+@router.post("/documents/{doc_id}/summary")
+def generate_summary(doc_id: str, current_user: dict = Depends(get_current_user)):
+    """用 AI 生成文档摘要并保存。"""
+    doc = store.get(doc_id, current_user["id"])
+    if doc is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    summary = llm.summarize(doc["text"])
+    if summary is None:
+        raise HTTPException(status_code=503, detail="AI 服务不可用，请稍后再试")
+    store.set_summary(doc_id, summary)
+    return {"summary": summary}

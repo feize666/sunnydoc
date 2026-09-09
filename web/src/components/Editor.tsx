@@ -43,6 +43,12 @@ export function Editor({
   onShare,
   recent,
   onOpenRecent,
+  pinned,
+  tags,
+  summary,
+  onTogglePin,
+  onEditTags,
+  onGenerateSummary,
 }: {
   doc: Doc | null;
   loading?: boolean;
@@ -55,6 +61,12 @@ export function Editor({
   onShare?: () => void;
   recent?: RecentDoc[];
   onOpenRecent?: (docId: string, kbId: string | null) => void;
+  pinned?: boolean;
+  tags?: string[];
+  summary?: string | null;
+  onTogglePin?: () => void;
+  onEditTags?: () => void;
+  onGenerateSummary?: () => void;
 }) {
   const [mode, setMode] = useState<Mode>("preview");
   const [draftTitle, setDraftTitle] = useState("");
@@ -236,6 +248,51 @@ export function Editor({
                 </button>
               </Tooltip>
             )}
+            {onTogglePin && (
+              <Tooltip content={pinned ? "取消置顶" : "置顶"}>
+                <button
+                  onClick={onTogglePin}
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs shadow-sm transition-all hover:shadow-glow ${
+                    pinned
+                      ? "border-accent/40 bg-accent-soft text-accent"
+                      : "border-line bg-background text-text hover:border-accent/40 hover:text-accent"
+                  }`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill={pinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 17v5M5 12l-1 1 6 6 1-1M14 3l6 6-3 3-1-1-2 2-2-2 2-2-1-1 3-3z" />
+                  </svg>
+                  置顶
+                </button>
+              </Tooltip>
+            )}
+            {onEditTags && (
+              <Tooltip content="标签">
+                <button
+                  onClick={onEditTags}
+                  className="flex items-center gap-1.5 rounded-lg border border-line bg-background px-3 py-1.5 text-xs text-text shadow-sm transition-all hover:border-accent/40 hover:text-accent hover:shadow-glow"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2H2v10l9.29 9.29a2 2 0 0 0 2.83 0l7.17-7.17a2 2 0 0 0 0-2.83L12 2z" />
+                    <circle cx="7" cy="7" r="1.5" />
+                  </svg>
+                  标签
+                </button>
+              </Tooltip>
+            )}
+            {onGenerateSummary && (
+              <Tooltip content="AI 摘要">
+                <button
+                  onClick={onGenerateSummary}
+                  className="flex items-center gap-1.5 rounded-lg border border-line bg-background px-3 py-1.5 text-xs text-text shadow-sm transition-all hover:border-accent/40 hover:text-accent hover:shadow-glow"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
+                    <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" />
+                  </svg>
+                  摘要
+                </button>
+              </Tooltip>
+            )}
 
             {readOnly ? (
               <span className="flex items-center gap-1 rounded-lg border border-line bg-background px-3 py-1.5 text-xs text-faint">
@@ -291,6 +348,24 @@ export function Editor({
               <p className="mt-3 text-[13px] text-faint">
                 {doc.path} · 更新于 {doc.updated}
               </p>
+              {summary && (
+                <div className="mt-4 rounded-lg border border-accent/20 bg-accent-soft px-4 py-3 text-[13px] leading-relaxed text-text">
+                  <span className="mr-2 font-semibold text-accent">摘要</span>
+                  {summary}
+                </div>
+              )}
+              {tags && tags.length > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  {tags.map((t) => (
+                    <span
+                      key={t}
+                      className="rounded-full bg-surface-2 px-2.5 py-0.5 text-[12px] text-muted"
+                    >
+                      #{t}
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="mt-4 border-b border-line" />
               <div
                 ref={contentRef}

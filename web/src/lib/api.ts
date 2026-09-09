@@ -13,6 +13,9 @@ export interface DocMeta {
   folder_id?: string | null;
   kb_id?: string | null;
   is_favorite?: boolean;
+  pinned?: boolean;
+  tags?: string[];
+  summary?: string | null;
 }
 
 export interface Kb {
@@ -347,6 +350,70 @@ export interface SharedDoc {
 
 export async function getSharedDoc(token: string): Promise<SharedDoc> {
   return request(`/share/${token}`);
+}
+
+// —— 回收站 / 标签 / 置顶 / 摘要 ——
+
+export type TrashKind = "document" | "folder" | "kb";
+
+export interface TrashItem {
+  id: string;
+  name: string;
+  title?: string;
+  deleted_at?: number;
+}
+
+export async function listTrash(): Promise<{
+  documents: TrashItem[];
+  folders: TrashItem[];
+  kbs: TrashItem[];
+}> {
+  const data = await request<{
+    documents: TrashItem[];
+    folders: TrashItem[];
+    kbs: TrashItem[];
+  }>("/trash");
+  return {
+    documents: data?.documents ?? [],
+    folders: data?.folders ?? [],
+    kbs: data?.kbs ?? [],
+  };
+}
+
+export async function restoreTrash(kind: TrashKind, id: string): Promise<void> {
+  await request(`/trash/${kind}/${id}/restore`, { method: "POST" });
+}
+
+export async function purgeTrash(kind: TrashKind, id: string): Promise<void> {
+  await request(`/trash/${kind}/${id}`, { method: "DELETE" });
+}
+
+export async function setDocTags(docId: string, tags: string[]): Promise<void> {
+  await request(`/documents/${docId}/tags`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tags }),
+  });
+}
+
+export async function listTags(): Promise<string[]> {
+  const data = await request<{ tags: string[] }>("/tags");
+  return Array.isArray(data?.tags) ? data.tags : [];
+}
+
+export async function pinDocument(docId: string): Promise<void> {
+  await request(`/documents/${docId}/pin`, { method: "POST" });
+}
+
+export async function unpinDocument(docId: string): Promise<void> {
+  await request(`/documents/${docId}/unpin`, { method: "POST" });
+}
+
+export async function generateSummary(docId: string): Promise<string> {
+  const data = await request<{ summary: string }>(`/documents/${docId}/summary`, {
+    method: "POST",
+  });
+  return data.summary;
 }
 
 // —— 知识库 ——

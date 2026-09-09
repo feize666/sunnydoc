@@ -80,6 +80,11 @@ def init() -> None:
         cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS folder_id varchar")
         cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS kb_id varchar")
         cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS user_id varchar")
+        # 回收站（软删除） / 标签 / 置顶 / AI 摘要
+        cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS deleted_at double precision")
+        cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS tags varchar")
+        cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS pinned boolean DEFAULT false")
+        cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS summary text")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS folders (
@@ -93,6 +98,7 @@ def init() -> None:
         # 兼容已有生产数据：为 folders 表补充 kb_id / user_id 列
         cur.execute("ALTER TABLE folders ADD COLUMN IF NOT EXISTS kb_id varchar")
         cur.execute("ALTER TABLE folders ADD COLUMN IF NOT EXISTS user_id varchar")
+        cur.execute("ALTER TABLE folders ADD COLUMN IF NOT EXISTS deleted_at double precision")
         # vector 不固定维度，维度由实际 embedding 决定
         cur.execute(
             """
@@ -117,6 +123,7 @@ def init() -> None:
             """
         )
         cur.execute("ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS user_id varchar")
+        cur.execute("ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS deleted_at double precision")
         # 最近浏览（同一 doc_id 只保留最新一条）
         cur.execute(
             """
@@ -207,6 +214,11 @@ def available() -> bool:
 
 
 def _doc_from_row(row: Any) -> dict[str, Any]:
+    tags_raw = row[10] if len(row) > 10 else None
+    try:
+        tags = json.loads(tags_raw) if tags_raw else []
+    except Exception:  # noqa: BLE001
+        tags = []
     return {
         "id": row[0],
         "title": row[1],
@@ -217,6 +229,10 @@ def _doc_from_row(row: Any) -> dict[str, Any]:
         "folder_id": row[6],
         "kb_id": row[7],
         "user_id": row[8],
+        "deleted_at": row[9] if len(row) > 9 else None,
+        "tags": tags,
+        "pinned": bool(row[11]) if len(row) > 11 else False,
+        "summary": row[12] if len(row) > 12 else None,
     }
 
 
@@ -231,7 +247,7 @@ def _load_chunks(cur: Any, doc_id: str) -> list[dict[str, Any]]:
     ]
 
 
-_DOC_COLS = "id, title, text, source, ext, created_at, folder_id, kb_id, user_id"
+_DOC_COLS = "id, title, text, source, ext, created_at, folder_id, kb_id, user_id, deleted_at, tags, pinned, summary"
 
 
 def add_document(doc: dict[str, Any]) -> dict[str, Any]:
@@ -273,7 +289,7 @@ def all_documents(
     conn = _connect()
     with conn.cursor() as cur:
         sql = f"SELECT {_DOC_COLS} FROM documents"
-        conds: list[str] = []
+        conds: list[str] = ["deleted_at IS NULL"]
         params: list[Any] = []
         if kb_id is not None:
             conds.append("kb_id = %s")
@@ -283,7 +299,7 @@ def all_documents(
             params.append(user_id)
         if conds:
             sql += " WHERE " + " AND ".join(conds)
-        sql += " ORDER BY created_at DESC"
+        sql += " ORDER BY pinned DESC, created_at DESC"
         cur.execute(sql, params)
         docs = [_doc_from_row(r) for r in cur.fetchall()]
         for doc in docs:
@@ -300,14 +316,15 @@ def all_documents_for_user(
         if kb_ids:
             placeholders = ",".join(["%s"] * len(kb_ids))
             sql = (
-                f"SELECT {_DOC_COLS} FROM documents WHERE kb_id IN ({placeholders})"
-                " OR (user_id = %s AND kb_id IS NULL) ORDER BY created_at DESC"
+                f"SELECT {_DOC_COLS} FROM documents WHERE deleted_at IS NULL AND"
+                f" (kb_id IN ({placeholders})"
+                " OR (user_id = %s AND kb_id IS NULL)) ORDER BY pinned DESC, created_at DESC"
             )
             params = list(kb_ids) + [user_id]
         else:
             sql = (
                 f"SELECT {_DOC_COLS} FROM documents"
-                " WHERE user_id = %s AND kb_id IS NULL ORDER BY created_at DESC"
+                " WHERE deleted_at IS NULL AND user_id = %s AND kb_id IS NULL ORDER BY pinned DESC, created_at DESC"
             )
             params = [user_id]
         cur.execute(sql, params)
@@ -321,7 +338,7 @@ def get_document(doc_id: str) -> dict[str, Any] | None:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            f"SELECT {_DOC_COLS} FROM documents WHERE id = %s",
+            f"SELECT {_DOC_COLS} FROM documents WHERE id = %s AND deleted_at IS NULL",
             (doc_id,),
         )
         row = cur.fetchone()
@@ -355,12 +372,109 @@ def update_document(doc_id: str, doc: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def delete_document(doc_id: str) -> bool:
+    """软删除：标记 deleted_at，进入回收站。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE documents SET deleted_at = %s WHERE id = %s AND deleted_at IS NULL",
+            (time.time(), doc_id),
+        )
+        deleted = cur.rowcount > 0
+    conn.commit()
+    return deleted
+
+
+def restore_document(doc_id: str) -> bool:
+    """从回收站恢复。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE documents SET deleted_at = NULL WHERE id = %s AND deleted_at IS NOT NULL",
+            (doc_id,),
+        )
+        restored = cur.rowcount > 0
+    conn.commit()
+    return restored
+
+
+def purge_document(doc_id: str) -> bool:
+    """彻底删除（物理删除文档及其 chunks）。"""
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute("DELETE FROM documents WHERE id = %s", (doc_id,))
         deleted = cur.rowcount > 0
     conn.commit()
     return deleted
+
+
+def list_trash_documents(user_id: str | None = None) -> list[dict[str, Any]]:
+    """回收站中的文档列表（deleted_at 非空）。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        sql = f"SELECT {_DOC_COLS} FROM documents WHERE deleted_at IS NOT NULL"
+        params: list[Any] = []
+        if user_id is not None:
+            sql += " AND user_id = %s"
+            params.append(user_id)
+        sql += " ORDER BY deleted_at DESC"
+        cur.execute(sql, params)
+        return [_doc_from_row(r) for r in cur.fetchall()]
+
+
+def set_document_tags(doc_id: str, tags: list[str]) -> bool:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE documents SET tags = %s WHERE id = %s",
+            (json.dumps(tags, ensure_ascii=False), doc_id),
+        )
+        updated = cur.rowcount > 0
+    conn.commit()
+    return updated
+
+
+def set_document_pinned(doc_id: str, pinned: bool) -> bool:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE documents SET pinned = %s WHERE id = %s",
+            (pinned, doc_id),
+        )
+        updated = cur.rowcount > 0
+    conn.commit()
+    return updated
+
+
+def set_document_summary(doc_id: str, summary: str) -> bool:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE documents SET summary = %s WHERE id = %s",
+            (summary, doc_id),
+        )
+        updated = cur.rowcount > 0
+    conn.commit()
+    return updated
+
+
+def list_all_tags(user_id: str | None = None) -> list[str]:
+    """聚合所有文档标签（去重）。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        sql = "SELECT tags FROM documents WHERE deleted_at IS NULL AND tags IS NOT NULL"
+        params: list[Any] = []
+        if user_id is not None:
+            sql += " AND user_id = %s"
+            params.append(user_id)
+        cur.execute(sql, params)
+        all_tags: set[str] = set()
+        for (tags_raw,) in cur.fetchall():
+            try:
+                for t in json.loads(tags_raw) if tags_raw else []:
+                    all_tags.add(t)
+            except Exception:  # noqa: BLE001
+                continue
+    return sorted(all_tags)
 
 
 def create_folder(folder: dict[str, Any]) -> dict[str, Any]:
@@ -393,7 +507,7 @@ def list_folders(
     conn = _connect()
     with conn.cursor() as cur:
         sql = "SELECT id, name, parent_id, created_at, kb_id, user_id FROM folders"
-        conds: list[str] = []
+        conds: list[str] = ["deleted_at IS NULL"]
         params: list[Any] = []
         if kb_id is not None:
             conds.append("kb_id = %s")
@@ -428,14 +542,14 @@ def list_folders_for_user(
             placeholders = ",".join(["%s"] * len(kb_ids))
             sql = (
                 "SELECT id, name, parent_id, created_at, kb_id, user_id FROM folders"
-                f" WHERE kb_id IN ({placeholders}) OR (user_id = %s AND kb_id IS NULL)"
+                f" WHERE deleted_at IS NULL AND (kb_id IN ({placeholders}) OR (user_id = %s AND kb_id IS NULL))"
                 " ORDER BY created_at"
             )
             params = list(kb_ids) + [user_id]
         else:
             sql = (
                 "SELECT id, name, parent_id, created_at, kb_id, user_id FROM folders"
-                " WHERE user_id = %s AND kb_id IS NULL ORDER BY created_at"
+                " WHERE deleted_at IS NULL AND user_id = %s AND kb_id IS NULL ORDER BY created_at"
             )
             params = [user_id]
         cur.execute(sql, params)
@@ -476,7 +590,7 @@ def rename_folder(folder_id: str, name: str) -> dict[str, Any] | None:
 
 
 def delete_folder(folder_id: str) -> bool:
-    """删除文件夹：级联删除其子文件夹，子级/本级文档 folder_id 置空（移回根目录）。"""
+    """软删除文件夹：标记自身 + 后代文件夹 deleted_at，子级/本级文档 folder_id 置空。"""
     conn = _connect()
     with conn.cursor() as cur:
         # 收集自身 + 所有后代文件夹 id
@@ -484,7 +598,8 @@ def delete_folder(folder_id: str) -> bool:
         idx = 0
         while idx < len(ids):
             cur.execute(
-                "SELECT id FROM folders WHERE parent_id = %s", (ids[idx],)
+                "SELECT id FROM folders WHERE parent_id = %s AND deleted_at IS NULL",
+                (ids[idx],),
             )
             for (child_id,) in cur.fetchall():
                 if child_id not in ids:
@@ -497,11 +612,62 @@ def delete_folder(folder_id: str) -> bool:
             ids,
         )
         cur.execute(
-            f"DELETE FROM folders WHERE id IN ({placeholders})", ids
+            f"UPDATE folders SET deleted_at = %s WHERE id IN ({placeholders})",
+            [time.time()] + ids,
         )
         deleted = cur.rowcount > 0
     conn.commit()
     return deleted
+
+
+def restore_folder(folder_id: str) -> bool:
+    """从回收站恢复文件夹（仅自身；文档已移回根目录，不自动归位）。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE folders SET deleted_at = NULL WHERE id = %s AND deleted_at IS NOT NULL",
+            (folder_id,),
+        )
+        restored = cur.rowcount > 0
+    conn.commit()
+    return restored
+
+
+def purge_folder(folder_id: str) -> bool:
+    """彻底删除文件夹（物理删除）。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM folders WHERE id = %s", (folder_id,))
+        deleted = cur.rowcount > 0
+    conn.commit()
+    return deleted
+
+
+def list_trash_folders(user_id: str | None = None) -> list[dict[str, Any]]:
+    conn = _connect()
+    with conn.cursor() as cur:
+        sql = (
+            "SELECT id, name, parent_id, created_at, kb_id, user_id, deleted_at"
+            " FROM folders WHERE deleted_at IS NOT NULL"
+        )
+        params: list[Any] = []
+        if user_id is not None:
+            sql += " AND user_id = %s"
+            params.append(user_id)
+        sql += " ORDER BY deleted_at DESC"
+        cur.execute(sql, params)
+        return [
+            {
+                "id": r[0],
+                "name": r[1],
+                "parent_id": r[2],
+                "created_at": r[3],
+                "kb_id": r[4],
+                "user_id": r[5],
+                "deleted_at": r[6],
+            }
+            for r in cur.fetchall()
+        ]
 
 
 # ---------- 知识库 ----------
@@ -524,11 +690,11 @@ def list_kbs(user_id: str | None = None) -> list[dict[str, Any]]:
     with conn.cursor() as cur:
         if user_id is None:
             cur.execute(
-                "SELECT id, name, description, created_at, user_id FROM knowledge_bases ORDER BY created_at"
+                "SELECT id, name, description, created_at, user_id FROM knowledge_bases WHERE deleted_at IS NULL ORDER BY created_at"
             )
         else:
             cur.execute(
-                "SELECT id, name, description, created_at, user_id FROM knowledge_bases WHERE user_id = %s ORDER BY created_at",
+                "SELECT id, name, description, created_at, user_id FROM knowledge_bases WHERE deleted_at IS NULL AND user_id = %s ORDER BY created_at",
                 (user_id,),
             )
         return [
@@ -547,7 +713,7 @@ def get_kb(kb_id: str) -> dict[str, Any] | None:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, name, description, created_at, user_id FROM knowledge_bases WHERE id = %s",
+            "SELECT id, name, description, created_at, user_id FROM knowledge_bases WHERE id = %s AND deleted_at IS NULL",
             (kb_id,),
         )
         row = cur.fetchone()
@@ -592,7 +758,51 @@ def count_docs(kb_id: str) -> int:
 
 
 def delete_kb(kb_id: str) -> bool:
-    """级联删除知识库：删除其下文档（chunks 随外键级联）、文件夹、共享与最近浏览记录。"""
+    """软删除知识库：标记 kb + 其下文档/文件夹 deleted_at。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        now = time.time()
+        cur.execute(
+            "UPDATE documents SET deleted_at = %s WHERE kb_id = %s AND deleted_at IS NULL",
+            (now, kb_id),
+        )
+        cur.execute(
+            "UPDATE folders SET deleted_at = %s WHERE kb_id = %s AND deleted_at IS NULL",
+            (now, kb_id),
+        )
+        cur.execute(
+            "UPDATE knowledge_bases SET deleted_at = %s WHERE id = %s AND deleted_at IS NULL",
+            (now, kb_id),
+        )
+        deleted = cur.rowcount > 0
+    conn.commit()
+    return deleted
+
+
+def restore_kb(kb_id: str) -> bool:
+    """从回收站恢复知识库及其下文档/文件夹。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE knowledge_bases SET deleted_at = NULL WHERE id = %s AND deleted_at IS NOT NULL",
+            (kb_id,),
+        )
+        restored = cur.rowcount > 0
+        if restored:
+            cur.execute(
+                "UPDATE documents SET deleted_at = NULL WHERE kb_id = %s",
+                (kb_id,),
+            )
+            cur.execute(
+                "UPDATE folders SET deleted_at = NULL WHERE kb_id = %s",
+                (kb_id,),
+            )
+    conn.commit()
+    return restored
+
+
+def purge_kb(kb_id: str) -> bool:
+    """彻底删除知识库（物理删除其下文档/文件夹/共享/最近浏览）。"""
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute("DELETE FROM documents WHERE kb_id = %s", (kb_id,))
@@ -603,6 +813,32 @@ def delete_kb(kb_id: str) -> bool:
         deleted = cur.rowcount > 0
     conn.commit()
     return deleted
+
+
+def list_trash_kbs(user_id: str | None = None) -> list[dict[str, Any]]:
+    conn = _connect()
+    with conn.cursor() as cur:
+        sql = (
+            "SELECT id, name, description, created_at, user_id, deleted_at"
+            " FROM knowledge_bases WHERE deleted_at IS NOT NULL"
+        )
+        params: list[Any] = []
+        if user_id is not None:
+            sql += " AND user_id = %s"
+            params.append(user_id)
+        sql += " ORDER BY deleted_at DESC"
+        cur.execute(sql, params)
+        return [
+            {
+                "id": r[0],
+                "name": r[1],
+                "description": r[2],
+                "created_at": r[3],
+                "user_id": r[4],
+                "deleted_at": r[5],
+            }
+            for r in cur.fetchall()
+        ]
 
 
 # ---------- 知识库共享 ----------

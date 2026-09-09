@@ -95,11 +95,17 @@ class DocStore:
             d.setdefault("folder_id", None)
             d.setdefault("kb_id", None)
             d.setdefault("user_id", None)
+            d.setdefault("deleted_at", None)
+            d.setdefault("tags", [])
+            d.setdefault("pinned", False)
+            d.setdefault("summary", None)
         for f in self._folders:
             f.setdefault("kb_id", None)
             f.setdefault("user_id", None)
+            f.setdefault("deleted_at", None)
         for k in self._kbs:
             k.setdefault("user_id", None)
+            k.setdefault("deleted_at", None)
         for r in self._recent:
             r.setdefault("user_id", None)
         for u in self._users:
@@ -430,7 +436,7 @@ class DocStore:
             if user_id is not None:
                 return db.all_documents_for_user(user_id, self._accessible_kb_ids(user_id))
             return db.all_documents()
-        docs = self._docs
+        docs = [d for d in self._docs if not d.get("deleted_at")]
         if kb_id is not None:
             if user_id is not None and self.kb_permission(kb_id, user_id) is None:
                 return []
@@ -448,7 +454,10 @@ class DocStore:
         if self._backend == "db":
             doc = db.get_document(doc_id)
         else:
-            doc = next((d for d in self._docs if d["id"] == doc_id), None)
+            doc = next(
+                (d for d in self._docs if d["id"] == doc_id and not d.get("deleted_at")),
+                None,
+            )
         if doc is None:
             return None
         if user_id is None:
@@ -468,16 +477,142 @@ class DocStore:
                 if doc is None or not self._can_write_doc(doc, user_id):
                     return False
             return db.delete_document(doc_id)
-        before = len(self._docs)
-        self._docs = [
-            d
-            for d in self._docs
-            if not (d["id"] == doc_id and (user_id is None or self._can_write_doc(d, user_id)))
-        ]
-        if len(self._docs) != before:
+        for d in self._docs:
+            if d["id"] == doc_id and (user_id is None or self._can_write_doc(d, user_id)):
+                if d.get("deleted_at"):
+                    return False
+                d["deleted_at"] = time.time()
+                self._save()
+                return True
+        return False
+
+    # ---------- 回收站 / 标签 / 置顶 / 摘要 ----------
+
+    def list_trash(self, user_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
+        """回收站：返回删除的文档/文件夹/知识库。"""
+        if self._backend == "db":
+            return {
+                "documents": db.list_trash_documents(user_id),
+                "folders": db.list_trash_folders(user_id),
+                "kbs": db.list_trash_kbs(user_id),
+            }
+        return {
+            "documents": [
+                d for d in self._docs if d.get("deleted_at") and (user_id is None or d.get("user_id") == user_id)
+            ],
+            "folders": [
+                f for f in self._folders if f.get("deleted_at") and (user_id is None or f.get("user_id") == user_id)
+            ],
+            "kbs": [
+                k for k in self._kbs if k.get("deleted_at") and (user_id is None or k.get("user_id") == user_id)
+            ],
+        }
+
+    def restore(self, kind: str, obj_id: str, user_id: str | None = None) -> bool:
+        """恢复回收站中的对象。kind: document/folder/kb。"""
+        if self._backend == "db":
+            if kind == "document":
+                return db.restore_document(obj_id)
+            if kind == "folder":
+                return db.restore_folder(obj_id)
+            if kind == "kb":
+                return db.restore_kb(obj_id)
+            return False
+        if kind == "document":
+            for d in self._docs:
+                if d["id"] == obj_id and d.get("deleted_at"):
+                    d["deleted_at"] = None
+                    self._save()
+                    return True
+        elif kind == "folder":
+            for f in self._folders:
+                if f["id"] == obj_id and f.get("deleted_at"):
+                    f["deleted_at"] = None
+                    self._save()
+                    return True
+        elif kind == "kb":
+            kb_id = obj_id
+            for k in self._kbs:
+                if k["id"] == kb_id and k.get("deleted_at"):
+                    k["deleted_at"] = None
+            for d in self._docs:
+                if d.get("kb_id") == kb_id:
+                    d["deleted_at"] = None
+            for f in self._folders:
+                if f.get("kb_id") == kb_id:
+                    f["deleted_at"] = None
             self._save()
             return True
         return False
+
+    def purge(self, kind: str, obj_id: str, user_id: str | None = None) -> bool:
+        """彻底删除回收站对象。kind: document/folder/kb。"""
+        if self._backend == "db":
+            if kind == "document":
+                return db.purge_document(obj_id)
+            if kind == "folder":
+                return db.purge_folder(obj_id)
+            if kind == "kb":
+                return db.purge_kb(obj_id)
+            return False
+        before = len(self._docs)
+        if kind == "document":
+            self._docs = [d for d in self._docs if d["id"] != obj_id]
+        elif kind == "folder":
+            self._folders = [f for f in self._folders if f["id"] != obj_id]
+        elif kind == "kb":
+            self._docs = [d for d in self._docs if d.get("kb_id") != obj_id]
+            self._folders = [f for f in self._folders if f.get("kb_id") != obj_id]
+            self._kbs = [k for k in self._kbs if k["id"] != obj_id]
+        else:
+            return False
+        changed = len(self._docs) != before or kind in ("folder", "kb")
+        if changed:
+            self._save()
+        return True
+
+    def set_tags(self, doc_id: str, tags: list[str]) -> bool:
+        if self._backend == "db":
+            return db.set_document_tags(doc_id, tags)
+        for d in self._docs:
+            if d["id"] == doc_id:
+                d["tags"] = list(tags)
+                self._save()
+                return True
+        return False
+
+    def set_pinned(self, doc_id: str, pinned: bool) -> bool:
+        if self._backend == "db":
+            return db.set_document_pinned(doc_id, pinned)
+        for d in self._docs:
+            if d["id"] == doc_id:
+                d["pinned"] = bool(pinned)
+                self._save()
+                return True
+        return False
+
+    def set_summary(self, doc_id: str, summary: str) -> bool:
+        if self._backend == "db":
+            return db.set_document_summary(doc_id, summary)
+        for d in self._docs:
+            if d["id"] == doc_id:
+                d["summary"] = summary
+                self._save()
+                return True
+        return False
+
+    def list_all_tags(self, user_id: str | None = None) -> list[str]:
+        if self._backend == "db":
+            return db.list_all_tags(user_id)
+        all_tags: set[str] = set()
+        for d in self._docs:
+            if d.get("deleted_at"):
+                continue
+            if user_id is not None and d.get("user_id") != user_id:
+                continue
+            for t in d.get("tags") or []:
+                all_tags.add(t)
+        return sorted(all_tags)
 
     # ---------- 文件夹 ----------
 
@@ -497,7 +632,7 @@ class DocStore:
             if user_id is not None:
                 return db.list_folders_for_user(user_id, self._accessible_kb_ids(user_id))
             return db.list_folders()
-        folders = self._folders
+        folders = [f for f in self._folders if not f.get("deleted_at")]
         if kb_id is not None:
             if user_id is not None and self.kb_permission(kb_id, user_id) is None:
                 return []
@@ -552,7 +687,7 @@ class DocStore:
         return None
 
     def delete_folder(self, folder_id: str, user_id: str | None = None) -> bool:
-        """删除文件夹：级联删除子文件夹，其下文档 folder_id 置空（移回根目录）。"""
+        """软删除文件夹：标记自身 + 后代 deleted_at，其下文档 folder_id 置空（移回根目录）。"""
         if self._backend == "db":
             if user_id is not None:
                 folders = db.list_folders()
@@ -570,15 +705,18 @@ class DocStore:
         idx = 0
         while idx < len(ids):
             for f in self._folders:
-                if f["parent_id"] == ids[idx] and f["id"] not in ids:
+                if f["parent_id"] == ids[idx] and f["id"] not in ids and not f.get("deleted_at"):
                     ids.append(f["id"])
             idx += 1
 
+        now = time.time()
         existed = any(f["id"] == folder_id for f in self._folders)
         if not existed:
             return False
 
-        self._folders = [f for f in self._folders if f["id"] not in ids]
+        for f in self._folders:
+            if f["id"] in ids:
+                f["deleted_at"] = now
         # 文档移回根目录
         for d in self._docs:
             if d.get("folder_id") in ids:
@@ -596,7 +734,7 @@ class DocStore:
         if self._backend == "db":
             kbs = db.list_kbs(None)
         else:
-            kbs = list(self._kbs)
+            kbs = [k for k in self._kbs if not k.get("deleted_at")]
         if user_id is None:
             return [dict(k) for k in kbs]
         is_admin = self._is_admin(user_id)
@@ -634,7 +772,10 @@ class DocStore:
         if self._backend == "db":
             kb = db.get_kb(kb_id)
         else:
-            kb = next((k for k in self._kbs if k["id"] == kb_id), None)
+            kb = next(
+                (k for k in self._kbs if k["id"] == kb_id and not k.get("deleted_at")),
+                None,
+            )
             kb = dict(kb) if kb else None
         if kb is None:
             return None
@@ -672,13 +813,10 @@ class DocStore:
     def count_docs(self, kb_id: str, user_id: str | None = None) -> int:
         if self._backend == "db":
             return db.count_docs(kb_id)
-        return sum(1 for d in self._docs if d.get("kb_id") == kb_id)
+        return sum(1 for d in self._docs if d.get("kb_id") == kb_id and not d.get("deleted_at"))
 
     def delete_kb(self, kb_id: str, user_id: str | None = None) -> bool:
-        """级联删除知识库：删除其下所有文档、文件夹、共享与最近浏览记录。仅属主/管理员可删。
-
-        媒体文件采用内容寻址去重（可能被其它知识库/文档共享），此处不物理删除。
-        """
+        """软删除知识库：标记 kb + 其下文档/文件夹 deleted_at。仅属主/管理员可删。"""
         if self._backend == "db":
             if user_id is not None:
                 kb = db.get_kb(kb_id)
@@ -687,16 +825,22 @@ class DocStore:
             return db.delete_kb(kb_id)
         existed = any(
             k["id"] == kb_id
+            and not k.get("deleted_at")
             and (user_id is None or self.kb_permission(kb_id, user_id) == "owner")
             for k in self._kbs
         )
         if not existed:
             return False
-        self._kbs = [k for k in self._kbs if k["id"] != kb_id]
-        self._docs = [d for d in self._docs if d.get("kb_id") != kb_id]
-        self._folders = [f for f in self._folders if f.get("kb_id") != kb_id]
-        self._recent = [r for r in self._recent if r.get("kb_id") != kb_id]
-        self._shares = [s for s in self._shares if s["kb_id"] != kb_id]
+        now = time.time()
+        for k in self._kbs:
+            if k["id"] == kb_id:
+                k["deleted_at"] = now
+        for d in self._docs:
+            if d.get("kb_id") == kb_id:
+                d["deleted_at"] = now
+        for f in self._folders:
+            if f.get("kb_id") == kb_id:
+                f["deleted_at"] = now
         self._save()
         return True
 
