@@ -1,42 +1,15 @@
 "use client";
 
-import {
-  useState,
-  useEffect,
-  useRef,
-  useMemo,
-  type ReactNode,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { renderMarkdown, extractToc, type TocItem } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
 import { updateDocument } from "@/lib/api";
 import type { Doc } from "@/data/docs";
-import {
-  CodeIcon,
-  CodeBlockIcon,
-  ListUlIcon,
-  ListOlIcon,
-  QuoteIcon,
-  ImageIcon,
-  MinusIcon,
-  LinkIcon,
-  CopyIcon,
-  CheckIcon,
-  EditIcon,
-} from "./icons";
+import { RichEditor } from "./RichEditor";
+import { CopyIcon, CheckIcon, EditIcon } from "./icons";
 
 type Mode = "preview" | "edit";
-
-// 字体颜色预设（参考语雀）
-const COLORS = [
-  { name: "红色", value: "#ef4444" },
-  { name: "橙色", value: "#f97316" },
-  { name: "绿色", value: "#22c55e" },
-  { name: "蓝色", value: "#3b82f6" },
-  { name: "紫色", value: "#a855f7" },
-];
 
 function ShareIcon({ size = 15 }: { size?: number }) {
   return (
@@ -55,36 +28,6 @@ function StarIcon({ size = 15, filled = false }: { size?: number; filled?: boole
       <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
     </svg>
   );
-}
-
-function ToolButton({
-  title,
-  shortcut,
-  onClick,
-  children,
-}: {
-  title: string;
-  shortcut?: string;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <Tooltip content={shortcut ? `${title}（${shortcut}）` : title} className="shrink-0">
-      <button
-        type="button"
-        // 阻止按钮抢走 textarea 焦点，保留选区
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={onClick}
-        className="flex h-9 items-center justify-center rounded-md px-2 text-muted transition-colors hover:bg-hover hover:text-text"
-      >
-        {children}
-      </button>
-    </Tooltip>
-  );
-}
-
-function ToolDivider() {
-  return <span className="mx-1 h-4 w-px shrink-0 bg-line" aria-hidden />;
 }
 
 export function Editor({
@@ -114,7 +57,6 @@ export function Editor({
   const [saving, setSaving] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
   const [copied, setCopied] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
   // 大纲（随正文变化重算）
@@ -123,23 +65,16 @@ export function Editor({
     [doc?.body],
   );
 
-  // 渲染预览：预览模式渲染 doc.body，编辑模式实时渲染 draft（120ms 防抖）
+  // 渲染预览（代码块 shiki 高亮）；切换文档 / 保存 / 主题变化后重渲染
   useEffect(() => {
-    const target = mode === "edit" ? draft : doc?.body ?? "";
     let cancelled = false;
-    const timer = setTimeout(
-      () => {
-        renderMarkdown(target, highlight, theme).then((h) => {
-          if (!cancelled) setPreviewHtml(h);
-        });
-      },
-      mode === "edit" ? 120 : 0,
-    );
+    renderMarkdown(doc?.body ?? "", highlight, theme).then((h) => {
+      if (!cancelled) setPreviewHtml(h);
+    });
     return () => {
       cancelled = true;
-      clearTimeout(timer);
     };
-  }, [mode, draft, doc?.body, highlight, theme]);
+  }, [doc?.body, highlight, theme]);
 
   // 切换文档时重置为预览模式
   useEffect(() => {
@@ -220,246 +155,6 @@ export function Editor({
     headings[index]?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  // 编辑态快捷键（主流 markdown 编辑器）
-  const handleEditorKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-    const mod = e.metaKey || e.ctrlKey;
-    if (!mod) return;
-    const key = e.key.toLowerCase();
-    const shift = e.shiftKey;
-
-    if (key === "b") {
-      e.preventDefault();
-      applyWrap("**", "**", "加粗文本");
-    } else if (key === "i") {
-      e.preventDefault();
-      applyWrap("*", "*", "斜体文本");
-    } else if (key === "x" && shift) {
-      e.preventDefault();
-      applyWrap("~~", "~~", "删除文本");
-    } else if (key === "`") {
-      e.preventDefault();
-      applyWrap("`", "`", "代码");
-    } else if (key === "k" && shift) {
-      e.preventDefault();
-      insertCodeBlock();
-    } else if (key === "k") {
-      e.preventDefault();
-      insertLink();
-    } else if (key === "1") {
-      e.preventDefault();
-      applyLinePrefix("# ");
-    } else if (key === "2") {
-      e.preventDefault();
-      applyLinePrefix("## ");
-    } else if (key === "3") {
-      e.preventDefault();
-      applyLinePrefix("### ");
-    } else if (key === "&") {
-      e.preventDefault();
-      applyLinePrefix("1. ");
-    } else if (key === "*") {
-      e.preventDefault();
-      applyLinePrefix("- ");
-    } else if (key === ">") {
-      e.preventDefault();
-      applyLinePrefix("> ");
-    }
-  };
-
-  // —— 选区工具函数 ——
-
-  const applyWrap = (prefix: string, suffix: string, placeholder: string) => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart ?? 0;
-    const end = ta.selectionEnd ?? 0;
-    const selected = draft.slice(start, end);
-    const text = selected || placeholder;
-    const next = draft.slice(0, start) + prefix + text + suffix + draft.slice(end);
-    setDraft(next);
-    requestAnimationFrame(() => {
-      ta.focus();
-      const selStart = start + prefix.length;
-      ta.setSelectionRange(selStart, selStart + text.length);
-    });
-  };
-
-  const applyLinePrefix = (prefix: string) => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart ?? 0;
-    const end = ta.selectionEnd ?? 0;
-    const lineStart = draft.lastIndexOf("\n", start - 1) + 1;
-    const lineEndIdx = draft.indexOf("\n", end);
-    const lineEnd = lineEndIdx === -1 ? draft.length : lineEndIdx;
-    const block = draft.slice(lineStart, lineEnd);
-    const newBlock = block
-      .split("\n")
-      .map((l) => prefix + l)
-      .join("\n");
-    const next = draft.slice(0, lineStart) + newBlock + draft.slice(lineEnd);
-    setDraft(next);
-    requestAnimationFrame(() => {
-      ta.focus();
-      ta.setSelectionRange(lineStart, lineStart + newBlock.length);
-    });
-  };
-
-  const insertCodeBlock = () => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart ?? 0;
-    const end = ta.selectionEnd ?? 0;
-    const selected = draft.slice(start, end);
-    const body = selected || "代码";
-    const next = draft.slice(0, start) + "```\n" + body + "\n```" + draft.slice(end);
-    setDraft(next);
-    requestAnimationFrame(() => {
-      ta.focus();
-      ta.setSelectionRange(start + 4, start + 4 + body.length);
-    });
-  };
-
-  const insertHr = () => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart ?? 0;
-    const end = ta.selectionEnd ?? 0;
-    const before = start > 0 && draft[start - 1] !== "\n" ? "\n" : "";
-    const next = draft.slice(0, start) + before + "---\n\n" + draft.slice(end);
-    setDraft(next);
-    requestAnimationFrame(() => {
-      ta.focus();
-      const pos = start + before.length + 3;
-      ta.setSelectionRange(pos, pos);
-    });
-  };
-
-  const insertLink = () => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart ?? 0;
-    const end = ta.selectionEnd ?? 0;
-    const selected = draft.slice(start, end) || "链接文本";
-    const next = draft.slice(0, start) + `[${selected}](https://)` + draft.slice(end);
-    setDraft(next);
-    requestAnimationFrame(() => {
-      ta.focus();
-      const urlStart = start + selected.length + 3;
-      ta.setSelectionRange(urlStart, urlStart + 8);
-    });
-  };
-
-  const insertImage = () => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart ?? 0;
-    const end = ta.selectionEnd ?? 0;
-    const selected = draft.slice(start, end) || "图片描述";
-    const next = draft.slice(0, start) + `![${selected}](https://)` + draft.slice(end);
-    setDraft(next);
-    requestAnimationFrame(() => {
-      ta.focus();
-      const urlStart = start + selected.length + 4;
-      ta.setSelectionRange(urlStart, urlStart + 8);
-    });
-  };
-
-  const applyColor = (color: string) => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart ?? 0;
-    const end = ta.selectionEnd ?? 0;
-    const selected = draft.slice(start, end);
-    const text = selected || "文字";
-    const prefix = `<span style="color:${color}">`;
-    const next = draft.slice(0, start) + prefix + text + "</span>" + draft.slice(end);
-    setDraft(next);
-    requestAnimationFrame(() => {
-      ta.focus();
-      if (selected) {
-        ta.setSelectionRange(start, start + text.length);
-      } else {
-        ta.setSelectionRange(start + prefix.length, start + prefix.length + 2);
-      }
-    });
-  };
-
-  const toolbar = (
-    <>
-      <ToolButton title="加粗" shortcut="⌘B" onClick={() => applyWrap("**", "**", "加粗文本")}>
-        <span className="text-[15px] font-bold leading-none">B</span>
-      </ToolButton>
-      <ToolButton title="斜体" shortcut="⌘I" onClick={() => applyWrap("*", "*", "斜体文本")}>
-        <span className="font-serif text-[15px] italic leading-none">I</span>
-      </ToolButton>
-      <ToolButton title="删除线" shortcut="⌘⇧X" onClick={() => applyWrap("~~", "~~", "删除文本")}>
-        <span className="text-[15px] leading-none line-through">S</span>
-      </ToolButton>
-      <ToolButton title="行内代码" shortcut="⌘`" onClick={() => applyWrap("`", "`", "代码")}>
-        <CodeIcon size={16} />
-      </ToolButton>
-
-      <ToolDivider />
-
-      <ToolButton title="一级标题" shortcut="⌘1" onClick={() => applyLinePrefix("# ")}>
-        <span className="text-[14px] font-semibold leading-none">H1</span>
-      </ToolButton>
-      <ToolButton title="二级标题" shortcut="⌘2" onClick={() => applyLinePrefix("## ")}>
-        <span className="text-[14px] font-semibold leading-none">H2</span>
-      </ToolButton>
-      <ToolButton title="三级标题" shortcut="⌘3" onClick={() => applyLinePrefix("### ")}>
-        <span className="text-[14px] font-semibold leading-none">H3</span>
-      </ToolButton>
-
-      <ToolDivider />
-
-      <ToolButton title="无序列表" shortcut="⌘⇧8" onClick={() => applyLinePrefix("- ")}>
-        <ListUlIcon size={17} />
-      </ToolButton>
-      <ToolButton title="有序列表" shortcut="⌘⇧7" onClick={() => applyLinePrefix("1. ")}>
-        <ListOlIcon size={17} />
-      </ToolButton>
-
-      <ToolDivider />
-
-      <ToolButton title="引用" shortcut="⌘⇧." onClick={() => applyLinePrefix("> ")}>
-        <QuoteIcon size={17} />
-      </ToolButton>
-      <ToolButton title="代码块" shortcut="⌘⇧K" onClick={insertCodeBlock}>
-        <CodeBlockIcon size={17} />
-      </ToolButton>
-      <ToolButton title="分割线" onClick={insertHr}>
-        <MinusIcon size={17} />
-      </ToolButton>
-
-      <ToolDivider />
-
-      <ToolButton title="链接" shortcut="⌘K" onClick={insertLink}>
-        <LinkIcon size={17} />
-      </ToolButton>
-      <ToolButton title="图片" onClick={insertImage}>
-        <ImageIcon size={17} />
-      </ToolButton>
-
-      <ToolDivider />
-
-      <div className="flex shrink-0 items-center gap-1.5 px-1">
-        {COLORS.map((c) => (
-          <Tooltip key={c.value} content={`文字颜色：${c.name}`}>
-            <button
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => applyColor(c.value)}
-              className="h-5 w-5 rounded-full border border-black/10 transition-transform hover:scale-125"
-              style={{ backgroundColor: c.value }}
-            />
-          </Tooltip>
-        ))}
-      </div>
-    </>
-  );
-
   return (
     <main className="flex min-w-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col bg-background">
@@ -538,25 +233,6 @@ export function Editor({
           </div>
         </div>
 
-        {/* 格式工具栏（仅编辑态显示） */}
-        {mode === "edit" && !readOnly && (
-          <div className="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-1.5">
-            <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
-              {toolbar}
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <Tooltip content="放弃编辑">
-                <button
-                  onClick={() => setMode("preview")}
-                  className="rounded-md px-3 py-1.5 text-xs text-muted transition-colors hover:bg-hover hover:text-text"
-                >
-                  取消
-                </button>
-              </Tooltip>
-            </div>
-          </div>
-        )}
-
         {/* 正文 */}
         <div className="flex-1 overflow-y-auto py-8">
           {mode === "preview" ? (
@@ -576,7 +252,7 @@ export function Editor({
               />
             </div>
           ) : (
-            <div className="mx-auto max-w-[1200px] px-8">
+            <div className="mx-auto max-w-[860px] px-10">
               <input
                 value={draftTitle}
                 onChange={(e) => setDraftTitle(e.target.value)}
@@ -588,19 +264,11 @@ export function Editor({
                 {doc.path} · 更新于 {doc.updated}
               </p>
               <div className="mt-4 border-b border-line" />
-              <div className="mt-6 flex gap-6">
-                <textarea
-                  ref={textareaRef}
+              <div className="mt-6">
+                <RichEditor
                   value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={handleEditorKeyDown}
-                  className="min-h-[calc(100vh-300px)] flex-1 resize-none rounded-lg border border-line bg-background p-4 font-mono text-[14px] leading-relaxed text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
-                  spellCheck={false}
-                />
-                <div
-                  className="md-body min-h-[calc(100vh-300px)] flex-1 overflow-y-auto rounded-lg border border-line bg-background p-4"
-                  onClick={handleCodeBlockCopy}
-                  dangerouslySetInnerHTML={{ __html: previewHtml }}
+                  onChange={setDraft}
+                  placeholder="开始输入内容…"
                 />
               </div>
             </div>
@@ -610,8 +278,8 @@ export function Editor({
 
       {/* 右侧大纲（预览态 + 有标题时显示） */}
       {mode === "preview" && toc.length > 0 && (
-        <aside className="hidden w-48 shrink-0 overflow-y-auto border-l border-line bg-surface lg:block">
-          <div className="sticky top-0 border-b border-line bg-surface px-3 py-2.5 text-[12px] font-semibold text-muted">
+        <aside className="hidden w-52 shrink-0 overflow-y-auto border-l border-line bg-surface lg:block">
+          <div className="sticky top-0 border-b border-line bg-surface px-3 py-2.5 text-[13px] font-semibold text-muted">
             大纲
           </div>
           <ul className="p-1.5">
@@ -619,7 +287,7 @@ export function Editor({
               <li key={i}>
                 <button
                   onClick={() => scrollToHeading(i)}
-                  className="flex w-full items-center rounded-md py-1 text-left text-[12px] leading-snug text-faint transition-colors hover:bg-hover hover:text-text"
+                  className="flex w-full items-center rounded-md py-1 text-left text-[13px] leading-snug text-faint transition-colors hover:bg-hover hover:text-text"
                   style={{ paddingLeft: 8 + (item.level - 1) * 12 }}
                 >
                   <span className="line-clamp-1">{item.text}</span>

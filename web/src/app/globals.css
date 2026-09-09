@@ -630,3 +630,41 @@ mark.search-hit {
   border-left-color: var(--tip-border);
   border-top-color: var(--tip-border);
 }
+
+/* —— 所见即所得编辑器（TipTap / ProseMirror） —— */
+.rich-editor {
+  outline: none;
+  word-break: break-word;
+}
+.rich-editor .ProseMirror {
+  outline: none;
+  min-height: calc(100vh - 320px);
+}
+.rich-editor .ProseMirror:focus {
+  outline: none;
+}
+.rich-editor p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--faint);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+/* 编辑器内代码块（无 shiki 高亮，纯样式兜底） */
+.rich-editor pre {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.rich-editor pre code {
+  background: none;
+  color: var(--text);
+  padding: 0;
+  font-size: inherit;
+  font-family: inherit;
+}

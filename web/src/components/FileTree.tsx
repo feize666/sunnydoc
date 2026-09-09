@@ -64,7 +64,7 @@ function FileTreeNode({
         }}
       >
         <div
-          className={`group flex w-full items-center gap-1.5 rounded-md py-1 text-left text-[13px] transition-colors ${
+          className={`group flex w-full items-center gap-1.5 rounded-md py-1 text-left text-[14px] transition-colors ${
             dragOver
               ? "bg-active ring-1 ring-inset ring-accent text-text"
               : "text-muted hover:bg-hover"
@@ -76,12 +76,12 @@ function FileTreeNode({
             style={{ paddingLeft: 8 + depth * 12 }}
           >
             <ChevronIcon
-              size={13}
+              size={14}
               className={`shrink-0 text-faint transition-transform ${
                 open ? "rotate-90" : ""
               }`}
             />
-            <FolderIcon size={15} className="shrink-0 text-faint" />
+            <FolderIcon size={16} className="shrink-0 text-faint" />
             <span className="truncate">{node.name}</span>
           </button>
           {onRequestRenameFolder && node.key && (
@@ -143,14 +143,14 @@ function FileTreeNode({
         e.dataTransfer.setData("text/plain", node.key);
         e.dataTransfer.effectAllowed = "move";
       }}
-      className={`group flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] transition-colors ${
+      className={`group flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-left text-[14px] transition-colors ${
         active
           ? "bg-active text-accent"
           : "text-muted hover:bg-hover hover:text-text"
       }`}
       style={{ paddingLeft: 8 + depth * 12 + 18 }}
     >
-      <FileIcon size={15} className={`shrink-0 ${active ? "text-accent" : "text-faint"}`} />
+      <FileIcon size={16} className={`shrink-0 ${active ? "text-accent" : "text-faint"}`} />
       <span className="min-w-0 flex-1 truncate">{node.name}</span>
       {onMoveDoc && node.key && (
         <div className="relative shrink-0">
