@@ -528,6 +528,7 @@ def get_document(doc_id: str, current_user: dict = Depends(get_current_user)):
         "tags": doc.get("tags") or [],
         "summary": doc.get("summary"),
         "type": doc.get("type", "doc"),
+        "sort_order": doc.get("sort_order"),
     }
 
 
