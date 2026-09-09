@@ -79,8 +79,8 @@ class CreateDocumentRequest(BaseModel):
 
 
 class UpdateDocumentRequest(BaseModel):
-    title: str
-    content: str = ""
+    title: str | None = None
+    content: str | None = None
     folder_id: str | None = None
     kb_id: str | None = None
     sort_order: float | None = None
@@ -767,13 +767,15 @@ def chat_stream(req: ChatRequest, current_user: dict = Depends(get_current_user)
 def update_document(
     doc_id: str, req: UpdateDocumentRequest, current_user: dict = Depends(get_current_user)
 ):
-    """更新文档标题与正文（重新分片 + 向量化），可选移动文件夹/知识库。"""
-    title = req.title.strip()
-    if not title:
-        raise HTTPException(status_code=400, detail="标题不能为空")
-
-    kwargs: dict = {"title": title, "text": req.content}
-    # 仅当请求体显式携带 folder_id 时才移动（null 表示移回根目录）
+    """更新文档（按需更新字段）。title/content 提供时更新并重建分片；folder_id/kb_id/sort_order 提供时移动/排序。"""
+    kwargs: dict = {}
+    if "title" in req.model_fields_set and req.title is not None:
+        title = req.title.strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="标题不能为空")
+        kwargs["title"] = title
+    if "content" in req.model_fields_set and req.content is not None:
+        kwargs["text"] = req.content
     if "folder_id" in req.model_fields_set:
         kwargs["folder_id"] = req.folder_id
     if "kb_id" in req.model_fields_set:

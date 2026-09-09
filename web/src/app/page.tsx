@@ -116,7 +116,7 @@ export default function Home() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [highlight, setHighlight] = useState("");
-  const [sortBy, setSortBy] = useState<SortBy>("manual");
+  const [sortBy, setSortBy] = useState<SortBy>("numeric");
 
   // 登录态
   const [user, setUser] = useState<User | null>(null);
