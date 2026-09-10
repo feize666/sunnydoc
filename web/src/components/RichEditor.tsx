@@ -306,6 +306,29 @@ export function RichEditor({
     },
   });
 
+  // 任务列表 checkbox 点击切换（必须放在 early return 之前，避免 conditional hook 触发 React #310）
+  useEffect(() => {
+    if (!editor) return;
+    const dom = editor.view.dom;
+    const onClick = (e: MouseEvent) => {
+      const input = (e.target as HTMLElement).closest("input[type='checkbox']");
+      if (!input) return;
+      const li = (input as HTMLElement).closest("li[data-type='taskItem']");
+      if (!li) return;
+      const pos = editor.view.posAtDOM(li, 0);
+      const node = editor.state.doc.nodeAt(pos);
+      if (node && node.type.name === "taskItem") {
+        editor
+          .chain()
+          .focus()
+          .updateAttributes("taskItem", { checked: !node.attrs.checked })
+          .run();
+      }
+    };
+    dom.addEventListener("click", onClick);
+    return () => dom.removeEventListener("click", onClick);
+  }, [editor]);
+
   if (!editor) {
     return (
       <div className="min-h-[calc(100vh-300px)] flex-1 rounded-lg border border-line bg-background" />
@@ -353,29 +376,6 @@ export function RichEditor({
       })
       .run();
   };
-
-  // 任务列表 checkbox 点击切换
-  useEffect(() => {
-    if (!editor) return;
-    const dom = editor.view.dom;
-    const onClick = (e: MouseEvent) => {
-      const input = (e.target as HTMLElement).closest("input[type='checkbox']");
-      if (!input) return;
-      const li = (input as HTMLElement).closest("li[data-type='taskItem']");
-      if (!li) return;
-      const pos = editor.view.posAtDOM(li, 0);
-      const node = editor.state.doc.nodeAt(pos);
-      if (node && node.type.name === "taskItem") {
-        editor
-          .chain()
-          .focus()
-          .updateAttributes("taskItem", { checked: !node.attrs.checked })
-          .run();
-      }
-    };
-    dom.addEventListener("click", onClick);
-    return () => dom.removeEventListener("click", onClick);
-  }, [editor]);
 
   // 查找光标所在的表格
   const findTable = () => {
