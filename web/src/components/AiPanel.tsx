@@ -392,7 +392,7 @@ export function AiPanel({
     <aside
       ref={panelRef}
       style={pos ? { left: pos.x, top: pos.y, width: panelWidth } : { right: 24, bottom: 24, width: panelWidth }}
-      className="fixed z-50 flex h-[78vh] max-h-[820px] min-h-[480px] max-w-[92vw] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-glow"
+      className="fixed z-50 flex h-[78vh] max-h-[820px] min-h-[480px] max-w-[92vw] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-lg"
     >
       <div
         onMouseDown={onPanelResize}

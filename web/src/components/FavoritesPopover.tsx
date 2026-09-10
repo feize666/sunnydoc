@@ -20,7 +20,7 @@ export function FavoritesPopover({
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} />
-      <div className="fixed right-6 top-16 z-50 flex max-h-[70vh] w-[340px] max-w-[90vw] flex-col overflow-hidden rounded-xl border border-line bg-background shadow-glow">
+      <div className="fixed right-6 top-16 z-50 flex max-h-[70vh] w-[340px] max-w-[90vw] flex-col overflow-hidden rounded-xl border border-line bg-background shadow-lg">
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
           <span className="text-[14px] font-semibold text-text">我的收藏</span>
           <button

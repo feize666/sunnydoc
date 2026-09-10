@@ -147,7 +147,7 @@ export function HomeView({
                 <div className="text-sm text-muted">还没有知识库</div>
                 <button
                   onClick={onCreateKb}
-                  className="btn btn-accent mt-1 text-white"
+                  className="btn-accent mt-1 rounded-lg px-5 py-2.5 text-sm font-medium text-white"
                 >
                   创建第一个知识库
                 </button>

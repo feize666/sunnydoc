@@ -148,7 +148,7 @@ export function CommandPalette({
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} />
-      <div className="glass fixed left-1/2 top-[16%] z-50 w-[560px] max-w-[92vw] -translate-x-1/2 overflow-hidden rounded-xl shadow-glow">
+      <div className="glass fixed left-1/2 top-[16%] z-50 w-[560px] max-w-[92vw] -translate-x-1/2 overflow-hidden rounded-xl shadow-lg">
         <div className="flex items-center gap-2 border-b border-line px-4">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-faint">
             <circle cx="11" cy="11" r="7" />
