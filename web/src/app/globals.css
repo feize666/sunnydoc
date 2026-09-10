@@ -307,6 +307,18 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
+/* 统一交互过渡：全站 hover/focus 反馈 150ms 缓动（显式 transition-* 类优先级更高，可覆盖） */
+@layer base {
+  button,
+  [role="button"],
+  a,
+  select {
+    transition-property: color, background-color, border-color, opacity, box-shadow;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
 /* 对话框遮罩 + 面板 */
 .dialog-overlay {
   position: fixed;
