@@ -83,7 +83,7 @@ export function LoginView({ onAuthed }: { onAuthed: (user: User) => void }) {
           </div>
         </div>
 
-        <p className="mt-4 text-center text-[11px] text-faint">
+        <p className="mt-4 text-center text-[12px] text-faint">
           账号由管理员创建，如有需要请联系管理员
         </p>
       </div>

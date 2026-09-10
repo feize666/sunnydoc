@@ -28,7 +28,7 @@ export function TreeNodeMenu({
               onClose();
               item.onClick();
             }}
-            className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition-colors ${
+            className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-[14px] transition-colors ${
               item.danger
                 ? "text-danger hover:bg-danger-soft"
                 : "text-text hover:bg-hover"

@@ -307,7 +307,7 @@ body {
 
 /* Markdown 正文样式 */
 .md-body {
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.8;
   color: var(--text);
   word-break: break-word;
@@ -318,7 +318,7 @@ body {
 
 /* 标题层级：H1 大号 + 渐变分隔线，H2 左侧蓝色竖条 */
 .md-body h1 {
-  font-size: 30px;
+  font-size: 32px;
   font-weight: 800;
   margin: 1.7em 0 0.85em;
   padding-bottom: 0.45em;
@@ -338,7 +338,7 @@ body {
   border-radius: 2px;
 }
 .md-body h2 {
-  font-size: 21px;
+  font-size: 22px;
   font-weight: 700;
   margin: 1.6em 0 0.6em;
   padding-left: 0.7em;
@@ -347,13 +347,13 @@ body {
   letter-spacing: -0.01em;
 }
 .md-body h3 {
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 650;
   margin: 1.5em 0 0.55em;
   line-height: 1.4;
 }
 .md-body h4 {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 650;
   margin: 1.4em 0 0.45em;
   color: var(--muted);
@@ -469,7 +469,7 @@ body {
   overflow-x: auto;
   line-height: 1.6;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 14px;
   tab-size: 2;
   /* 覆盖 shiki 行内背景：浅色浅灰底 / 深色深蓝底，token 颜色仍由行内样式控制 */
   background-color: var(--surface-2) !important;
@@ -529,7 +529,7 @@ body {
   border-collapse: separate;
   border-spacing: 0;
   margin: 1em 0;
-  font-size: 13px;
+  font-size: 14px;
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -599,7 +599,7 @@ mark.search-hit {
   border: 1px solid var(--tip-border);
   border-radius: var(--radius-md);
   padding: 5px 9px;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.45;
   text-align: center;
   box-shadow: var(--shadow-md);
@@ -658,7 +658,7 @@ mark.search-hit {
   padding: 12px 14px;
   overflow-x: auto;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
 }
 .rich-editor pre code {

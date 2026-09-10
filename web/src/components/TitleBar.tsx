@@ -56,7 +56,7 @@ export function TitleBar({
       )}
 
       <div className="flex items-center gap-1.5 px-1 text-sm font-semibold">
-        <span className="logo-mark grid h-[18px] w-[18px] place-items-center rounded-md text-[11px] font-bold">
+        <span className="logo-mark grid h-[18px] w-[18px] place-items-center rounded-md text-[12px] font-bold">
           知
         </span>
         知库
@@ -82,7 +82,7 @@ export function TitleBar({
             <div
               key={d.key}
               onClick={() => onSelect(d.key)}
-              className={`group flex h-full cursor-pointer items-center gap-1.5 whitespace-nowrap border-b-2 px-3 text-[13px] transition-colors ${
+              className={`group flex h-full cursor-pointer items-center gap-1.5 whitespace-nowrap border-b-2 px-3 text-[14px] transition-colors ${
                 active
                   ? "border-accent text-text"
                   : "border-transparent text-muted hover:text-text"

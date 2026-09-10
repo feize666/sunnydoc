@@ -64,7 +64,7 @@ export function TagsDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
-          <div className="text-[14px] font-semibold text-text">文档标签</div>
+          <div className="text-[15px] font-semibold text-text">文档标签</div>
           <button
             onClick={onClose}
             className="grid h-7 w-7 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
@@ -78,7 +78,7 @@ export function TagsDialog({
             {tags.map((t) => (
               <span
                 key={t}
-                className="flex items-center gap-1 rounded-full bg-accent-soft px-2.5 py-1 text-[12px] text-accent"
+                className="flex items-center gap-1 rounded-full bg-accent-soft px-2.5 py-1 text-[13px] text-accent"
               >
                 #{t}
                 <button
@@ -101,15 +101,15 @@ export function TagsDialog({
                 }
               }}
               placeholder={tags.length === 0 ? "输入标签后回车添加…" : "继续添加…"}
-              className="min-w-[80px] flex-1 bg-transparent text-[13px] text-text outline-none placeholder:text-faint"
+              className="min-w-[80px] flex-1 bg-transparent text-[14px] text-text outline-none placeholder:text-faint"
             />
           </div>
-          <p className="mt-2 text-[11px] text-faint">回车添加标签，点击标签上的 × 移除</p>
+          <p className="mt-2 text-[12px] text-faint">回车添加标签，点击标签上的 × 移除</p>
 
           <button
             onClick={save}
             disabled={saving}
-            className="btn-accent mt-4 w-full rounded-lg py-2 text-[13px] font-medium text-white disabled:opacity-50"
+            className="btn-accent mt-4 w-full rounded-lg py-2 text-[14px] font-medium text-white disabled:opacity-50"
           >
             {saving ? "保存中…" : "保存标签"}
           </button>

@@ -159,13 +159,13 @@ export function ExportDialog({
                     <path d={f.icon} />
                   </svg>
                   <span
-                    className={`text-[13px] font-medium ${
+                    className={`text-[14px] font-medium ${
                       active ? "text-accent" : "text-text"
                     }`}
                   >
                     {f.label}
                   </span>
-                  <span className="text-[11px] text-faint">{f.desc}</span>
+                  <span className="text-[12px] text-faint">{f.desc}</span>
                 </button>
               );
             })}

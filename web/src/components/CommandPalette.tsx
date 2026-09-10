@@ -160,13 +160,13 @@ export function CommandPalette({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="搜索命令或文档内容…"
-            className="w-full bg-transparent py-3.5 text-[15px] text-text outline-none placeholder:text-faint"
+            className="w-full bg-transparent py-3.5 text-[16px] text-text outline-none placeholder:text-faint"
           />
           <kbd className="rounded border border-line bg-background px-1 font-mono text-[10px] text-faint">ESC</kbd>
         </div>
         <div ref={listRef} className="max-h-[360px] overflow-y-auto p-1.5">
           {items.length === 0 ? (
-            <div className="px-3 py-6 text-center text-[12px] text-faint">
+            <div className="px-3 py-6 text-center text-[13px] text-faint">
               没有匹配的命令或文档
             </div>
           ) : (
@@ -191,8 +191,8 @@ export function CommandPalette({
                       active ? "bg-active text-accent" : "text-text"
                     }`}
                   >
-                    <span className="truncate text-[13px]">{r.title}</span>
-                    <span className="line-clamp-1 text-[11px] text-faint">{r.snippet}</span>
+                    <span className="truncate text-[14px]">{r.title}</span>
+                    <span className="line-clamp-1 text-[12px] text-faint">{r.snippet}</span>
                   </button>
                 );
               }
@@ -202,14 +202,14 @@ export function CommandPalette({
                   data-index={i}
                   onClick={() => run(item)}
                   onMouseEnter={() => setActiveIndex(i)}
-                  className={`group flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[13px] ${
+                  className={`group flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[14px] ${
                     active ? "bg-active text-accent" : "text-text"
                   }`}
                 >
                   <span>{item.command?.icon}</span>
                   <span className="flex-1">{item.command?.label}</span>
                   {item.command?.hint && (
-                    <span className="font-mono text-[11px] text-faint">{item.command.hint}</span>
+                    <span className="font-mono text-[12px] text-faint">{item.command.hint}</span>
                   )}
                 </button>
               );

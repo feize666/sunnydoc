@@ -87,8 +87,8 @@ export function HomeView({
             知
           </span>
           <div className="leading-tight">
-            <div className="text-[15px] font-semibold text-text">知库</div>
-            <div className="text-[11px] text-faint">文档知识库</div>
+            <div className="text-[16px] font-semibold text-text">知库</div>
+            <div className="text-[12px] text-faint">文档知识库</div>
           </div>
         </div>
 
@@ -239,7 +239,7 @@ export function HomeView({
                         {kb.description || "暂无描述"}
                       </div>
                     </div>
-                    <div className="text-[11px] text-faint">
+                    <div className="text-[12px] text-faint">
                       {kb.doc_count ?? 0} 篇文档
                     </div>
                   </button>
@@ -290,10 +290,10 @@ export function HomeView({
                         </svg>
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] text-text group-hover:text-accent">
+                        <span className="block truncate text-[14px] text-text group-hover:text-accent">
                           {r.title}
                         </span>
-                        <span className="mt-0.5 block truncate text-[11px] text-faint">
+                        <span className="mt-0.5 block truncate text-[12px] text-faint">
                           {kbNameOf(r.kb_id)} · {formatTime(r.viewed_at)}
                         </span>
                       </span>
@@ -332,10 +332,10 @@ export function HomeView({
                         </svg>
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] text-text group-hover:text-accent">
+                        <span className="block truncate text-[14px] text-text group-hover:text-accent">
                           {d.title}
                         </span>
-                        <span className="mt-0.5 block truncate text-[11px] text-faint">
+                        <span className="mt-0.5 block truncate text-[12px] text-faint">
                           {kbNameOf(d.kb_id ?? null)}
                         </span>
                       </span>

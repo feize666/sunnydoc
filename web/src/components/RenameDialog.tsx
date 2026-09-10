@@ -45,7 +45,7 @@ export function RenameDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
-          <div className="text-[14px] font-semibold text-text">{title}</div>
+          <div className="text-[15px] font-semibold text-text">{title}</div>
           <button
             onClick={onClose}
             className="grid h-7 w-7 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
@@ -62,12 +62,12 @@ export function RenameDialog({
               if (e.key === "Enter") submit();
             }}
             placeholder="请输入名称"
-            className="w-full rounded-lg border border-line bg-background px-3 py-2 text-[14px] text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+            className="w-full rounded-lg border border-line bg-background px-3 py-2 text-[15px] text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
           />
           <button
             onClick={submit}
             disabled={saving || !name.trim()}
-            className="btn-accent mt-4 w-full rounded-lg py-2 text-[13px] font-medium text-white disabled:opacity-50"
+            className="btn-accent mt-4 w-full rounded-lg py-2 text-[14px] font-medium text-white disabled:opacity-50"
           >
             {saving ? "保存中…" : "确定"}
           </button>

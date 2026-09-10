@@ -56,7 +56,7 @@ export function NewNodeMenu({
                   onSelect(t.type);
                 }
               }}
-              className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors ${
+              className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[14px] transition-colors ${
                 t.available
                   ? "text-text hover:bg-hover"
                   : "cursor-not-allowed text-faint"

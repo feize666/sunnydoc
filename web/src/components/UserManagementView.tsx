@@ -68,8 +68,8 @@ export function UserManagementView({
             </svg>
           </button>
           <div>
-            <div className="text-[15px] font-semibold text-text">用户管理</div>
-            <div className="text-[11px] text-faint">管理账号、角色与状态</div>
+            <div className="text-[16px] font-semibold text-text">用户管理</div>
+            <div className="text-[12px] text-faint">管理账号、角色与状态</div>
           </div>
         </div>
         <button
@@ -93,7 +93,7 @@ export function UserManagementView({
             <div className="text-sm text-faint">加载中…</div>
           ) : (
             <div className="overflow-hidden rounded-xl border border-line bg-background">
-              <table className="w-full text-left text-[13px]">
+              <table className="w-full text-left text-[14px]">
                 <thead>
                   <tr className="border-b border-line bg-surface-2 text-xs text-muted">
                     <th className="px-4 py-2.5 font-medium">用户</th>
@@ -123,7 +123,7 @@ export function UserManagementView({
                                 </span>
                               )}
                             </div>
-                            <div className="truncate text-[11px] text-faint">
+                            <div className="truncate text-[12px] text-faint">
                               {u.username}
                               {u.email ? ` · ${u.email}` : ""}
                             </div>
@@ -132,7 +132,7 @@ export function UserManagementView({
                       </td>
                       <td className="px-4 py-2.5">
                         <span
-                          className={`rounded-full px-2 py-0.5 text-[11px] ${
+                          className={`rounded-full px-2 py-0.5 text-[12px] ${
                             u.role === "admin"
                               ? "bg-accent-soft text-accent"
                               : "bg-surface-2 text-muted"
@@ -143,7 +143,7 @@ export function UserManagementView({
                       </td>
                       <td className="px-4 py-2.5">
                         <span
-                          className={`rounded-full px-2 py-0.5 text-[11px] ${
+                          className={`rounded-full px-2 py-0.5 text-[12px] ${
                             u.status === "disabled"
                               ? "bg-danger-soft text-danger"
                               : "bg-success-soft text-success"

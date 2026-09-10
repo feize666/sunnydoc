@@ -115,13 +115,13 @@ export function RichEditor({
       {/* 格式工具栏 */}
       <div className="flex flex-wrap items-center gap-0.5 border-b border-line px-2 py-1.5">
         <ToolBtn title="加粗" shortcut="⌘B" onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive("bold")}>
-          <span className="text-[15px] font-bold leading-none">B</span>
+          <span className="text-[16px] font-bold leading-none">B</span>
         </ToolBtn>
         <ToolBtn title="斜体" shortcut="⌘I" onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive("italic")}>
-          <span className="font-serif text-[15px] italic leading-none">I</span>
+          <span className="font-serif text-[16px] italic leading-none">I</span>
         </ToolBtn>
         <ToolBtn title="删除线" shortcut="⌘⇧X" onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive("strike")}>
-          <span className="text-[15px] leading-none line-through">S</span>
+          <span className="text-[16px] leading-none line-through">S</span>
         </ToolBtn>
         <ToolBtn title="行内代码" shortcut="⌘E" onClick={() => editor.chain().focus().toggleCode().run()} active={editor.isActive("code")}>
           <CodeIcon size={16} />
@@ -130,13 +130,13 @@ export function RichEditor({
         <ToolDivider />
 
         <ToolBtn title="一级标题" shortcut="⌥⌘1" onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} active={editor.isActive("heading", { level: 1 })}>
-          <span className="text-[14px] font-semibold leading-none">H1</span>
+          <span className="text-[15px] font-semibold leading-none">H1</span>
         </ToolBtn>
         <ToolBtn title="二级标题" shortcut="⌥⌘2" onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive("heading", { level: 2 })}>
-          <span className="text-[14px] font-semibold leading-none">H2</span>
+          <span className="text-[15px] font-semibold leading-none">H2</span>
         </ToolBtn>
         <ToolBtn title="三级标题" shortcut="⌥⌘3" onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} active={editor.isActive("heading", { level: 3 })}>
-          <span className="text-[14px] font-semibold leading-none">H3</span>
+          <span className="text-[15px] font-semibold leading-none">H3</span>
         </ToolBtn>
 
         <ToolDivider />

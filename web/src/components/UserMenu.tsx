@@ -45,7 +45,7 @@ export function UserMenu({
       >
         <span
           className={`avatar-ring grid place-items-center rounded-full font-semibold ${
-            compact ? "h-6 w-6 text-[11px]" : "h-9 w-9 text-[15px]"
+            compact ? "h-6 w-6 text-[12px]" : "h-9 w-9 text-[16px]"
           }`}
         >
           {user.avatar?.trim() || name.slice(0, 1)}
@@ -53,7 +53,7 @@ export function UserMenu({
         {!compact ? (
           <span className="flex flex-col items-start leading-tight">
             <span className="flex items-center gap-1.5">
-              <span className="max-w-[110px] truncate text-[13px] font-semibold text-text">
+              <span className="max-w-[110px] truncate text-[14px] font-semibold text-text">
                 {name}
               </span>
               {isAdmin && (
@@ -93,7 +93,7 @@ export function UserMenu({
               setOpen(false);
               onOpenProfile();
             }}
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-text hover:bg-hover"
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[14px] text-text hover:bg-hover"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted">
               <circle cx="12" cy="8" r="4" />
@@ -107,7 +107,7 @@ export function UserMenu({
                 setOpen(false);
                 onOpenUsers();
               }}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-text hover:bg-hover"
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[14px] text-text hover:bg-hover"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted">
                 <path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
@@ -123,7 +123,7 @@ export function UserMenu({
               setOpen(false);
               onLogout();
             }}
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-danger hover:bg-danger-soft"
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[14px] text-danger hover:bg-danger-soft"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />

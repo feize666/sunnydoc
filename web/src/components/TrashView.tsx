@@ -74,12 +74,12 @@ export function TrashView({ onBack }: { onBack: () => void }) {
     if (items.length === 0) return null;
     return (
       <section className="mt-6">
-        <h2 className="mb-2 text-[13px] font-semibold text-muted">{title}</h2>
+        <h2 className="mb-2 text-[14px] font-semibold text-muted">{title}</h2>
         <ul className="overflow-hidden rounded-xl border border-line bg-surface">
           {items.map((item, i) => (
             <li key={item.id}>
               <div className="flex items-center gap-3 px-4 py-2.5">
-                <span className="min-w-0 flex-1 truncate text-[14px] text-text">
+                <span className="min-w-0 flex-1 truncate text-[15px] text-text">
                   {item.title ?? item.name}
                 </span>
                 <button
@@ -119,8 +119,8 @@ export function TrashView({ onBack }: { onBack: () => void }) {
           </button>
         </Tooltip>
         <div className="leading-tight">
-          <div className="text-[15px] font-semibold text-text">回收站</div>
-          <div className="text-[11px] text-faint">
+          <div className="text-[16px] font-semibold text-text">回收站</div>
+          <div className="text-[12px] text-faint">
             {loading ? "加载中…" : `共 ${total} 项，删除后可在此恢复`}
           </div>
         </div>
@@ -129,7 +129,7 @@ export function TrashView({ onBack }: { onBack: () => void }) {
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-3xl px-6 py-6">
           {!loading && total === 0 && (
-            <div className="rounded-xl border border-dashed border-line py-16 text-center text-[13px] text-faint">
+            <div className="rounded-xl border border-dashed border-line py-16 text-center text-[14px] text-faint">
               回收站是空的
             </div>
           )}

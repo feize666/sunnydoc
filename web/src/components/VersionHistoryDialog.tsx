@@ -64,7 +64,7 @@ export function VersionHistoryDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
-          <div className="text-[14px] font-semibold text-text">版本历史</div>
+          <div className="text-[15px] font-semibold text-text">版本历史</div>
           <button
             onClick={onClose}
             className="grid h-7 w-7 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
@@ -75,9 +75,9 @@ export function VersionHistoryDialog({
 
         <div className="flex-1 overflow-y-auto px-3 py-2">
           {loading ? (
-            <div className="px-3 py-8 text-center text-[13px] text-faint">加载中…</div>
+            <div className="px-3 py-8 text-center text-[14px] text-faint">加载中…</div>
           ) : versions.length === 0 ? (
-            <div className="px-3 py-8 text-center text-[13px] text-faint">
+            <div className="px-3 py-8 text-center text-[14px] text-faint">
               暂无历史版本，保存文档后会自动记录
             </div>
           ) : (
@@ -86,8 +86,8 @@ export function VersionHistoryDialog({
                 <li key={v.id}>
                   <div className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-hover">
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] text-text">{v.title}</span>
-                      <span className="block text-[11px] text-faint">{formatTime(v.created_at)}</span>
+                      <span className="block truncate text-[14px] text-text">{v.title}</span>
+                      <span className="block text-[12px] text-faint">{formatTime(v.created_at)}</span>
                     </span>
                     <button
                       onClick={() => rollback(v.id)}

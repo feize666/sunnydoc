@@ -126,12 +126,12 @@ export function DatasheetEditor({
     const v = row[c] ?? "";
     const type = data.columns[c]?.type ?? "text";
     if (type === "number" && v) {
-      return <span className="text-right text-[13px] text-text">{v}</span>;
+      return <span className="text-right text-[14px] text-text">{v}</span>;
     }
     if (type === "select" && v) {
-      return <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[12px] text-muted">{v}</span>;
+      return <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[13px] text-muted">{v}</span>;
     }
-    return <span className="text-[13px] text-text">{v}</span>;
+    return <span className="text-[14px] text-text">{v}</span>;
   };
 
   return (
@@ -149,7 +149,7 @@ export function DatasheetEditor({
             记录
           </button>
         </Tooltip>
-        <span className="ml-auto text-[11px] text-faint">
+        <span className="ml-auto text-[12px] text-faint">
           {data.columns.length} 字段 × {visibleRows.length}/{data.rows.length} 记录
         </span>
       </div>
@@ -164,12 +164,12 @@ export function DatasheetEditor({
                     <input
                       value={col.name}
                       onChange={(e) => setColumnName(c, e.target.value)}
-                      className="h-8 min-w-0 flex-1 bg-transparent px-2 text-[13px] font-semibold text-text outline-none focus:bg-accent-soft/40"
+                      className="h-8 min-w-0 flex-1 bg-transparent px-2 text-[14px] font-semibold text-text outline-none focus:bg-accent-soft/40"
                     />
                     <select
                       value={col.type}
                       onChange={(e) => setColumnType(c, e.target.value as FieldType)}
-                      className="mr-1 rounded border border-line bg-background px-1 py-0.5 text-[11px] text-muted outline-none"
+                      className="mr-1 rounded border border-line bg-background px-1 py-0.5 text-[12px] text-muted outline-none"
                       title="字段类型"
                     >
                       {FIELD_TYPES.map((t) => (
@@ -181,7 +181,7 @@ export function DatasheetEditor({
                     <select
                       value={filter[c] ?? ""}
                       onChange={(e) => setFilter((prev) => ({ ...prev, [c]: e.target.value }))}
-                      className="w-full bg-transparent text-[11px] text-faint outline-none"
+                      className="w-full bg-transparent text-[12px] text-faint outline-none"
                       title="筛选"
                     >
                       <option value="">全部</option>
@@ -203,7 +203,7 @@ export function DatasheetEditor({
                     <input
                       value={row[c] ?? ""}
                       onChange={(e) => setCell(data.rows.indexOf(row), c, e.target.value)}
-                      className={`h-9 w-36 bg-transparent px-2 text-[13px] outline-none focus:bg-accent-soft/40 ${
+                      className={`h-9 w-36 bg-transparent px-2 text-[14px] outline-none focus:bg-accent-soft/40 ${
                         data.columns[c]?.type === "number" ? "text-right" : "text-text"
                       }`}
                     />

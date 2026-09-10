@@ -170,10 +170,10 @@ export function Editor({
                       </svg>
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[14px] text-text group-hover:text-accent">
+                      <span className="block truncate text-[15px] text-text group-hover:text-accent">
                         {r.title}
                       </span>
-                      <span className="mt-0.5 block truncate text-[12px] text-faint">
+                      <span className="mt-0.5 block truncate text-[13px] text-faint">
                         {r.source ?? ""}
                       </span>
                     </span>
@@ -388,11 +388,11 @@ export function Editor({
               <h1 className="text-[32px] font-bold leading-[1.25] tracking-[-0.01em] text-text">
                 {doc.title}
               </h1>
-              <p className="mt-3 text-[13px] text-faint">
+              <p className="mt-3 text-[14px] text-faint">
                 {doc.path} · 更新于 {doc.updated}
               </p>
               {summary && (
-                <div className="mt-4 rounded-lg border border-accent/20 bg-accent-soft px-4 py-3 text-[13px] leading-relaxed text-text">
+                <div className="mt-4 rounded-lg border border-accent/20 bg-accent-soft px-4 py-3 text-[14px] leading-relaxed text-text">
                   <span className="mr-2 font-semibold text-accent">摘要</span>
                   {summary}
                 </div>
@@ -402,7 +402,7 @@ export function Editor({
                   {tags.map((t) => (
                     <span
                       key={t}
-                      className="rounded-full bg-surface-2 px-2.5 py-0.5 text-[12px] text-muted"
+                      className="rounded-full bg-surface-2 px-2.5 py-0.5 text-[13px] text-muted"
                     >
                       #{t}
                     </span>
@@ -419,7 +419,7 @@ export function Editor({
                           {row.map((cell, c) => (
                             <td
                               key={c}
-                              className="border border-line px-3 py-1.5 text-[13px] text-text"
+                              className="border border-line px-3 py-1.5 text-[14px] text-text"
                             >
                               {cell}
                             </td>
@@ -447,7 +447,7 @@ export function Editor({
                 placeholder="标题"
                 spellCheck={false}
               />
-              <p className="mt-3 text-[13px] text-faint">
+              <p className="mt-3 text-[14px] text-faint">
                 {doc.path} · 更新于 {doc.updated}
               </p>
               <div className="mt-4 border-b border-line" />
@@ -474,7 +474,7 @@ export function Editor({
       {/* 右侧大纲（预览态 + 有标题时显示） */}
       {mode === "preview" && toc.length > 0 && (
         <aside className="hidden w-56 shrink-0 overflow-y-auto border-l border-line bg-surface lg:block">
-          <div className="sticky top-0 border-b border-line bg-surface px-3 py-2.5 text-[14px] font-semibold text-text">
+          <div className="sticky top-0 border-b border-line bg-surface px-3 py-2.5 text-[15px] font-semibold text-text">
             大纲
           </div>
           <ul className="p-1.5">
@@ -482,7 +482,7 @@ export function Editor({
               <li key={i}>
                 <button
                   onClick={() => scrollToHeading(i)}
-                  className="flex w-full items-center rounded-md py-1 text-left text-[14px] leading-snug text-text transition-colors hover:bg-hover"
+                  className="flex w-full items-center rounded-md py-1 text-left text-[15px] leading-snug text-text transition-colors hover:bg-hover"
                   style={{ paddingLeft: 8 + (item.level - 1) * 12 }}
                 >
                   <span className="line-clamp-1">{item.text}</span>

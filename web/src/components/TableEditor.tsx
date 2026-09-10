@@ -180,7 +180,7 @@ export function TableEditor({
           </button>
         </Tooltip>
         <span className="mx-1 h-4 w-px bg-line" />
-        <span className="text-[11px] text-faint">
+        <span className="text-[12px] text-faint">
           {data.length} 行 × {cols} 列 · 公式 =SUM(A1:B2)
         </span>
       </div>
@@ -191,7 +191,7 @@ export function TableEditor({
             <tr>
               {Array.from({ length: cols }, (_, c) => (
                 <th key={c} className="sticky top-0 z-10 border border-line bg-surface">
-                  <div className="px-2 py-1 text-[11px] font-medium text-muted">{colLetter(c)}</div>
+                  <div className="px-2 py-1 text-[12px] font-medium text-muted">{colLetter(c)}</div>
                 </th>
               ))}
               <th className="sticky top-0 z-10 border-0 bg-surface" />
@@ -214,7 +214,7 @@ export function TableEditor({
                       <input
                         value={disp}
                         onChange={(e) => setCell(r, c, e.target.value)}
-                        className={`h-9 w-32 bg-transparent px-2 text-[13px] outline-none focus:bg-accent-soft/40 ${raw.startsWith("=") ? "font-mono text-accent" : "text-text"}`}
+                        className={`h-9 w-32 bg-transparent px-2 text-[14px] outline-none focus:bg-accent-soft/40 ${raw.startsWith("=") ? "font-mono text-accent" : "text-text"}`}
                       />
                     </td>
                   );

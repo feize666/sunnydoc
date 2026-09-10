@@ -355,7 +355,7 @@ export function Sidebar({
         </div>
 
         {readOnly ? (
-          <div className="flex items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1.5 text-[12px] text-faint">
+          <div className="flex items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1.5 text-[13px] text-faint">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="11" width="18" height="11" rx="2" />
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
@@ -367,7 +367,7 @@ export function Sidebar({
           <div className="relative flex-1" ref={menuRef}>
             <button
               onClick={() => setMenuOpen((v) => !v)}
-              className="btn-accent flex w-full items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-[13px] font-medium text-white"
+              className="btn-accent flex w-full items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-[14px] font-medium text-white"
             >
               <PlusIcon size={14} />
               新建
@@ -393,7 +393,7 @@ export function Sidebar({
                       item.action();
                       setMenuOpen(false);
                     }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-text hover:bg-hover"
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[14px] text-text hover:bg-hover"
                   >
                     <svg
                       width="15"
@@ -416,7 +416,7 @@ export function Sidebar({
           <Tooltip content="导入文档">
             <button
               onClick={onImport}
-              className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover"
+              className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[14px] text-text transition-colors hover:bg-hover"
             >
               <svg
                 width="14"
@@ -436,7 +436,7 @@ export function Sidebar({
           <Tooltip content="导出文档">
             <button
               onClick={onExport}
-              className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover"
+              className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[14px] text-text transition-colors hover:bg-hover"
             >
               <svg
                 width="14"
@@ -489,7 +489,7 @@ export function Sidebar({
                 }
               }}
               placeholder="搜索文档内容…"
-              className="h-9 w-full rounded-lg border border-line bg-background pl-9 pr-9 text-[14px] text-text outline-none placeholder:text-faint transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20"
+              className="h-9 w-full rounded-lg border border-line bg-background pl-9 pr-9 text-[15px] text-text outline-none placeholder:text-faint transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20"
             />
             {searchQuery && (
               <button
@@ -503,12 +503,12 @@ export function Sidebar({
 
             {focused && searchQuery.trim() === "" && history.length > 0 && (
               <div className="menu-panel absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl py-1">
-                <div className="px-3 py-1 text-[11px] text-faint">最近搜索</div>
+                <div className="px-3 py-1 text-[12px] text-faint">最近搜索</div>
                 {history.map((h) => (
                   <button
                     key={h}
                     onClick={() => onSearchChange(h)}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-text hover:bg-hover"
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[14px] text-text hover:bg-hover"
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-faint">
                       <circle cx="11" cy="11" r="7" />
@@ -525,7 +525,7 @@ export function Sidebar({
             <Tooltip content="排序方式">
               <button
                 onClick={() => setSortMenuOpen((v) => !v)}
-                className="flex h-9 items-center gap-1 rounded-lg border border-line px-2.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text"
+                className="flex h-9 items-center gap-1 rounded-lg border border-line px-2.5 text-[14px] text-muted transition-colors hover:bg-hover hover:text-text"
               >
                 <svg
                   width="13"
@@ -552,7 +552,7 @@ export function Sidebar({
                       onSortChange(o.value);
                       setSortMenuOpen(false);
                     }}
-                    className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-[12px] hover:bg-hover ${
+                    className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-[13px] hover:bg-hover ${
                       sortBy === o.value
                         ? "text-accent"
                         : "text-muted hover:text-text"
@@ -576,7 +576,7 @@ export function Sidebar({
                 <button
                   key={t.value}
                   onClick={() => onSearchTypeChange(t.value)}
-                  className={`rounded-full px-2.5 py-0.5 text-[11px] transition-colors ${
+                  className={`rounded-full px-2.5 py-0.5 text-[12px] transition-colors ${
                     searchType === t.value
                       ? "bg-accent text-white"
                       : "text-muted hover:bg-hover hover:text-text"
@@ -588,7 +588,7 @@ export function Sidebar({
               <span className="mx-0.5 h-3 w-px bg-line" />
               <button
                 onClick={() => onSearchSortChange("relevance")}
-                className={`rounded-full px-2 py-0.5 text-[11px] transition-colors ${
+                className={`rounded-full px-2 py-0.5 text-[12px] transition-colors ${
                   searchSort === "relevance" ? "bg-accent text-white" : "text-muted hover:bg-hover hover:text-text"
                 }`}
               >
@@ -596,7 +596,7 @@ export function Sidebar({
               </button>
               <button
                 onClick={() => onSearchSortChange("created")}
-                className={`rounded-full px-2 py-0.5 text-[11px] transition-colors ${
+                className={`rounded-full px-2 py-0.5 text-[12px] transition-colors ${
                   searchSort === "created" ? "bg-accent text-white" : "text-muted hover:bg-hover hover:text-text"
                 }`}
               >
@@ -605,20 +605,20 @@ export function Sidebar({
               {searchTag && (
                 <button
                   onClick={() => onSearchTagChange("")}
-                  className="flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] text-accent"
+                  className="flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[12px] text-accent"
                 >
                   #{searchTag}
                   <span className="text-faint">×</span>
                 </button>
               )}
             </div>
-            <div className="px-2 py-1 text-[11px] text-faint">
+            <div className="px-2 py-1 text-[12px] text-faint">
               {searching
                 ? "搜索中…"
                 : `共 ${searchResults.length} 条结果`}
             </div>
             {!searching && searchResults.length === 0 && (
-              <div className="px-2 py-6 text-center text-[12px] text-faint">
+              <div className="px-2 py-6 text-center text-[13px] text-faint">
                 无匹配结果
               </div>
             )}
@@ -636,13 +636,13 @@ export function Sidebar({
                 </span>
                 <span className="flex min-w-0 flex-col gap-1">
                   <span
-                    className="truncate text-[15px] text-text"
+                    className="truncate text-[16px] text-text"
                     dangerouslySetInnerHTML={{
                       __html: highlightKw(r.title, searchQuery.trim()),
                     }}
                   />
                   <span
-                    className="line-clamp-2 text-[12px] leading-snug text-faint"
+                    className="line-clamp-2 text-[13px] leading-snug text-faint"
                     dangerouslySetInnerHTML={{
                       __html: highlightKw(r.snippet, searchQuery.trim()),
                     }}
@@ -670,12 +670,12 @@ export function Sidebar({
         ) : (
           <>
             {listError && (
-              <div className="mx-1 mb-2 rounded-md border border-danger/40 bg-danger-soft px-2 py-1.5 text-[11px] text-danger">
+              <div className="mx-1 mb-2 rounded-md border border-danger/40 bg-danger-soft px-2 py-1.5 text-[12px] text-danger">
                 {listError}（后端服务未启动？）
               </div>
             )}
             {data.length === 0 && !listError && (
-              <div className="px-2 py-4 text-center text-[12px] text-faint">
+              <div className="px-2 py-4 text-center text-[13px] text-faint">
                 暂无文档，点击上方「导入」或「新建」
               </div>
             )}
@@ -703,7 +703,7 @@ export function Sidebar({
         <div className="border-t border-line p-1.5">
           <button
             onClick={onOpenTrash}
-            className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text"
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[14px] text-muted transition-colors hover:bg-hover hover:text-text"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />

@@ -65,8 +65,8 @@ export function ShareDocDialog({
       >
         <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
           <div className="leading-tight">
-            <div className="text-[14px] font-semibold text-text">分享文档</div>
-            <div className="max-w-[300px] truncate text-[11px] text-faint">{doc.title}</div>
+            <div className="text-[15px] font-semibold text-text">分享文档</div>
+            <div className="max-w-[300px] truncate text-[12px] text-faint">{doc.title}</div>
           </div>
           <button
             onClick={onClose}
@@ -77,12 +77,12 @@ export function ShareDocDialog({
         </div>
 
         <div className="px-5 py-4">
-          <p className="text-[12px] text-muted">
+          <p className="text-[13px] text-muted">
             任何人打开此链接即可只读查看该文档，无需登录。
           </p>
 
           {loading ? (
-            <div className="py-6 text-center text-[12px] text-faint">生成链接中…</div>
+            <div className="py-6 text-center text-[13px] text-faint">生成链接中…</div>
           ) : error ? (
             <div className="mt-3 rounded-md border border-danger/40 bg-danger-soft px-3 py-2 text-xs text-danger">
               {error}
@@ -94,7 +94,7 @@ export function ShareDocDialog({
                   readOnly
                   value={url}
                   onFocus={(e) => e.target.select()}
-                  className="min-w-0 flex-1 rounded-lg border border-line bg-background px-3 py-2 text-[12px] text-text outline-none"
+                  className="min-w-0 flex-1 rounded-lg border border-line bg-background px-3 py-2 text-[13px] text-text outline-none"
                 />
                 <button
                   onClick={copyLink}

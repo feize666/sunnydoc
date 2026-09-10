@@ -221,7 +221,7 @@ export function ImportDialog({
                   {(result.titles ?? []).map((t, i) => (
                     <div
                       key={i}
-                      className="border-b border-line px-3 py-1.5 text-[13px] last:border-0"
+                      className="border-b border-line px-3 py-1.5 text-[14px] last:border-0"
                     >
                       {t}
                     </div>

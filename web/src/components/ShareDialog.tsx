@@ -133,8 +133,8 @@ export function ShareDialog({
               <ShareIcon size={15} />
             </span>
             <div className="leading-tight">
-              <div className="text-[14px] font-semibold text-text">共享与协作</div>
-              <div className="text-[11px] text-faint">{kb.name}</div>
+              <div className="text-[15px] font-semibold text-text">共享与协作</div>
+              <div className="text-[12px] text-faint">{kb.name}</div>
             </div>
           </div>
           <button
@@ -152,14 +152,14 @@ export function ShareDialog({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="输入用户名或昵称搜索并添加协作者…"
-              className="w-full rounded-lg border border-line bg-background px-3 py-2 text-[13px] text-text outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
+              className="w-full rounded-lg border border-line bg-background px-3 py-2 text-[14px] text-text outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
             />
             {query.trim() && (
               <div className="menu-panel absolute left-0 right-0 top-full z-20 mt-1 max-h-[220px] overflow-y-auto">
                 {searching ? (
-                  <div className="px-3 py-2.5 text-center text-[12px] text-faint">搜索中…</div>
+                  <div className="px-3 py-2.5 text-center text-[13px] text-faint">搜索中…</div>
                 ) : candidates.length === 0 ? (
-                  <div className="px-3 py-2.5 text-center text-[12px] text-faint">未找到用户</div>
+                  <div className="px-3 py-2.5 text-center text-[13px] text-faint">未找到用户</div>
                 ) : (
                   candidates.map((u) => {
                     const already = shares.some((s) => s.user_id === u.id);
@@ -169,29 +169,29 @@ export function ShareDialog({
                         className="flex items-center justify-between gap-2 px-3 py-1.5"
                       >
                         <div className="flex min-w-0 items-center gap-2">
-                          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent-soft text-[11px] font-semibold text-accent">
+                          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent-soft text-[12px] font-semibold text-accent">
                             {(u.nickname || u.username).slice(0, 1)}
                           </span>
                           <div className="min-w-0 leading-tight">
-                            <div className="truncate text-[13px] text-text">{u.nickname || u.username}</div>
+                            <div className="truncate text-[14px] text-text">{u.nickname || u.username}</div>
                             <div className="truncate text-[10px] text-faint">@{u.username}</div>
                           </div>
                         </div>
                         {already ? (
-                          <span className="text-[11px] text-faint">已添加</span>
+                          <span className="text-[12px] text-faint">已添加</span>
                         ) : (
                           <div className="flex shrink-0 gap-1">
                             <button
                               onClick={() => handleAdd(u, "read")}
                               disabled={addingId === u.id}
-                              className="rounded-md border border-line px-2 py-1 text-[11px] text-muted transition-colors hover:bg-hover hover:text-text"
+                              className="rounded-md border border-line px-2 py-1 text-[12px] text-muted transition-colors hover:bg-hover hover:text-text"
                             >
                               只读
                             </button>
                             <button
                               onClick={() => handleAdd(u, "write")}
                               disabled={addingId === u.id}
-                              className="rounded-md bg-accent-soft px-2 py-1 text-[11px] text-accent transition-colors hover:bg-accent hover:text-white"
+                              className="rounded-md bg-accent-soft px-2 py-1 text-[12px] text-accent transition-colors hover:bg-accent hover:text-white"
                             >
                               可编辑
                             </button>
@@ -213,13 +213,13 @@ export function ShareDialog({
 
           {/* 已共享列表 */}
           <div className="mt-4">
-            <div className="mb-2 text-[12px] font-semibold text-muted">
+            <div className="mb-2 text-[13px] font-semibold text-muted">
               已共享成员（{shares.length}）
             </div>
             {loading ? (
-              <div className="py-4 text-center text-[12px] text-faint">加载中…</div>
+              <div className="py-4 text-center text-[13px] text-faint">加载中…</div>
             ) : shares.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-line py-6 text-center text-[12px] text-faint">
+              <div className="rounded-lg border border-dashed border-line py-6 text-center text-[13px] text-faint">
                 尚未共享给任何用户
               </div>
             ) : (
@@ -230,11 +230,11 @@ export function ShareDialog({
                     className="flex items-center justify-between gap-2 rounded-lg border border-line bg-surface px-3 py-2"
                   >
                     <div className="flex min-w-0 items-center gap-2">
-                      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent-soft text-[12px] font-semibold text-accent">
+                      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent-soft text-[13px] font-semibold text-accent">
                         {(s.nickname || s.username || "?").slice(0, 1)}
                       </span>
                       <div className="min-w-0 leading-tight">
-                        <div className="truncate text-[13px] text-text">{s.nickname || s.username}</div>
+                        <div className="truncate text-[14px] text-text">{s.nickname || s.username}</div>
                         {s.username && s.username !== s.nickname && (
                           <div className="truncate text-[10px] text-faint">@{s.username}</div>
                         )}
@@ -243,7 +243,7 @@ export function ShareDialog({
                     <div className="flex shrink-0 items-center gap-1">
                       <button
                         onClick={() => handleTogglePermission(s)}
-                        className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                        className={`rounded-full px-2.5 py-1 text-[12px] font-medium transition-colors ${
                           s.permission === "write"
                             ? "bg-accent-soft text-accent hover:bg-accent hover:text-white"
                             : "bg-surface-2 text-faint hover:bg-hover hover:text-text"

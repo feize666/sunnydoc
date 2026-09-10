@@ -48,7 +48,7 @@ export function StatusBar({
   const { label, dot } = backendMeta[backendStatus];
 
   return (
-    <footer className="flex h-8 items-center gap-2 border-t border-line bg-surface pl-2 pr-3.5 text-[11px] text-faint select-none">
+    <footer className="flex h-8 items-center gap-2 border-t border-line bg-surface pl-2 pr-3.5 text-[12px] text-faint select-none">
       {user && onLogout && (
         <UserMenu
           user={user}

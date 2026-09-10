@@ -397,11 +397,11 @@ export function AiPanel({
         onMouseDown={startDrag}
       >
         <div className="flex items-center gap-2">
-          <span className="text-[13px] font-semibold text-text">AI 问答</span>
+          <span className="text-[14px] font-semibold text-text">AI 问答</span>
           <Tooltip content={enableWeb ? "联网搜索已开启（点击关闭）" : "联网搜索已关闭（点击开启）"}>
             <button
               onClick={() => setEnableWeb((v) => !v)}
-              className={`flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-medium transition-colors ${
+              className={`flex items-center gap-1.5 rounded-full border px-2 py-1 text-[12px] font-medium transition-colors ${
                 enableWeb
                   ? "border-accent/40 bg-accent-soft text-accent"
                   : "border-line bg-background text-faint"
@@ -463,18 +463,18 @@ export function AiPanel({
           <div className="absolute inset-0 z-10" onClick={() => setShowHistory(false)} />
           <div className="absolute left-3 right-3 top-11 z-20 overflow-hidden rounded-xl border border-line bg-background shadow-lg">
             <div className="flex items-center justify-between border-b border-line px-3 py-2">
-              <span className="text-[12px] font-semibold text-text">历史会话</span>
+              <span className="text-[13px] font-semibold text-text">历史会话</span>
               <button
                 onClick={newSession}
                 disabled={loading}
-                className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-accent transition-colors hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] text-accent transition-colors hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <PlusIcon size={12} />
                 新建
               </button>
             </div>
             {sortedSessions.length === 0 ? (
-              <div className="px-3 py-5 text-center text-[12px] text-faint">暂无历史会话</div>
+              <div className="px-3 py-5 text-center text-[13px] text-faint">暂无历史会话</div>
             ) : (
               <ul className="max-h-[260px] overflow-y-auto p-1">
                 {sortedSessions.map((s) => (
@@ -490,13 +490,13 @@ export function AiPanel({
                       className="min-w-0 flex-1 text-left"
                     >
                       <div
-                        className={`truncate text-[13px] ${
+                        className={`truncate text-[14px] ${
                           s.id === currentId ? "text-accent" : "text-text"
                         }`}
                       >
                         {s.title}
                       </div>
-                      <div className="text-[11px] text-faint">{formatTime(s.updatedAt)}</div>
+                      <div className="text-[12px] text-faint">{formatTime(s.updatedAt)}</div>
                     </button>
                     <Tooltip content="删除会话" className="shrink-0">
                       <button
@@ -519,18 +519,18 @@ export function AiPanel({
         {messages.map((msg, i) => (
           <div
             key={i}
-            className={`group flex flex-col gap-1 text-[13px] leading-relaxed ${
+            className={`group flex flex-col gap-1 text-[14px] leading-relaxed ${
               msg.role === "user" ? "items-end" : ""
             }`}
           >
             {msg.role === "ai" && (
               <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-faint">知库助手</span>
+                <span className="text-[12px] text-faint">知库助手</span>
                 {msg.content && !msg.error && (
                   <Tooltip content={copiedIndex === i ? "已复制" : "复制回答"}>
                     <button
                       onClick={() => copyMessage(i)}
-                      className={`flex items-center gap-0.5 rounded px-1 py-0.5 text-[11px] text-faint transition-opacity hover:text-muted ${
+                      className={`flex items-center gap-0.5 rounded px-1 py-0.5 text-[12px] text-faint transition-opacity hover:text-muted ${
                         copiedIndex === i
                           ? "text-accent opacity-100"
                           : "opacity-0 group-hover:opacity-100"
@@ -558,7 +558,7 @@ export function AiPanel({
                 <AiMarkdown content={msg.content} theme={theme} />
               )}
               {Array.isArray(msg.citations) && msg.citations.length > 0 && (
-                <div className="mt-1.5 space-y-0.5 border-t border-line pt-1.5 text-[11px]">
+                <div className="mt-1.5 space-y-0.5 border-t border-line pt-1.5 text-[12px]">
                   <div className="mb-0.5 text-[10px] text-faint">知识库引用</div>
                   {msg.citations.map((c, j) => (
                     <a
@@ -573,7 +573,7 @@ export function AiPanel({
                 </div>
               )}
               {Array.isArray(msg.webSources) && msg.webSources.length > 0 && (
-                <div className="mt-1.5 space-y-0.5 border-t border-line pt-1.5 text-[11px]">
+                <div className="mt-1.5 space-y-0.5 border-t border-line pt-1.5 text-[12px]">
                   <div className="mb-0.5 text-[10px] text-faint">联网搜索来源</div>
                   {msg.webSources.map((s, j) => (
                     <a
@@ -595,7 +595,7 @@ export function AiPanel({
           </div>
         ))}
         {loading && (
-          <div className="flex items-center gap-1.5 text-[12px] text-faint">
+          <div className="flex items-center gap-1.5 text-[13px] text-faint">
             <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
             正在生成回答…
           </div>
@@ -614,7 +614,7 @@ export function AiPanel({
           }}
           rows={1}
           placeholder="向知识库提问…（Enter 发送）"
-          className="max-h-[120px] flex-1 resize-none rounded-lg border border-line bg-background px-3 py-2 text-[13px] outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
+          className="max-h-[120px] flex-1 resize-none rounded-lg border border-line bg-background px-3 py-2 text-[14px] outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
         />
         <Tooltip content="发送" className="shrink-0">
           <button

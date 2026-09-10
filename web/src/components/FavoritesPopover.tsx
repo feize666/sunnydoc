@@ -22,7 +22,7 @@ export function FavoritesPopover({
       <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} />
       <div className="fixed right-6 top-16 z-50 flex max-h-[70vh] w-[340px] max-w-[90vw] flex-col overflow-hidden rounded-xl border border-line bg-background shadow-glow">
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
-          <span className="text-[13px] font-semibold text-text">我的收藏</span>
+          <span className="text-[14px] font-semibold text-text">我的收藏</span>
           <button
             onClick={onClose}
             className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
@@ -33,7 +33,7 @@ export function FavoritesPopover({
 
         <div className="flex-1 overflow-y-auto p-1.5">
           {favorites.length === 0 ? (
-            <div className="px-3 py-8 text-center text-[12px] text-faint">
+            <div className="px-3 py-8 text-center text-[13px] text-faint">
               暂无收藏，打开文档点击「收藏」即可加入
             </div>
           ) : (
@@ -53,8 +53,8 @@ export function FavoritesPopover({
                       </svg>
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] text-text">{d.title}</span>
-                      <span className="block truncate text-[11px] text-faint">{d.source}</span>
+                      <span className="block truncate text-[14px] text-text">{d.title}</span>
+                      <span className="block truncate text-[12px] text-faint">{d.source}</span>
                     </span>
                   </button>
                 </li>

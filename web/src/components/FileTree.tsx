@@ -166,7 +166,7 @@ function FileTreeNode({
     >
       <button
         onClick={() => { onPick(null); setMoveOpen(false); }}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-muted hover:bg-hover hover:text-text"
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-muted hover:bg-hover hover:text-text"
       >
         <FolderIcon size={13} className="shrink-0 text-faint" />
         根目录
@@ -175,14 +175,14 @@ function FileTreeNode({
         <button
           key={f.id}
           onClick={() => { onPick(f.id); setMoveOpen(false); }}
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-muted hover:bg-hover hover:text-text"
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-muted hover:bg-hover hover:text-text"
         >
           <FolderIcon size={13} className="shrink-0 text-faint" />
           <span className="truncate">{f.name}</span>
         </button>
       ))}
       {folders.length === 0 && (
-        <div className="px-3 py-1.5 text-[11px] text-faint">暂无文件夹，可先新建</div>
+        <div className="px-3 py-1.5 text-[12px] text-faint">暂无文件夹，可先新建</div>
       )}
     </div>
   );
@@ -216,7 +216,7 @@ function FileTreeNode({
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`group relative flex w-full items-center gap-1 rounded-md py-1 text-left text-[15px] transition-colors ${
+          className={`group relative flex w-full items-center gap-1 rounded-md py-1 text-left text-[16px] transition-colors ${
             dropPos === "inside" ? "bg-accent-soft ring-1 ring-inset ring-accent" : "text-text hover:bg-hover"
           } ${dropClass}`}
         >
@@ -322,7 +322,7 @@ function FileTreeNode({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`group relative flex w-full cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-left text-[15px] transition-colors ${
+      className={`group relative flex w-full cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-left text-[16px] transition-colors ${
         active ? "bg-active text-accent" : "text-text hover:bg-hover"
       } ${dropClass}`}
       style={{ paddingLeft: 8 + depth * 12 + 18 }}

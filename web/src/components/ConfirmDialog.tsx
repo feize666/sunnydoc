@@ -45,7 +45,7 @@ export function ConfirmDialog({
           </div>
           <div className="min-w-0 flex-1 pt-0.5">
             <div className="text-sm font-semibold text-text">{title}</div>
-            <div className="mt-1 text-[13px] leading-relaxed text-muted">
+            <div className="mt-1 text-[14px] leading-relaxed text-muted">
               {message}
             </div>
           </div>
