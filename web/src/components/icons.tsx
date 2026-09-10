@@ -248,3 +248,39 @@ export function EditIcon(p: IconProps) {
     </svg>
   );
 }
+
+export function SearchReplaceIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4-4" />
+      <path d="M11 8v6M8 11h6" />
+    </svg>
+  );
+}
+
+export function ChevronUpIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M6 15l6-6 6 6" />
+    </svg>
+  );
+}
+
+export function ChevronDownIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
+export function CodeLanguageIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <polyline points="4 7 4 4 20 4 20 7" />
+      <line x1="9" x2="15" y1="20" y2="20" />
+      <line x1="12" x2="12" y1="4" y2="20" />
+    </svg>
+  );
+}

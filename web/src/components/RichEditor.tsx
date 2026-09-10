@@ -19,6 +19,10 @@ import {
   ImageIcon,
   MinusIcon,
   LinkIcon,
+  SearchReplaceIcon,
+  ChevronUpIcon,
+  ChevronDownIcon,
+  CloseIcon,
 } from "./icons";
 
 /* ---------- 自写扩展（不引第三方，@tiptap/core 已内置） ---------- */
@@ -201,6 +205,26 @@ declare module "@tiptap/core" {
 
 const COLORS = ["#111827", "#dc2626", "#ea580c", "#ca8a04", "#16a34a", "#2563eb", "#9333ea"];
 
+// 代码块支持的语言（与 lib/markdown.ts 中 shiki 注册的语言保持一致）
+const CODE_LANGS = [
+  "text",
+  "javascript",
+  "typescript",
+  "python",
+  "json",
+  "bash",
+  "shell",
+  "sql",
+  "css",
+  "html",
+  "xml",
+  "markdown",
+  "yaml",
+  "java",
+  "go",
+  "rust",
+] as const;
+
 function ToolBtn({
   title,
   shortcut,
@@ -245,6 +269,14 @@ export function RichEditor({
   placeholder?: string;
 }) {
   const [colorOpen, setColorOpen] = useState(false);
+  // 链接弹窗
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
+  // 查找替换
+  const [findOpen, setFindOpen] = useState(false);
+  const [findText, setFindText] = useState("");
+  const [replaceText, setReplaceText] = useState("");
+  const [findIdx, setFindIdx] = useState(0);
 
   const editor = useEditor({
     extensions: [
@@ -329,6 +361,22 @@ export function RichEditor({
     return () => dom.removeEventListener("click", onClick);
   }, [editor]);
 
+  // 全局快捷键：⌘F / Ctrl+F 打开查找替换
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setFindOpen(true);
+        const sel = editor?.state.selection;
+        if (sel && sel.from !== sel.to) {
+          setFindText(editor.state.doc.textBetween(sel.from, sel.to, " "));
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [editor]);
+
   if (!editor) {
     return (
       <div className="min-h-[calc(100vh-300px)] flex-1 rounded-lg border border-line bg-background" />
@@ -336,13 +384,19 @@ export function RichEditor({
   }
 
   const setLink = () => {
-    const url = window.prompt("输入链接地址", "https://");
-    if (url === null) return;
-    if (url.trim() === "") {
+    const prev = editor.getAttributes("link").href as string | undefined;
+    setLinkUrl(prev ?? "");
+    setLinkOpen(true);
+  };
+
+  const applyLink = () => {
+    const url = linkUrl.trim();
+    if (url === "") {
       editor.chain().focus().extendMarkRange("link").unsetLink().run();
-      return;
+    } else {
+      editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
     }
-    editor.chain().focus().extendMarkRange("link").setLink({ href: url.trim() }).run();
+    setLinkOpen(false);
   };
 
   const setImage = () => {
@@ -430,6 +484,82 @@ export function RichEditor({
     const t = findTable();
     if (!t) return;
     editor.chain().focus().deleteRange({ from: t.pos, to: t.pos + t.node.nodeSize }).run();
+  };
+
+  // 设置当前代码块语言
+  const currentCodeLang = (() => {
+    if (!editor.isActive("codeBlock")) return "text";
+    return (editor.getAttributes("codeBlock").language as string) || "text";
+  })();
+
+  const setCodeLang = (lang: string) => {
+    editor.chain().focus().updateAttributes("codeBlock", { language: lang === "text" ? null : lang }).run();
+  };
+
+  // 查找替换：在编辑器文档中检索所有命中位置
+  const findMatches = (): { from: number; to: number }[] => {
+    const text = findText;
+    if (!text) return [];
+    const results: { from: number; to: number }[] = [];
+    const doc = editor.state.doc;
+    doc.descendants((node, pos) => {
+      if (!node.isText) return;
+      const value = node.text ?? "";
+      let idx = value.indexOf(text);
+      while (idx !== -1) {
+        results.push({ from: pos + idx, to: pos + idx + text.length });
+        idx = value.indexOf(text, idx + 1);
+      }
+    });
+    return results;
+  };
+
+  const matches = findMatches();
+
+  const jumpToMatch = (index: number) => {
+    if (matches.length === 0) return;
+    const m = matches[(index + matches.length) % matches.length];
+    setFindIdx((index + matches.length) % matches.length);
+    editor
+      .chain()
+      .focus()
+      .setTextSelection({ from: m.from, to: m.to })
+      .scrollIntoView()
+      .run();
+  };
+
+  const replaceCurrent = () => {
+    if (matches.length === 0) return;
+    const m = matches[findIdx % matches.length];
+    editor
+      .chain()
+      .focus()
+      .setTextSelection({ from: m.from, to: m.to })
+      .insertContent(replaceText)
+      .run();
+    setFindIdx(0);
+  };
+
+  const replaceAll = () => {
+    if (matches.length === 0) return;
+    const text = findText;
+    const replacement = replaceText;
+    const { tr, doc } = editor.state;
+    const positions: { from: number; to: number }[] = [];
+    doc.descendants((node, pos) => {
+      if (!node.isText) return;
+      const value = node.text ?? "";
+      let idx = value.indexOf(text);
+      while (idx !== -1) {
+        positions.push({ from: pos + idx, to: pos + idx + text.length });
+        idx = value.indexOf(text, idx + 1);
+      }
+    });
+    // 从后往前替换，避免位置偏移
+    for (let i = positions.length - 1; i >= 0; i--) {
+      tr.replaceWith(positions[i].from, positions[i].to, editor.schema.text(replacement));
+    }
+    editor.view.dispatch(tr);
   };
 
   const headingValue = editor.isActive("heading", { level: 1 })
@@ -549,15 +679,72 @@ export function RichEditor({
         <ToolBtn title="代码块" shortcut="⌥⌘C" onClick={() => editor.chain().focus().toggleCodeBlock().run()} active={editor.isActive("codeBlock")}>
           <CodeBlockIcon size={17} />
         </ToolBtn>
+        {/* 代码块语言选择 */}
+        <Tooltip content="代码语言">
+          <select
+            value={editor.isActive("codeBlock") ? currentCodeLang : "text"}
+            onChange={(e) => setCodeLang(e.target.value)}
+            onMouseDown={(e) => e.preventDefault()}
+            disabled={!editor.isActive("codeBlock")}
+            className="h-8 w-[72px] cursor-pointer rounded-md border border-line bg-background px-1 text-[12px] text-muted outline-none hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
+            title="代码块语言"
+          >
+            {CODE_LANGS.map((l) => (
+              <option key={l} value={l}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </Tooltip>
         <ToolBtn title="分割线" onClick={() => editor.chain().focus().setHorizontalRule().run()}>
           <MinusIcon size={17} />
         </ToolBtn>
 
         <ToolDivider />
 
-        <ToolBtn title="链接" shortcut="⌘K" onClick={setLink} active={editor.isActive("link")}>
-          <LinkIcon size={17} />
-        </ToolBtn>
+        <div className="relative">
+          <ToolBtn title="链接" shortcut="⌘K" onClick={setLink} active={editor.isActive("link")}>
+            <LinkIcon size={17} />
+          </ToolBtn>
+          {linkOpen && (
+            <div className="absolute left-0 top-full z-30 mt-1 w-72 rounded-lg border border-line bg-surface p-3 shadow-lg">
+              <div className="mb-1 text-[12px] font-medium text-text">链接地址</div>
+              <input
+                value={linkUrl}
+                onChange={(e) => setLinkUrl(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") applyLink(); if (e.key === "Escape") setLinkOpen(false); }}
+                placeholder="https://"
+                autoFocus
+                className="mb-2 h-8 w-full rounded-md border border-line bg-background px-2 text-[13px] text-text outline-none focus:border-accent"
+              />
+              <div className="flex justify-end gap-1.5">
+                {editor.isActive("link") && (
+                  <button
+                    type="button"
+                    onClick={() => { editor.chain().focus().extendMarkRange("link").unsetLink().run(); setLinkOpen(false); }}
+                    className="h-7 rounded-md px-2 text-[12px] text-danger hover:bg-hover"
+                  >
+                    移除链接
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setLinkOpen(false)}
+                  className="h-7 rounded-md px-2 text-[12px] text-muted hover:bg-hover"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={applyLink}
+                  className="h-7 rounded-md bg-accent px-3 text-[12px] font-medium text-white hover:opacity-90"
+                >
+                  确定
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
         <ToolBtn title="图片" onClick={setImage}>
           <ImageIcon size={17} />
         </ToolBtn>
@@ -635,7 +822,78 @@ export function RichEditor({
             <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" />
           </svg>
         </ToolBtn>
+
+        <ToolDivider />
+
+        <ToolBtn title="查找替换" shortcut="⌘F" onClick={() => { setFindOpen((v) => !v); if (!findOpen) setFindText(editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, " ")); }} active={findOpen}>
+          <SearchReplaceIcon size={17} />
+        </ToolBtn>
       </div>
+
+      {/* 查找替换面板 */}
+      {findOpen && (
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-line bg-surface px-3 py-2">
+          <input
+            value={findText}
+            onChange={(e) => { setFindText(e.target.value); setFindIdx(0); }}
+            placeholder="查找"
+            className="h-8 w-44 rounded-md border border-line bg-background px-2 text-[13px] text-text outline-none focus:border-accent"
+          />
+          <input
+            value={replaceText}
+            onChange={(e) => setReplaceText(e.target.value)}
+            placeholder="替换为"
+            className="h-8 w-44 rounded-md border border-line bg-background px-2 text-[13px] text-text outline-none focus:border-accent"
+          />
+          <span className="min-w-[52px] text-center text-[12px] text-muted">
+            {findText ? `${matches.length > 0 ? findIdx + 1 : 0}/${matches.length}` : "0/0"}
+          </span>
+          <button
+            type="button"
+            onClick={() => jumpToMatch(findIdx - 1)}
+            disabled={matches.length === 0}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-text disabled:opacity-40"
+            title="上一个"
+          >
+            <ChevronUpIcon size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => jumpToMatch(findIdx + 1)}
+            disabled={matches.length === 0}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-text disabled:opacity-40"
+            title="下一个"
+          >
+            <ChevronDownIcon size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={replaceCurrent}
+            disabled={matches.length === 0}
+            className="h-7 rounded-md border border-line px-2 text-[12px] text-text hover:bg-hover disabled:opacity-40"
+          >
+            替换
+          </button>
+          <button
+            type="button"
+            onClick={replaceAll}
+            disabled={matches.length === 0}
+            className="h-7 rounded-md border border-line px-2 text-[12px] text-text hover:bg-hover disabled:opacity-40"
+          >
+            全部替换
+          </button>
+          <button
+            type="button"
+            onClick={() => setFindOpen(false)}
+            className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-text"
+            title="关闭"
+          >
+            <CloseIcon size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* 链接弹窗已移至工具栏链接按钮内 */}
 
       <EditorContent
         editor={editor}
