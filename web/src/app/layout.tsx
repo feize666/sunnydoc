@@ -16,6 +16,12 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="zh-CN" className="h-full antialiased" suppressHydrationWarning>
+      <head>
+        {/* 防止浏览器/CDN 缓存入口 HTML，避免 chunk hash 变更后页面拉取旧 HTML 引用不存在的 chunk */}
+        <meta httpEquiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+        <meta httpEquiv="Pragma" content="no-cache" />
+        <meta httpEquiv="Expires" content="0" />
+      </head>
       <body className="h-full">{children}</body>
     </html>
   );
