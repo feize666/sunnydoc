@@ -71,7 +71,7 @@ export function NewFolderDialog({
           <span className="text-sm font-semibold">新建文件夹</span>
           <button
             onClick={onClose}
-            className="grid h-7 w-7 place-items-center rounded-md text-muted hover:bg-hover"
+            className="grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-hover"
           >
             <CloseIcon size={16} />
           </button>

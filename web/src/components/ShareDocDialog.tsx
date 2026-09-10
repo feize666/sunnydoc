@@ -70,7 +70,7 @@ export function ShareDocDialog({
           </div>
           <button
             onClick={onClose}
-            className="grid h-7 w-7 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
+            className="grid h-8 w-8 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
           >
             <CloseIcon size={15} />
           </button>
