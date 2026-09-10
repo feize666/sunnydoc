@@ -32,16 +32,16 @@ export function TitleBar({
   onOpenFavorites: () => void;
 }) {
   return (
-    <header className="flex h-11 items-center gap-2 border-b border-line bg-background px-2.5 select-none">
+    <header className="flex h-12 items-center gap-2 border-b border-line bg-background px-3 select-none">
       {onBackHome && (
         <Tooltip content="返回首页">
           <button
             onClick={onBackHome}
-            className="grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-hover hover:text-text"
+            className="grid h-9 w-9 place-items-center rounded-md text-muted hover:bg-hover hover:text-text"
           >
             <svg
-              width="16"
-              height="16"
+              width="18"
+              height="18"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -55,8 +55,8 @@ export function TitleBar({
         </Tooltip>
       )}
 
-      <div className="flex items-center gap-1.5 px-1 text-sm font-semibold">
-        <span className="logo-mark grid h-[18px] w-[18px] place-items-center rounded-md text-[12px] font-bold">
+      <div className="flex items-center gap-1.5 px-1 text-[15px] font-semibold">
+        <span className="logo-mark grid h-5 w-5 place-items-center rounded-md text-[13px] font-bold">
           知
         </span>
         知库
@@ -67,9 +67,9 @@ export function TitleBar({
       <Tooltip content="折叠侧栏">
         <button
           onClick={onToggleSidebar}
-          className="grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-hover hover:text-text"
+          className="grid h-9 w-9 place-items-center rounded-md text-muted hover:bg-hover hover:text-text"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M3 6h18M3 12h18M3 18h18" />
           </svg>
         </button>
@@ -105,14 +105,14 @@ export function TitleBar({
 
       <button
         onClick={onOpenPalette}
-        className="flex min-w-[160px] items-center gap-1.5 rounded-md bg-surface-2 px-2.5 py-1.5 text-xs text-faint"
+        className="flex h-9 min-w-[220px] items-center gap-1.5 rounded-md bg-surface-2 px-3 text-sm text-faint"
       >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <circle cx="11" cy="11" r="7" />
           <path d="M21 21l-4-4" />
         </svg>
         <span className="flex-1 text-left">搜索或执行命令</span>
-        <kbd className="rounded border border-line bg-background px-1 font-mono text-[10px]">
+        <kbd className="rounded border border-line bg-background px-1 font-mono text-[11px]">
           ⌘K
         </kbd>
       </button>
@@ -120,26 +120,26 @@ export function TitleBar({
       <Tooltip content="我的收藏">
         <button
           onClick={onOpenFavorites}
-          className="grid h-8 w-8 place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-text"
+          className="grid h-9 w-9 place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-text"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
           </svg>
         </button>
       </Tooltip>
 
-      <ThemeToggle theme={theme} onToggle={onToggleTheme} className="h-8 w-8" />
+      <ThemeToggle theme={theme} onToggle={onToggleTheme} className="h-9 w-9" />
 
       <Tooltip content={aiOpen ? "收起 AI 问答" : "打开 AI 问答"}>
         <button
           onClick={onToggleAi}
-          className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+          className={`flex h-9 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors ${
             aiOpen
               ? "bg-accent text-white"
               : "bg-accent-soft text-accent hover:bg-accent hover:text-white"
           }`}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 2a4 4 0 0 1 4 4c1.7 0 3 1.3 3 3 0 .8-.3 1.5-.8 2 .5.5.8 1.2.8 2 0 1.7-1.3 3-3 3a4 4 0 0 1-8 0c-1.7 0-3-1.3-3-3 0-.8.3-1.5.8-2-.5-.5-.8-1.2-.8-2 0-1.7 1.3-3 3-3z" />
           </svg>
           AI 问答

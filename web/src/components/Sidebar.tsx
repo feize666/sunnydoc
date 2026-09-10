@@ -294,12 +294,12 @@ export function Sidebar({
       />
       <div className="border-b border-line px-3 pb-2.5 pt-2.5">
         <div className="mb-2 flex items-center justify-between">
-          <div className="flex min-w-0 items-center gap-1">
+          <div className="flex min-w-0 items-center gap-1.5">
             {onBackHome && (
               <Tooltip content="返回首页" className="shrink-0">
                 <button
                   onClick={onBackHome}
-                  className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
+                  className="grid h-7 w-7 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
                 >
                 <svg
                   width="14"
@@ -316,7 +316,21 @@ export function Sidebar({
               </button>
               </Tooltip>
             )}
-            <span className="truncate text-sm text-muted">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="shrink-0 text-accent"
+            >
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+            </svg>
+            <span className="truncate text-[15px] font-semibold text-text">
               {kbName ?? "知识库 · 全部文档"}
             </span>
           </div>
