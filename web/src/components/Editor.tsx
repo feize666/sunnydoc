@@ -386,7 +386,7 @@ export function Editor({
         {/* 正文 */}
         <div className="flex-1 overflow-y-auto py-8">
           {mode === "preview" ? (
-            <div className="mx-auto max-w-[760px] px-10">
+            <div className="mx-auto max-w-[900px] px-10">
               <h1 className="text-[32px] font-bold leading-[1.25] tracking-[-0.01em] text-text">
                 {doc.title}
               </h1>
@@ -441,7 +441,7 @@ export function Editor({
               )}
             </div>
           ) : (
-            <div className="mx-auto max-w-[860px] px-10">
+            <div className="mx-auto max-w-[960px] px-10">
               <input
                 value={draftTitle}
                 onChange={(e) => setDraftTitle(e.target.value)}

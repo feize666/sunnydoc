@@ -373,13 +373,13 @@ export function Sidebar({
             只读模式
           </div>
         ) : (
-        <div className="flex gap-1.5">
-          <div className="relative flex-1" ref={menuRef}>
+        <div className="flex items-center gap-1.5">
+          <div className="relative" ref={menuRef}>
             <button
               onClick={() => setMenuOpen((v) => !v)}
-              className="btn-accent flex w-full items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-[14px] font-medium text-white"
+              className="btn btn-accent text-white"
             >
-              <PlusIcon size={14} />
+              <PlusIcon size={15} />
               新建
               <svg
                 width="12"
@@ -426,7 +426,7 @@ export function Sidebar({
           <Tooltip content="导入文档">
             <button
               onClick={onImport}
-              className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[14px] text-text transition-colors hover:bg-hover"
+              className="btn btn-secondary"
             >
               <svg
                 width="14"
@@ -446,7 +446,7 @@ export function Sidebar({
           <Tooltip content="导出文档">
             <button
               onClick={onExport}
-              className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[14px] text-text transition-colors hover:bg-hover"
+              className="btn btn-secondary"
             >
               <svg
                 width="14"
