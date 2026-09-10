@@ -1,8 +1,31 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, Component, type ReactNode } from "react";
 import { renderMarkdown, extractToc, type TocItem } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
+
+/* 临时调试用：包裹 RichEditor，捕获并打印真实错误 */
+class RichEditorBoundary extends Component<{ children: ReactNode }, { err: string | null }> {
+  state = { err: null as string | null };
+  static getDerivedStateFromError(err: Error) {
+    return { err: err?.stack || err?.message || String(err) };
+  }
+  componentDidCatch(err: Error) {
+    // eslint-disable-next-line no-console
+    console.error("[RichEditorBoundary caught]", err?.stack || err);
+  }
+  render() {
+    if (this.state.err) {
+      return (
+        <div style={{ padding: 16, color: "#dc2626", background: "#fef2f2", borderRadius: 8, fontFamily: "monospace", fontSize: 12, whiteSpace: "pre-wrap", overflow: "auto", maxHeight: 400 }}>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>RichEditor 加载失败：</div>
+          {this.state.err}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import { Tooltip } from "./Tooltip";
 import { updateDocument } from "@/lib/api";
 import type { Doc } from "@/data/docs";
@@ -461,11 +484,13 @@ export function Editor({
                 ) : doc.type === "datasheet" ? (
                   <DatasheetEditor value={draft} onChange={setDraft} />
                 ) : (
+                  <RichEditorBoundary>
                   <RichEditor
                     value={draft}
                     onChange={setDraft}
                     placeholder="开始输入内容…"
                   />
+                  </RichEditorBoundary>
                 )}
               </div>
             </div>
