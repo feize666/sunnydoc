@@ -17,11 +17,13 @@ export function ImportDialog({
   onClose,
   onImported,
   kbId,
+  autoFiles,
 }: {
   open: boolean;
   onClose: () => void;
   onImported: () => void;
   kbId?: string | null;
+  autoFiles?: File[] | null;
 }) {
   const [dragOver, setDragOver] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -40,6 +42,14 @@ export function ImportDialog({
   }, []);
 
   useEffect(() => () => stopPolling(), [stopPolling]);
+
+  // 外部注入文件（全局拖拽）时，自动开始导入
+  useEffect(() => {
+    if (open && autoFiles && autoFiles.length > 0 && phase === "idle") {
+      handleFiles(autoFiles);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, autoFiles]);
 
   const handleFiles = useCallback(
     async (files: FileList | File[]) => {

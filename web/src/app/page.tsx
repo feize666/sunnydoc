@@ -104,6 +104,8 @@ export default function Home() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [dragFiles, setDragFiles] = useState<File[] | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [newDocOpen, setNewDocOpen] = useState(false);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -280,6 +282,53 @@ export default function Home() {
   useEffect(() => {
     if (view === "kb") refreshList();
   }, [view, refreshList]);
+
+  // 全局拖拽文件导入：在知识库视图拖入文件时显示遮罩，释放后打开导入对话框
+  useEffect(() => {
+    const isFileDrag = (e: DragEvent) => {
+      return Array.from(e.dataTransfer?.types ?? []).includes("Files");
+    };
+    let depth = 0;
+    const onDragEnter = (e: DragEvent) => {
+      if (!isFileDrag(e)) return;
+      if (view !== "kb") return;
+      e.preventDefault();
+      depth++;
+      setDragOver(true);
+    };
+    const onDragOver = (e: DragEvent) => {
+      if (!isFileDrag(e)) return;
+      if (view !== "kb") return;
+      e.preventDefault();
+    };
+    const onDragLeave = (e: DragEvent) => {
+      if (!isFileDrag(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDragOver(false);
+    };
+    const onDrop = (e: DragEvent) => {
+      if (!isFileDrag(e)) return;
+      if (view !== "kb") return;
+      e.preventDefault();
+      depth = 0;
+      setDragOver(false);
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      if (files.length > 0) {
+        setDragFiles(files);
+        setImportOpen(true);
+      }
+    };
+    window.addEventListener("dragenter", onDragEnter);
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("dragleave", onDragLeave);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragenter", onDragEnter);
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("dragleave", onDragLeave);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, [view]);
 
   // 打开文档：设置 active，若未加载全文则拉取，并记录最近浏览
   const openDoc = useCallback(
@@ -914,11 +963,15 @@ export default function Home() {
 
       <ImportDialog
         open={importOpen}
-        onClose={() => setImportOpen(false)}
+        onClose={() => {
+          setImportOpen(false);
+          setDragFiles(null);
+        }}
         onImported={() => {
           refreshList();
         }}
         kbId={currentKbId}
+        autoFiles={dragFiles}
       />
 
       <NewDocDialog
@@ -1010,6 +1063,19 @@ export default function Home() {
       />
 
       <AiPanel theme={theme} open={aiOpen} onClose={() => setAiOpen(false)} onOpenCitation={handleOpenCitation} />
+
+      {/* 全局拖拽导入遮罩 */}
+      {dragOver && (
+        <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-accent/10 backdrop-blur-[2px]">
+          <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-accent bg-background px-12 py-10 shadow-xl">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-accent">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+            </svg>
+            <div className="text-base font-semibold text-text">释放以导入文档</div>
+            <div className="text-xs text-faint">支持 .md .txt .json .csv .zip .pdf .docx .xlsx</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
