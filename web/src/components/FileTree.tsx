@@ -109,7 +109,7 @@ function FileTreeNode({
   const isFolder = node.type === "folder";
 
   const hoverBtn =
-    "grid h-[22px] w-[22px] place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-hover hover:text-accent group-hover:opacity-100";
+    "grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-hover hover:text-accent group-hover:opacity-100";
 
   const handleDragOver = (e: React.DragEvent) => {
     if (!canDrag) return;

@@ -98,7 +98,7 @@ export function ShareDocDialog({
                 />
                 <button
                   onClick={copyLink}
-                  className="btn-accent flex shrink-0 items-center gap-1 rounded-lg px-3 py-2 text-xs font-medium text-white"
+                  className="btn btn-accent shrink-0 text-white"
                 >
                   {copied ? <CheckIcon size={13} /> : null}
                   {copied ? "已复制" : "复制链接"}

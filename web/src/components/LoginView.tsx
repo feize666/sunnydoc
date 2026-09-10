@@ -76,7 +76,7 @@ export function LoginView({ onAuthed }: { onAuthed: (user: User) => void }) {
             <button
               onClick={handleSubmit}
               disabled={submitting}
-              className="btn-accent mt-4 w-full rounded-lg py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn btn-accent mt-4 w-full text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "登录中…" : "登录"}
             </button>

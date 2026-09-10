@@ -109,7 +109,7 @@ export function TagsDialog({
           <button
             onClick={save}
             disabled={saving}
-            className="btn-accent mt-4 w-full rounded-lg py-2 text-[14px] font-medium text-white disabled:opacity-50"
+            className="btn btn-accent mt-4 w-full text-white disabled:opacity-50"
           >
             {saving ? "保存中…" : "保存标签"}
           </button>
