@@ -11,10 +11,10 @@ import { RichEditor } from "./RichEditor";
 import { TableEditor } from "./TableEditor";
 import { BoardEditor } from "./BoardEditor";
 import { DatasheetEditor } from "./DatasheetEditor";
-import { CopyIcon, CheckIcon, EditIcon } from "./icons";
+import { CopyIcon, CheckIcon, EditIcon, CodeIcon } from "./icons";
 import { useResizable } from "@/hooks/useResizable";
 
-type Mode = "preview" | "edit";
+type Mode = "preview" | "edit" | "source";
 
 function parseTableData(value: string): string[][] {
   try {
@@ -95,11 +95,12 @@ export function Editor({
   const contentRef = useRef<HTMLDivElement>(null);
   const { width: tocWidth, onMouseDown: onTocResize } = useResizable(224, 180, 400, "toc_width", -1);
 
-  // 大纲（随正文变化重算）
-  const toc: TocItem[] = useMemo(
-    () => (doc?.body ? extractToc(doc.body) : []),
-    [doc?.body],
-  );
+  // 大纲（随正文变化重算；预览态用 doc.body，编辑/源码态用 draft）
+  const toc: TocItem[] = useMemo(() => {
+    const body = mode === "preview" ? (doc?.body ?? "") : draft;
+    return body ? extractToc(body) : [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode === "preview" ? doc?.body : draft]);
 
   // 渲染预览（代码块 shiki 高亮）；切换文档 / 保存 / 主题变化后重渲染
   useEffect(() => {
@@ -191,7 +192,7 @@ export function Editor({
   }
 
   const handleSwitch = (m: Mode) => {
-    if (m === "edit" && mode !== "edit") {
+    if ((m === "edit" || m === "source") && mode === "preview") {
       setDraftTitle(doc.title);
       setDraft(doc.body);
     }
@@ -348,17 +349,38 @@ export function Editor({
                 只读
               </span>
             ) : mode === "preview" ? (
-              <Tooltip content="编辑文档">
-                <button
-                  onClick={() => handleSwitch("edit")}
-                  className="btn btn-accent text-white"
-                >
-                  <EditIcon size={14} />
-                  编辑
-                </button>
-              </Tooltip>
+              <>
+                <Tooltip content="源码编辑">
+                  <button
+                    onClick={() => handleSwitch("source")}
+                    className="btn btn-sm btn-secondary hover:border-accent/40 hover:text-accent"
+                  >
+                    <CodeIcon size={14} />
+                    源码
+                  </button>
+                </Tooltip>
+                <Tooltip content="编辑文档">
+                  <button
+                    onClick={() => handleSwitch("edit")}
+                    className="btn btn-accent text-white"
+                  >
+                    <EditIcon size={14} />
+                    编辑
+                  </button>
+                </Tooltip>
+              </>
             ) : (
               <>
+                <Tooltip content={mode === "source" ? "切换可视化编辑" : "切换源码编辑"}>
+                  <button
+                    onClick={() => setMode(mode === "source" ? "edit" : "source")}
+                    disabled={saving}
+                    className="btn btn-sm btn-secondary hover:border-accent/40 hover:text-accent"
+                  >
+                    <CodeIcon size={14} />
+                    {mode === "source" ? "可视化" : "源码"}
+                  </button>
+                </Tooltip>
                 <Tooltip content="放弃编辑">
                   <button
                     onClick={() => setMode("preview")}
@@ -454,7 +476,15 @@ export function Editor({
               </p>
               <div className="mt-4 border-b border-line" />
               <div className="mt-6">
-                {doc.type === "table" ? (
+                {mode === "source" ? (
+                  <textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    className="min-h-[60vh] w-full resize-y rounded-lg border border-line bg-background px-4 py-3 font-mono text-[14px] leading-relaxed text-text outline-none focus:border-accent"
+                    placeholder="在此输入 Markdown 源码…"
+                    spellCheck={false}
+                  />
+                ) : doc.type === "table" ? (
                   <TableEditor value={draft} onChange={setDraft} />
                 ) : doc.type === "board" ? (
                   <BoardEditor value={draft} onChange={setDraft} />
@@ -473,8 +503,8 @@ export function Editor({
         </div>
       </div>
 
-      {/* 右侧大纲（预览态 + 有标题时显示） */}
-      {mode === "preview" && toc.length > 0 && (
+      {/* 右侧大纲（有标题时显示） */}
+      {toc.length > 0 && (
         <aside
           style={{ width: tocWidth }}
           className="relative hidden shrink-0 overflow-y-auto border-l border-line bg-surface lg:block"
