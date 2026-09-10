@@ -360,8 +360,18 @@ export async function listFavorites(): Promise<DocMeta[]> {
   return Array.isArray(data?.documents) ? data.documents : [];
 }
 
-export async function createShare(docId: string): Promise<{ token: string }> {
-  return request(`/documents/${docId}/share`, { method: "POST" });
+export async function createShare(
+  docId: string,
+  options?: { password?: string; expiresIn?: number },
+): Promise<{ token: string; password?: string | null; expires_at?: number | null }> {
+  return request(`/documents/${docId}/share`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      password: options?.password || undefined,
+      expires_in: options?.expiresIn || undefined,
+    }),
+  });
 }
 
 export async function revokeShare(docId: string): Promise<void> {
@@ -375,8 +385,9 @@ export interface SharedDoc {
   created_at: number;
 }
 
-export async function getSharedDoc(token: string): Promise<SharedDoc> {
-  return request(`/share/${token}`);
+export async function getSharedDoc(token: string, password?: string): Promise<SharedDoc> {
+  const query = password ? `?password=${encodeURIComponent(password)}` : "";
+  return request(`/share/${token}${query}`);
 }
 
 // —— 回收站 / 标签 / 置顶 / 摘要 ——

@@ -5,21 +5,40 @@ import { getSharedDoc, type SharedDoc } from "@/lib/api";
 import { renderMarkdown } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 
-/** 公开分享的只读文档视图（无需登录）。 */
+/** 公开分享的只读文档视图（无需登录，可带密码保护）。 */
 export function ShareView({ token }: { token: string }) {
   const [doc, setDoc] = useState<SharedDoc | null>(null);
   const [html, setHtml] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [needPassword, setNeedPassword] = useState(false);
+  const [password, setPassword] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
+  const load = (pwd?: string) => {
+    setError(null);
+    getSharedDoc(token, pwd)
+      .then((d) => {
+        setDoc(d);
+        setNeedPassword(false);
+      })
+      .catch((e) => {
+        const msg = e instanceof Error ? e.message : "加载失败";
+        if (msg.includes("密码") || msg.includes("401") || msg.includes("password")) {
+          setNeedPassword(true);
+          setError("该分享链接需要密码访问");
+        } else {
+          setError(msg);
+        }
+      });
+  };
+
   useEffect(() => {
-    getSharedDoc(token)
-      .then((d) => setDoc(d))
-      .catch((e) => setError(e instanceof Error ? e.message : "加载失败"));
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   useEffect(() => {
@@ -32,6 +51,42 @@ export function ShareView({ token }: { token: string }) {
       cancelled = true;
     };
   }, [doc, theme]);
+
+  if (needPassword) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 bg-background">
+        <span className="logo-mark grid h-12 w-12 place-items-center rounded-xl text-xl font-bold">
+          知
+        </span>
+        <div className="text-center">
+          <div className="text-base font-semibold text-text">此分享链接需要密码</div>
+          <div className="mt-1 text-sm text-faint">请输入访问密码</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") load(password);
+            }}
+            placeholder="访问密码"
+            autoFocus
+            className="h-10 w-56 rounded-lg border border-line bg-background px-3 text-sm text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+          />
+          <button
+            onClick={() => load(password)}
+            className="btn btn-accent h-10 px-4 text-white"
+          >
+            确定
+          </button>
+        </div>
+        {error && error !== "该分享链接需要密码访问" && (
+          <p className="text-sm text-danger">{error}</p>
+        )}
+      </div>
+    );
+  }
 
   if (error) {
     return (

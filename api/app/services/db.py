@@ -197,6 +197,9 @@ def init() -> None:
             )
             """
         )
+        # 分享链接密码/有效期（老库迁移补列）
+        cur.execute("ALTER TABLE share_links ADD COLUMN IF NOT EXISTS password varchar")
+        cur.execute("ALTER TABLE share_links ADD COLUMN IF NOT EXISTS expires_at double precision")
         # 文档版本历史
         cur.execute(
             """
@@ -1400,32 +1403,45 @@ def is_favorite(user_id: str, doc_id: str) -> bool:
 
 # ---------- 文档分享链接 ----------
 
-def create_share(doc_id: str, token: str) -> dict[str, Any]:
-    """创建分享链接。"""
+def create_share(doc_id: str, token: str, password: str | None = None, expires_at: float | None = None) -> dict[str, Any]:
+    """创建分享链接（可选密码与有效期）。"""
     share_id = uuid.uuid4().hex
     created_at = time.time()
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO share_links (id, token, doc_id, created_at)"
-            " VALUES (%s, %s, %s, %s)",
-            (share_id, token, doc_id, created_at),
+            "INSERT INTO share_links (id, token, doc_id, created_at, password, expires_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s)",
+            (share_id, token, doc_id, created_at, password, expires_at),
         )
     conn.commit()
-    return {"id": share_id, "token": token, "doc_id": doc_id, "created_at": created_at}
+    return {
+        "id": share_id,
+        "token": token,
+        "doc_id": doc_id,
+        "created_at": created_at,
+        "password": password,
+        "expires_at": expires_at,
+    }
 
 
 def get_share_by_token(token: str) -> dict[str, Any] | None:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT doc_id, token, created_at FROM share_links WHERE token = %s",
+            "SELECT doc_id, token, created_at, password, expires_at FROM share_links WHERE token = %s",
             (token,),
         )
         row = cur.fetchone()
         if row is None:
             return None
-        return {"doc_id": row[0], "token": row[1], "created_at": row[2]}
+        return {
+            "doc_id": row[0],
+            "token": row[1],
+            "created_at": row[2],
+            "password": row[3],
+            "expires_at": row[4],
+        }
 
 
 def get_share_by_doc(doc_id: str) -> dict[str, Any] | None:
@@ -1433,13 +1449,19 @@ def get_share_by_doc(doc_id: str) -> dict[str, Any] | None:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT doc_id, token, created_at FROM share_links WHERE doc_id = %s",
+            "SELECT doc_id, token, created_at, password, expires_at FROM share_links WHERE doc_id = %s",
             (doc_id,),
         )
         row = cur.fetchone()
         if row is None:
             return None
-        return {"doc_id": row[0], "token": row[1], "created_at": row[2]}
+        return {
+            "doc_id": row[0],
+            "token": row[1],
+            "created_at": row[2],
+            "password": row[3],
+            "expires_at": row[4],
+        }
 
 
 def delete_share(doc_id: str) -> bool:

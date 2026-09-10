@@ -295,15 +295,17 @@ class DocStore:
 
     # ---------- 文档分享链接 ----------
 
-    def create_share(self, doc_id: str, token: str) -> dict[str, Any]:
+    def create_share(self, doc_id: str, token: str, password: str | None = None, expires_at: float | None = None) -> dict[str, Any]:
         if self._backend == "db":
-            return db.create_share(doc_id, token)
+            return db.create_share(doc_id, token, password, expires_at)
         self._share_links = [s for s in self._share_links if s["doc_id"] != doc_id]
         share = {
             "id": uuid.uuid4().hex,
             "token": token,
             "doc_id": doc_id,
             "created_at": time.time(),
+            "password": password,
+            "expires_at": expires_at,
         }
         self._share_links.append(share)
         self._save()

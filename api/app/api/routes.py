@@ -7,6 +7,7 @@ import os
 import shutil
 import tempfile
 import threading
+import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -593,16 +594,28 @@ def list_favorites(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/documents/{doc_id}/share")
-def create_share(doc_id: str, current_user: dict = Depends(get_current_user)):
-    """生成/复用文档分享链接，返回 token（前端拼接 URL）。"""
+def create_share(doc_id: str, payload: dict | None = None, current_user: dict = Depends(get_current_user)):
+    """生成/复用文档分享链接，返回 token（前端拼接 URL）。
+
+    可选 payload：{"password": "...", "expires_in": 秒}（0/缺省表示永久）。
+    """
     if store.get(doc_id, current_user["id"]) is None:
         raise HTTPException(status_code=404, detail="文档不存在")
     existing = store.get_share_by_doc(doc_id)
     if existing is not None:
-        return {"token": existing["token"], "url": None}
+        return {"token": existing["token"], "url": None, "password": existing.get("password"), "expires_at": existing.get("expires_at")}
+    payload = payload or {}
+    password = (payload.get("password") or "").strip() or None
+    expires_in = payload.get("expires_in")
+    expires_at = None
+    if expires_in:
+        try:
+            expires_at = time.time() + float(expires_in)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="有效期格式不正确")
     token = uuid.uuid4().hex
-    store.create_share(doc_id, token)
-    return {"token": token, "url": None}
+    store.create_share(doc_id, token, password, expires_at)
+    return {"token": token, "url": None, "password": password, "expires_at": expires_at}
 
 
 @router.delete("/documents/{doc_id}/share")
@@ -613,11 +626,23 @@ def revoke_share(doc_id: str, current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/share/{token}")
-def get_shared_doc(token: str):
-    """公开只读访问：通过分享链接查看文档（无需登录）。"""
+def get_shared_doc(token: str, password: str | None = None):
+    """公开只读访问：通过分享链接查看文档（无需登录）。
+
+    若分享设置了密码，需通过 ?password= 提供正确密码；
+    若设置了有效期，过期后返回 410 Gone。
+    """
     share = store.get_share_by_token(token)
     if share is None:
         raise HTTPException(status_code=404, detail="分享链接不存在或已失效")
+    # 有效期校验
+    expires_at = share.get("expires_at")
+    if expires_at and time.time() > expires_at:
+        raise HTTPException(status_code=410, detail="分享链接已过期")
+    # 密码校验
+    if share.get("password"):
+        if not password or password != share["password"]:
+            raise HTTPException(status_code=401, detail="需要密码访问")
     doc = store.get(share["doc_id"])
     if doc is None:
         raise HTTPException(status_code=404, detail="文档不存在")
