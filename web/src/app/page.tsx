@@ -364,6 +364,17 @@ export default function Home() {
     [openDoc, searchQuery],
   );
 
+  // 点击 AI 引用：打开对应文档并高亮片段（取片段开头作为关键词定位）
+  const handleOpenCitation = useCallback(
+    (docId: string, snippet: string) => {
+      openDoc(docId);
+      const kw = snippet.replace(/\s+/g, " ").trim().slice(0, 20);
+      setHighlight(kw);
+      setAiOpen(false);
+    },
+    [openDoc],
+  );
+
   // 保存文档：更新本地缓存并刷新列表（让预览与侧栏立即反映新标题/内容）
   const handleSaved = useCallback(
     (doc: Doc, newTitle: string, newBody: string) => {
@@ -998,7 +1009,7 @@ export default function Home() {
         onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
       />
 
-      <AiPanel theme={theme} open={aiOpen} onClose={() => setAiOpen(false)} />
+      <AiPanel theme={theme} open={aiOpen} onClose={() => setAiOpen(false)} onOpenCitation={handleOpenCitation} />
     </div>
   );
 }

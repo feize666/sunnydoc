@@ -85,10 +85,12 @@ export function AiPanel({
   theme,
   open,
   onClose,
+  onOpenCitation,
 }: {
   theme: "light" | "dark";
   open: boolean;
   onClose: () => void;
+  onOpenCitation?: (docId: string, snippet: string) => void;
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
@@ -565,16 +567,18 @@ export function AiPanel({
               )}
               {Array.isArray(msg.citations) && msg.citations.length > 0 && (
                 <div className="mt-1.5 space-y-0.5 border-t border-line pt-1.5 text-[12px]">
-                  <div className="mb-0.5 text-[10px] text-faint">知识库引用</div>
+                  <div className="mb-0.5 text-[10px] text-faint">知识库引用（点击定位）</div>
                   {msg.citations.map((c, j) => (
-                    <a
+                    <button
                       key={j}
-                      href="#"
-                      className="flex items-center gap-1 text-accent hover:underline"
+                      type="button"
+                      onClick={() => onOpenCitation?.(c.doc_id, c.snippet)}
+                      className="flex w-full items-center gap-1 text-left text-accent hover:underline"
                     >
                       <LinkIcon size={11} />
-                      {c.title} · 片段 {c.segment_index + 1}
-                    </a>
+                      <span className="truncate">{c.title}</span>
+                      <span className="shrink-0 text-faint">· 片段 {c.segment_index + 1}</span>
+                    </button>
                   ))}
                 </div>
               )}
