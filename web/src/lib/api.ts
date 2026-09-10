@@ -669,6 +669,28 @@ function authHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+export async function uploadImage(file: File): Promise<string> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(`${BASE}/upload/image`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: fd,
+  });
+  if (!res.ok) {
+    let detail = `上传失败（${res.status}）`;
+    try {
+      const body = await res.json();
+      if (body.detail) detail = body.detail;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+  const data = await res.json();
+  return data.url;
+}
+
 export async function register(
   username: string,
   password: string,

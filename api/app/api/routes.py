@@ -4,10 +4,12 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
 import tempfile
 import threading
 import uuid
 import zipfile
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
@@ -23,6 +25,11 @@ router = APIRouter(prefix="/api/v1")
 # 上传文件落盘临时目录（避免整读进内存）
 TMP_DIR = DATA_DIR / "tmp"
 TMP_DIR.mkdir(parents=True, exist_ok=True)
+
+# 图片上传目录（编辑器粘贴上传）
+UPLOAD_DIR = MEDIA_DIR / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"}
 
 # 异步导入任务状态（进程内全局，线程安全）
 _import_tasks: dict[str, dict] = {}
@@ -1415,3 +1422,18 @@ def rollback_document(
     if doc is None:
         raise HTTPException(status_code=404, detail="版本不存在或无权限")
     return {"id": doc["id"], "title": doc["title"]}
+
+
+@router.post("/upload/image")
+async def upload_image(
+    file: UploadFile = File(...), current_user: dict = Depends(get_current_user)
+):
+    """编辑器粘贴上传图片：保存到 media/uploads，返回可访问 URL。"""
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in ALLOWED_IMAGE_EXTS:
+        raise HTTPException(status_code=400, detail="仅支持图片格式（png/jpg/gif/webp/svg）")
+    name = f"{uuid.uuid4().hex}{ext}"
+    dest = UPLOAD_DIR / name
+    with dest.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+    return {"url": f"/uploads/{name}"}

@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
-import { Mark, Node, mergeAttributes } from "@tiptap/core";
+import { Mark, Node, Extension, mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
 import { Markdown } from "tiptap-markdown";
+import { uploadImage } from "@/lib/api";
 import { Tooltip } from "./Tooltip";
 import {
   CodeIcon,
@@ -159,6 +160,45 @@ const TaskList = Node.create({
   },
 });
 
+/* ---------- 文本对齐（左/中/右，作用于段落和标题） ---------- */
+
+const TextAlign = Extension.create({
+  name: "textAlign",
+  addGlobalAttributes() {
+    return [
+      {
+        types: ["paragraph", "heading"],
+        attributes: {
+          textAlign: {
+            default: null,
+            parseHTML: (el) => (el as HTMLElement).style.textAlign || null,
+            renderHTML: (attrs) => (attrs.textAlign ? { style: `text-align: ${attrs.textAlign}` } : {}),
+          },
+        },
+      },
+    ];
+  },
+  addCommands() {
+    return {
+      setTextAlign:
+        (align: string) =>
+        ({ commands }: { commands: { updateAttributes: (t: string, a: object) => boolean } }) =>
+          ["paragraph", "heading"].every((t) => commands.updateAttributes(t, { textAlign: align })),
+      unsetTextAlign:
+        () =>
+        ({ commands }: { commands: { resetAttributes: (t: string, a: string) => boolean } }) =>
+          ["paragraph", "heading"].every((t) => commands.resetAttributes(t, "textAlign")),
+    } as unknown as Partial<Record<string, unknown>>;
+  },
+});
+
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    setTextAlign: (align: string) => ReturnType;
+    unsetTextAlign: () => ReturnType;
+  }
+}
+
 const COLORS = ["#111827", "#dc2626", "#ea580c", "#ca8a04", "#16a34a", "#2563eb", "#9333ea"];
 
 function ToolBtn({
@@ -220,6 +260,7 @@ export function RichEditor({
       TableHeader,
       TaskList,
       TaskItem,
+      TextAlign,
       Link.configure({ openOnClick: false }),
       Image,
       Markdown.configure({
@@ -234,6 +275,30 @@ export function RichEditor({
     ],
     content: value,
     immediatelyRender: false,
+    editorProps: {
+      handlePaste: (view, event) => {
+        const items = event.clipboardData?.items;
+        if (!items) return false;
+        for (const item of Array.from(items)) {
+          if (item.type.startsWith("image/")) {
+            const file = item.getAsFile();
+            if (file) {
+              uploadImage(file)
+                .then((url) => {
+                  const { state, dispatch } = view;
+                  const node = state.schema.nodes.image.create({ src: url });
+                  dispatch(state.tr.replaceSelectionWith(node));
+                })
+                .catch(() => {
+                  /* 上传失败静默忽略 */
+                });
+            }
+            return true;
+          }
+        }
+        return false;
+      },
+    },
     onUpdate: ({ editor }) => {
       const markdown = (editor.storage as { markdown?: { getMarkdown(): string } })
         .markdown?.getMarkdown();
@@ -311,6 +376,61 @@ export function RichEditor({
     dom.addEventListener("click", onClick);
     return () => dom.removeEventListener("click", onClick);
   }, [editor]);
+
+  // 查找光标所在的表格
+  const findTable = () => {
+    const { $from } = editor.state.selection;
+    for (let d = $from.depth; d >= 0; d--) {
+      if ($from.node(d).type.name === "table") {
+        return { pos: $from.before(d), node: $from.node(d) };
+      }
+    }
+    return null;
+  };
+
+  const addTableRow = () => {
+    const t = findTable();
+    if (!t) return;
+    const cols = t.node.firstChild?.childCount ?? 2;
+    const rowNode = {
+      type: "tableRow",
+      content: Array.from({ length: cols }, () => ({
+        type: "tableCell",
+        content: [{ type: "paragraph" }],
+      })),
+    };
+    const insertPos = t.pos + t.node.nodeSize - 2;
+    editor.chain().focus().insertContentAt(insertPos, rowNode).run();
+  };
+
+  const addTableCol = () => {
+    const t = findTable();
+    if (!t) return;
+    const tr = editor.state.tr;
+    const rows: { pos: number; header: boolean }[] = [];
+    let offset = t.pos + 1;
+    t.node.forEach((child) => {
+      if (child.type.name === "tableRow") {
+        const header = child.firstChild?.type.name === "tableHeader";
+        rows.push({ pos: offset + child.nodeSize - 1, header });
+      }
+      offset += child.nodeSize;
+    });
+    rows.reverse().forEach(({ pos, header }) => {
+      const cell = editor.state.schema.nodes[header ? "tableHeader" : "tableCell"].create(
+        null,
+        editor.state.schema.nodes.paragraph.create(),
+      );
+      tr.insert(pos, cell);
+    });
+    editor.view.dispatch(tr);
+  };
+
+  const deleteTable = () => {
+    const t = findTable();
+    if (!t) return;
+    editor.chain().focus().deleteRange({ from: t.pos, to: t.pos + t.node.nodeSize }).run();
+  };
 
   const headingValue = editor.isActive("heading", { level: 1 })
     ? "1"
@@ -451,6 +571,53 @@ export function RichEditor({
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="5" width="14" height="14" rx="2" />
             <path d="M6 12l3 3 5-6" />
+          </svg>
+        </ToolBtn>
+        <ToolBtn title="减少缩进" shortcut="⌘[" onClick={() => editor.chain().focus().liftListItem("listItem").run()}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 12H9M13 6l-6 6 6 6" />
+          </svg>
+        </ToolBtn>
+        <ToolBtn title="增加缩进" shortcut="⌘]" onClick={() => editor.chain().focus().sinkListItem("listItem").run()}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 12h12M11 6l6 6-6 6" />
+          </svg>
+        </ToolBtn>
+
+        <ToolDivider />
+
+        <ToolBtn title="左对齐" onClick={() => (editor.chain().focus() as any).setTextAlign("left").run()} active={editor.isActive({ textAlign: "left" })}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M4 6h16M4 12h10M4 18h16" />
+          </svg>
+        </ToolBtn>
+        <ToolBtn title="居中对齐" onClick={() => (editor.chain().focus() as any).setTextAlign("center").run()} active={editor.isActive({ textAlign: "center" })}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M4 6h16M8 12h8M4 18h16" />
+          </svg>
+        </ToolBtn>
+        <ToolBtn title="右对齐" onClick={() => (editor.chain().focus() as any).setTextAlign("right").run()} active={editor.isActive({ textAlign: "right" })}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M4 6h16M14 12h6M4 18h16" />
+          </svg>
+        </ToolBtn>
+
+        <ToolDivider />
+
+        <ToolBtn title="添加行" onClick={addTableRow}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </ToolBtn>
+        <ToolBtn title="添加列" onClick={addTableCol}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M9 3h6M9 21h6M12 3v18" />
+          </svg>
+        </ToolBtn>
+        <ToolBtn title="删除表格" onClick={deleteTable}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="5" width="18" height="16" rx="1" />
+            <path d="M3 9h18M9 5v16M15 5v16M7 7l10 12" />
           </svg>
         </ToolBtn>
 
