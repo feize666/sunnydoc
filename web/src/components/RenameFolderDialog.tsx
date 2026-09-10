@@ -79,14 +79,14 @@ export function RenameFolderDialog({
           <div className="mt-4 flex justify-end gap-2">
             <button
               onClick={onClose}
-              className="btn-secondary rounded-lg px-4 py-2 text-sm"
+              className="btn btn-secondary"
             >
               取消
             </button>
             <button
               onClick={handleRename}
               disabled={submitting}
-              className="btn-accent rounded-lg px-4 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn btn-accent text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "保存中…" : "保存"}
             </button>

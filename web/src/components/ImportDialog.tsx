@@ -232,13 +232,13 @@ export function ImportDialog({
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={reset}
-                className="btn-secondary rounded-lg px-4 py-2 text-sm"
+                className="btn btn-secondary"
               >
                 继续导入
               </button>
               <button
                 onClick={onClose}
-                className="btn-accent rounded-lg px-4 py-2 text-sm text-white"
+                className="btn btn-accent text-white"
               >
                 完成
               </button>
@@ -254,13 +254,13 @@ export function ImportDialog({
             <div className="mt-4 flex justify-end gap-2">
               <button
                 onClick={reset}
-                className="btn-secondary rounded-lg px-4 py-2 text-sm"
+                className="btn btn-secondary"
               >
                 重新导入
               </button>
               <button
                 onClick={onClose}
-                className="btn-accent rounded-lg px-4 py-2 text-sm text-white"
+                className="btn btn-accent text-white"
               >
                 关闭
               </button>

@@ -120,7 +120,7 @@ export function ShareDocDialog({
                   .catch((e) => setError(e instanceof Error ? e.message : "生成分享链接失败"))
                   .finally(() => setLoading(false));
               }}
-              className="btn-accent mt-3 rounded-lg px-4 py-2 text-xs font-medium text-white"
+              className="btn btn-accent mt-3 text-white"
             >
               生成分享链接
             </button>

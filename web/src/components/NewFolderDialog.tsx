@@ -113,14 +113,14 @@ export function NewFolderDialog({
           <div className="mt-4 flex justify-end gap-2">
             <button
               onClick={onClose}
-              className="btn-secondary rounded-lg px-4 py-2 text-sm"
+              className="btn btn-secondary"
             >
               取消
             </button>
             <button
               onClick={handleCreate}
               disabled={submitting}
-              className="btn-accent rounded-lg px-4 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn btn-accent text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "创建中…" : "创建"}
             </button>

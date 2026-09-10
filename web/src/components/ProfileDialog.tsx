@@ -157,7 +157,7 @@ export function ProfileDialog({
             <button
               onClick={handleSave}
               disabled={saving}
-              className="btn-accent rounded-lg px-4 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn btn-accent text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
               {saving ? "保存中…" : "保存资料"}
             </button>
@@ -196,7 +196,7 @@ export function ProfileDialog({
               <button
                 onClick={handleChangePassword}
                 disabled={changing}
-                className="btn-secondary rounded-lg px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn btn-secondary disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {changing ? "修改中…" : "修改密码"}
               </button>

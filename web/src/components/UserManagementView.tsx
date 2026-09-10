@@ -74,7 +74,7 @@ export function UserManagementView({
         </div>
         <button
           onClick={() => setTarget({ mode: "create" })}
-          className="btn-accent flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium text-white"
+          className="btn btn-accent text-white"
         >
           <PlusIcon size={14} />
           新增用户
@@ -391,14 +391,14 @@ function UserFormDialog({
           <div className="mt-4 flex justify-end gap-2">
             <button
               onClick={onClose}
-              className="btn-secondary rounded-lg px-4 py-2 text-sm"
+              className="btn btn-secondary"
             >
               取消
             </button>
             <button
               onClick={handleSubmit}
               disabled={submitting}
-              className="btn-accent rounded-lg px-4 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn btn-accent text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "提交中…" : isCreate ? "创建" : "保存"}
             </button>
