@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
-import { Mark, mergeAttributes } from "@tiptap/core";
+import { Mark, Node, mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Link from "@tiptap/extension-link";
@@ -61,6 +61,104 @@ const Color = Mark.create({
   },
 });
 
+/* ---------- 表格（自写，GFM 序列化由 tiptap-markdown 支持） ---------- */
+
+const TableCell = Node.create({
+  name: "tableCell",
+  content: "block+",
+  parseHTML() {
+    return [{ tag: "td" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["td", mergeAttributes(HTMLAttributes), 0];
+  },
+});
+
+const TableHeader = Node.create({
+  name: "tableHeader",
+  content: "block+",
+  parseHTML() {
+    return [{ tag: "th" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["th", mergeAttributes(HTMLAttributes), 0];
+  },
+});
+
+const TableRow = Node.create({
+  name: "tableRow",
+  content: "(tableCell | tableHeader)*",
+  parseHTML() {
+    return [{ tag: "tr" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["tr", mergeAttributes(HTMLAttributes), 0];
+  },
+});
+
+const Table = Node.create({
+  name: "table",
+  content: "tableRow+",
+  group: "block",
+  parseHTML() {
+    return [{ tag: "table" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["table", mergeAttributes(HTMLAttributes), ["tbody", 0]];
+  },
+});
+
+/* ---------- 任务列表（自写） ---------- */
+
+const TaskItem = Node.create({
+  name: "taskItem",
+  content: "paragraph block*",
+  defining: true,
+  addAttributes() {
+    return {
+      checked: {
+        default: false,
+        parseHTML: (el) => el.getAttribute("data-checked") === "true",
+        renderHTML: (attrs) => ({ "data-checked": attrs.checked }),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: "li[data-type='taskItem']" }];
+  },
+  renderHTML({ node, HTMLAttributes }) {
+    return [
+      "li",
+      mergeAttributes(HTMLAttributes, { "data-type": "taskItem" }),
+      [
+        "label",
+        ["input", { type: "checkbox", checked: node.attrs.checked, contenteditable: "false" }],
+        ["span", 0],
+      ],
+    ];
+  },
+});
+
+const TaskList = Node.create({
+  name: "taskList",
+  content: "taskItem+",
+  group: "block list",
+  parseHTML() {
+    return [{ tag: "ul[data-type='taskList']" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["ul", mergeAttributes(HTMLAttributes, { "data-type": "taskList" })];
+  },
+  addCommands() {
+    return {
+      toggleTaskList:
+        () =>
+        ({ commands }: { commands: { toggleList: (l: string, i: string) => boolean } }) =>
+          commands.toggleList("taskList", "taskItem"),
+    };
+  },
+});
+
 const COLORS = ["#111827", "#dc2626", "#ea580c", "#ca8a04", "#16a34a", "#2563eb", "#9333ea"];
 
 function ToolBtn({
@@ -116,6 +214,12 @@ export function RichEditor({
       Underline,
       Highlight,
       Color,
+      Table,
+      TableRow,
+      TableCell,
+      TableHeader,
+      TaskList,
+      TaskItem,
       Link.configure({ openOnClick: false }),
       Image,
       Markdown.configure({
@@ -159,6 +263,54 @@ export function RichEditor({
       editor.chain().focus().setImage({ src: url.trim() }).run();
     }
   };
+
+  const insertTable = () => {
+    const rows = 3;
+    const cols = 3;
+    const headerCells: { type: string; content: { type: string }[] }[] = Array.from(
+      { length: cols },
+      () => ({ type: "tableHeader", content: [{ type: "paragraph" }] }),
+    );
+    const bodyRows: { type: string; content: { type: string; content: { type: string }[] }[] }[] =
+      Array.from({ length: rows - 1 }, () => ({
+        type: "tableRow",
+        content: Array.from({ length: cols }, () => ({
+          type: "tableCell",
+          content: [{ type: "paragraph" }],
+        })),
+      }));
+    editor
+      .chain()
+      .focus()
+      .insertContent({
+        type: "table",
+        content: [{ type: "tableRow", content: headerCells }, ...bodyRows],
+      })
+      .run();
+  };
+
+  // 任务列表 checkbox 点击切换
+  useEffect(() => {
+    if (!editor) return;
+    const dom = editor.view.dom;
+    const onClick = (e: MouseEvent) => {
+      const input = (e.target as HTMLElement).closest("input[type='checkbox']");
+      if (!input) return;
+      const li = (input as HTMLElement).closest("li[data-type='taskItem']");
+      if (!li) return;
+      const pos = editor.view.posAtDOM(li, 0);
+      const node = editor.state.doc.nodeAt(pos);
+      if (node && node.type.name === "taskItem") {
+        editor
+          .chain()
+          .focus()
+          .updateAttributes("taskItem", { checked: !node.attrs.checked })
+          .run();
+      }
+    };
+    dom.addEventListener("click", onClick);
+    return () => dom.removeEventListener("click", onClick);
+  }, [editor]);
 
   const headingValue = editor.isActive("heading", { level: 1 })
     ? "1"
@@ -288,6 +440,18 @@ export function RichEditor({
         </ToolBtn>
         <ToolBtn title="图片" onClick={setImage}>
           <ImageIcon size={17} />
+        </ToolBtn>
+        <ToolBtn title="表格" onClick={insertTable}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="1" />
+            <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+          </svg>
+        </ToolBtn>
+        <ToolBtn title="任务列表" onClick={() => editor.chain().focus().toggleTaskList().run()} active={editor.isActive("taskList")}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="5" width="14" height="14" rx="2" />
+            <path d="M6 12l3 3 5-6" />
+          </svg>
         </ToolBtn>
 
         <ToolDivider />
