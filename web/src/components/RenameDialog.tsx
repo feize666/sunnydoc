@@ -62,12 +62,12 @@ export function RenameDialog({
               if (e.key === "Enter") submit();
             }}
             placeholder="请输入名称"
-            className="w-full rounded-lg border border-line bg-background px-3 py-2 text-[15px] text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+            className="input"
           />
           <button
             onClick={submit}
             disabled={saving || !name.trim()}
-            className="btn-accent mt-4 w-full rounded-lg py-2 text-[14px] font-medium text-white disabled:opacity-50"
+            className="btn btn-accent mt-4 w-full text-white"
           >
             {saving ? "保存中…" : "确定"}
           </button>

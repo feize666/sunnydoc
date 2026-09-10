@@ -20,6 +20,7 @@ import { renderMarkdown } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { useResizable } from "@/hooks/useResizable";
 import { chatStream, type Citation, type ChatMessage, type WebSource } from "@/lib/api";
 import {
   createSession,
@@ -98,6 +99,7 @@ export function AiPanel({
   // 浮窗位置（null 表示用默认右下角定位）
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const panelRef = useRef<HTMLElement>(null);
+  const { width: panelWidth, onMouseDown: onPanelResize } = useResizable(460, 380, 720, "ai_panel_width", -1);
 
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -389,9 +391,13 @@ export function AiPanel({
   return (
     <aside
       ref={panelRef}
-      style={pos ? { left: pos.x, top: pos.y } : { right: 24, bottom: 24 }}
-      className="fixed z-50 flex h-[78vh] max-h-[820px] min-h-[480px] w-[460px] max-w-[92vw] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-glow"
+      style={pos ? { left: pos.x, top: pos.y, width: panelWidth } : { right: 24, bottom: 24, width: panelWidth }}
+      className="fixed z-50 flex h-[78vh] max-h-[820px] min-h-[480px] max-w-[92vw] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-glow"
     >
+      <div
+        onMouseDown={onPanelResize}
+        className="absolute -left-1 top-0 z-30 h-full w-2 cursor-col-resize transition-colors hover:bg-accent/25"
+      />
       <div
         className="relative z-30 flex cursor-move items-center justify-between gap-2 border-b border-line px-3 py-2.5 select-none"
         onMouseDown={startDrag}

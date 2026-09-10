@@ -12,6 +12,7 @@ import { TableEditor } from "./TableEditor";
 import { BoardEditor } from "./BoardEditor";
 import { DatasheetEditor } from "./DatasheetEditor";
 import { CopyIcon, CheckIcon, EditIcon } from "./icons";
+import { useResizable } from "@/hooks/useResizable";
 
 type Mode = "preview" | "edit";
 
@@ -92,6 +93,7 @@ export function Editor({
   const [previewHtml, setPreviewHtml] = useState("");
   const [copied, setCopied] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  const { width: tocWidth, onMouseDown: onTocResize } = useResizable(224, 180, 400, "toc_width", -1);
 
   // 大纲（随正文变化重算）
   const toc: TocItem[] = useMemo(
@@ -243,7 +245,7 @@ export function Editor({
             <Tooltip content={copied ? "已复制" : "复制 Markdown"}>
               <button
                 onClick={copyMarkdown}
-                className={`flex items-center gap-1.5 rounded-lg border border-line bg-background px-3 py-1.5 text-xs text-text shadow-sm transition-all hover:border-accent/40 hover:text-accent hover:shadow-glow ${
+                className={`btn btn-sm btn-secondary hover:border-accent/40 hover:text-accent ${
                   copied ? "border-accent/40 text-accent" : ""
                 }`}
               >
@@ -255,7 +257,7 @@ export function Editor({
               <Tooltip content="分享">
                 <button
                   onClick={onShare}
-                  className="flex items-center gap-1.5 rounded-lg border border-line bg-background px-3 py-1.5 text-xs text-text shadow-sm transition-all hover:border-accent/40 hover:text-accent hover:shadow-glow"
+                  className="btn btn-sm btn-secondary hover:border-accent/40 hover:text-accent"
                 >
                   <ShareIcon size={14} />
                   分享
@@ -266,10 +268,10 @@ export function Editor({
               <Tooltip content={isFavorite ? "取消收藏" : "收藏"}>
                 <button
                   onClick={onToggleFavorite}
-                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs shadow-sm transition-all hover:shadow-glow ${
+                  className={`btn btn-sm ${
                     isFavorite
-                      ? "border-accent/40 bg-accent-soft text-accent"
-                      : "border-line bg-background text-text hover:border-accent/40 hover:text-accent"
+                      ? "border border-accent/40 bg-accent-soft text-accent"
+                      : "btn-secondary hover:border-accent/40 hover:text-accent"
                   }`}
                 >
                   <StarIcon size={14} filled={isFavorite} />
@@ -281,10 +283,10 @@ export function Editor({
               <Tooltip content={pinned ? "取消置顶" : "置顶"}>
                 <button
                   onClick={onTogglePin}
-                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs shadow-sm transition-all hover:shadow-glow ${
+                  className={`btn btn-sm ${
                     pinned
-                      ? "border-accent/40 bg-accent-soft text-accent"
-                      : "border-line bg-background text-text hover:border-accent/40 hover:text-accent"
+                      ? "border border-accent/40 bg-accent-soft text-accent"
+                      : "btn-secondary hover:border-accent/40 hover:text-accent"
                   }`}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill={pinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -298,7 +300,7 @@ export function Editor({
               <Tooltip content="标签">
                 <button
                   onClick={onEditTags}
-                  className="flex items-center gap-1.5 rounded-lg border border-line bg-background px-3 py-1.5 text-xs text-text shadow-sm transition-all hover:border-accent/40 hover:text-accent hover:shadow-glow"
+                  className="btn btn-sm btn-secondary hover:border-accent/40 hover:text-accent"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 2H2v10l9.29 9.29a2 2 0 0 0 2.83 0l7.17-7.17a2 2 0 0 0 0-2.83L12 2z" />
@@ -312,7 +314,7 @@ export function Editor({
               <Tooltip content="AI 摘要">
                 <button
                   onClick={onGenerateSummary}
-                  className="flex items-center gap-1.5 rounded-lg border border-line bg-background px-3 py-1.5 text-xs text-text shadow-sm transition-all hover:border-accent/40 hover:text-accent hover:shadow-glow"
+                  className="btn btn-sm btn-secondary hover:border-accent/40 hover:text-accent"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
@@ -326,7 +328,7 @@ export function Editor({
               <Tooltip content="版本历史">
                 <button
                   onClick={onOpenHistory}
-                  className="flex items-center gap-1.5 rounded-lg border border-line bg-background px-3 py-1.5 text-xs text-text shadow-sm transition-all hover:border-accent/40 hover:text-accent hover:shadow-glow"
+                  className="btn btn-sm btn-secondary hover:border-accent/40 hover:text-accent"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
@@ -349,7 +351,7 @@ export function Editor({
               <Tooltip content="编辑文档">
                 <button
                   onClick={() => handleSwitch("edit")}
-                  className="btn-accent flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium text-white"
+                  className="btn btn-accent text-white"
                 >
                   <EditIcon size={14} />
                   编辑
@@ -361,7 +363,7 @@ export function Editor({
                   <button
                     onClick={() => setMode("preview")}
                     disabled={saving}
-                    className="flex items-center gap-1.5 rounded-lg border border-line bg-background px-3 py-1.5 text-xs text-muted shadow-sm transition-all hover:border-accent/40 hover:text-text disabled:opacity-50"
+                    className="btn btn-secondary"
                   >
                     取消
                   </button>
@@ -370,7 +372,7 @@ export function Editor({
                   <button
                     onClick={handleSave}
                     disabled={saving}
-                    className="btn-accent flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                    className="btn btn-accent text-white"
                   >
                     <CheckIcon size={14} />
                     {saving ? "保存中…" : "完成"}
@@ -473,7 +475,14 @@ export function Editor({
 
       {/* 右侧大纲（预览态 + 有标题时显示） */}
       {mode === "preview" && toc.length > 0 && (
-        <aside className="hidden w-56 shrink-0 overflow-y-auto border-l border-line bg-surface lg:block">
+        <aside
+          style={{ width: tocWidth }}
+          className="relative hidden shrink-0 overflow-y-auto border-l border-line bg-surface lg:block"
+        >
+          <div
+            onMouseDown={onTocResize}
+            className="absolute -left-1 top-0 z-10 h-full w-2 cursor-col-resize transition-colors hover:bg-accent/25"
+          />
           <div className="sticky top-0 border-b border-line bg-surface px-3 py-2.5 text-[15px] font-semibold text-text">
             大纲
           </div>

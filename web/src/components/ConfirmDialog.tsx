@@ -54,16 +54,16 @@ export function ConfirmDialog({
         <div className="flex justify-end gap-2 border-t border-line px-4 py-3">
           <button
             onClick={onCancel}
-            className="btn-secondary rounded-lg px-4 py-2 text-sm"
+            className="btn btn-secondary"
           >
             {cancelText}
           </button>
           <button
             onClick={onConfirm}
-            className={`rounded-lg px-4 py-2 text-sm text-white ${
+            className={`btn text-white ${
               danger
                 ? "bg-danger hover:bg-danger-hover"
-                : "bg-accent hover:bg-accent-hover"
+                : "btn-accent"
             }`}
           >
             {confirmText}

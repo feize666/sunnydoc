@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { FileTree } from "./FileTree";
 import { Tooltip } from "./Tooltip";
 import { PlusIcon, SearchIcon, CloseIcon } from "./icons";
+import { useResizable } from "@/hooks/useResizable";
 import type { TreeNode, SortBy } from "@/data/docs";
 import type { Folder, SearchResult } from "@/lib/api";
 import type { NodeType } from "./NewNodeMenu";
@@ -194,6 +195,8 @@ export function Sidebar({
     }
   };
 
+  const { width: sidebarWidth, onMouseDown: onResize } = useResizable(260, 220, 480, "sidebar_width");
+
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -281,7 +284,14 @@ export function Sidebar({
   ];
 
   return (
-    <aside className="flex w-[260px] min-w-[180px] max-w-[420px] shrink-0 flex-col border-r border-line bg-surface">
+    <aside
+      style={{ width: sidebarWidth }}
+      className="relative flex shrink-0 flex-col border-r border-line bg-surface"
+    >
+      <div
+        onMouseDown={onResize}
+        className="absolute -right-1 bottom-0 top-0 z-10 w-2 cursor-col-resize transition-colors hover:bg-accent/25"
+      />
       <div className="border-b border-line px-3 pb-2.5 pt-2.5">
         <div className="mb-2 flex items-center justify-between">
           <div className="flex min-w-0 items-center gap-1">

@@ -147,6 +147,8 @@
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg);
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
 
   --shadow-sm: var(--shadow-sm);
   --shadow-md: var(--shadow-md);
@@ -235,6 +237,74 @@ body {
   box-shadow: var(--shadow-md);
   overflow: hidden;
   padding: 4px;
+}
+
+/* ==========================================================================
+   统一控件类（阶段 2 —— 按钮 / 输入框 / 卡片规格统一）
+   ========================================================================== */
+
+/* 默认按钮：h-9 36px，圆角 md，字重 500 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* 紧凑按钮：h-8 32px */
+.btn-sm {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+/* 图标按钮：32px 正方形 */
+.icon-btn {
+  display: grid;
+  place-items: center;
+  height: 32px;
+  width: 32px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+/* 输入框：h-9 36px */
+.input {
+  height: 36px;
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--background);
+  padding: 0 12px;
+  font-size: 14px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.input::placeholder {
+  color: var(--faint);
+}
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+/* 卡片：rounded-lg + 描边 + 轻阴影 */
+.card {
+  background: var(--background);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 /* 对话框遮罩 + 面板 */
