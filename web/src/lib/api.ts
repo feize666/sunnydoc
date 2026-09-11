@@ -604,7 +604,7 @@ export async function chatStream(
 ): Promise<void> {
   const res = await fetch(`${BASE}/chat/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ query, top_k: topK, history, enable_web: enableWeb }),
   });
 

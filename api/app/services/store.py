@@ -1234,8 +1234,15 @@ def search(query: str, top_k: int = 5, user_id: str | None = None) -> list[dict[
     if not keywords:
         keywords = [query.strip().lower()]
 
-    # query 向量（若 embedding 可用）
-    query_vec = embedding.embed([query])[0] if embedding.available() else None
+    # query 向量（若 embedding 可用）。embed 可能失败返回 None，需保护索引
+    query_vec: list[float] | None = None
+    if embedding.available():
+        try:
+            vecs = embedding.embed([query])
+            if vecs:
+                query_vec = vecs[0]
+        except Exception:  # noqa: BLE001
+            query_vec = None
 
     # 候选召回：DB 路径用 pgvector <=> 召回；JSON 路径全量扫描
     if db.available():

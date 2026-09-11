@@ -983,6 +983,15 @@ def chat_stream(req: ChatRequest, current_user: dict = Depends(get_current_user)
         for h in hits
     ]
 
+    def _fallback_answer() -> str:
+        """LLM 不可用或失败时，基于知识库命中片段给出降级回答。"""
+        if not hits:
+            return "未命中知识库片段，且当前大模型服务暂不可用，无法生成回答。请检查 AI 配置或补充相关文档。"
+        top = hits[0]
+        body = top["text"][:300]
+        extra = f"\n\n（共命中 {len(hits)} 个相关片段）" if len(hits) > 1 else ""
+        return f"根据知识库中的「{top['title']}」，找到以下相关内容：\n\n{body}{extra}"
+
     def event_stream():
         # 1. 先发引用（可能为空）
         yield f"data: {json.dumps({'type': 'citations', 'citations': citations}, ensure_ascii=False)}\n\n"
@@ -997,12 +1006,10 @@ def chat_stream(req: ChatRequest, current_user: dict = Depends(get_current_user)
                     got = True
                     yield f"data: {json.dumps({'type': 'delta', 'content': piece}, ensure_ascii=False)}\n\n"
                 if not got:
-                    answer = qa.answer(req.query, req.top_k, history, current_user["id"])["answer"]
-                    yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'type': 'delta', 'content': _fallback_answer()}, ensure_ascii=False)}\n\n"
             except llm.LLMError as e:
-                yield f"data: {json.dumps({'type': 'error', 'status': e.status, 'detail': e.detail}, ensure_ascii=False)}\n\n"
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                return
+                # 大模型出错 → 降级为规则式回答 + 透传错误提示
+                yield f"data: {json.dumps({'type': 'delta', 'content': _fallback_answer() + f'\\n\\n（大模型错误 {e.status}：已自动降级使用知识库片段）'}, ensure_ascii=False)}\n\n"
         elif req.enable_web and web_search.available():
             # 未命中 + 联网开 → 联网搜索（流式，含来源）
             try:
@@ -1011,12 +1018,9 @@ def chat_stream(req: ChatRequest, current_user: dict = Depends(get_current_user)
                     got = True
                     yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
                 if not got:
-                    answer = qa.answer(req.query, req.top_k, history, current_user["id"])["answer"]
-                    yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'type': 'delta', 'content': _fallback_answer()}, ensure_ascii=False)}\n\n"
             except llm.LLMError as e:
-                yield f"data: {json.dumps({'type': 'error', 'status': e.status, 'detail': e.detail}, ensure_ascii=False)}\n\n"
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                return
+                yield f"data: {json.dumps({'type': 'delta', 'content': _fallback_answer() + f'\\n\\n（大模型错误 {e.status}：已自动降级使用知识库片段）'}, ensure_ascii=False)}\n\n"
         else:
             # 未命中 + 无联网/未开 → 通用对话
             try:
@@ -1026,15 +1030,11 @@ def chat_stream(req: ChatRequest, current_user: dict = Depends(get_current_user)
                         got = True
                         yield f"data: {json.dumps({'type': 'delta', 'content': piece}, ensure_ascii=False)}\n\n"
                     if not got:
-                        answer = qa.answer(req.query, req.top_k, history, current_user["id"])["answer"]
-                        yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
+                        yield f"data: {json.dumps({'type': 'delta', 'content': _fallback_answer()}, ensure_ascii=False)}\n\n"
                 else:
-                    answer = qa.answer(req.query, req.top_k, history, current_user["id"])["answer"]
-                    yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'type': 'delta', 'content': _fallback_answer()}, ensure_ascii=False)}\n\n"
             except llm.LLMError as e:
-                yield f"data: {json.dumps({'type': 'error', 'status': e.status, 'detail': e.detail}, ensure_ascii=False)}\n\n"
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                return
+                yield f"data: {json.dumps({'type': 'delta', 'content': _fallback_answer() + f'\\n\\n（大模型错误 {e.status}：已自动降级使用知识库片段）'}, ensure_ascii=False)}\n\n"
 
         # 3. 结束标记
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
