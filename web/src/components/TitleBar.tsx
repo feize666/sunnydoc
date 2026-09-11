@@ -117,7 +117,7 @@ export function TitleBar({
 
       <button
         onClick={onOpenPalette}
-        className="flex h-9 min-w-[220px] items-center gap-1.5 rounded-md bg-surface-2 px-3 text-sm text-faint"
+        className="hidden h-9 min-w-[220px] items-center gap-1.5 rounded-md bg-surface-2 px-3 text-sm text-faint md:flex"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <circle cx="11" cy="11" r="7" />
@@ -154,7 +154,7 @@ export function TitleBar({
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 2a4 4 0 0 1 4 4c1.7 0 3 1.3 3 3 0 .8-.3 1.5-.8 2 .5.5.8 1.2.8 2 0 1.7-1.3 3-3 3a4 4 0 0 1-8 0c-1.7 0-3-1.3-3-3 0-.8.3-1.5.8-2-.5-.5-.8-1.2-.8-2 0-1.7 1.3-3 3-3z" />
           </svg>
-          AI 问答
+          <span className="hidden sm:inline">AI 问答</span>
         </button>
       </Tooltip>
 

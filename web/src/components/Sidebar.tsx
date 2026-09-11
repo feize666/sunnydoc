@@ -126,6 +126,8 @@ export function Sidebar({
   onSortChange,
   readOnly,
   onOpenTrash,
+  mobile,
+  onCloseMobile,
 }: {
   data: TreeNode[];
   activeKey: string | null;
@@ -166,6 +168,8 @@ export function Sidebar({
   sortBy: SortBy;
   onSortChange: (s: SortBy) => void;
   readOnly?: boolean;
+  mobile?: boolean;
+  onCloseMobile?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -214,9 +218,9 @@ export function Sidebar({
   }, []);
 
   // 折叠态：渲染窄竖条，点击展开
-  if (collapsed) {
+  if (collapsed && !mobile) {
     return (
-      <aside className="flex w-10 shrink-0 flex-col items-center border-r border-line bg-surface">
+      <aside className="hidden w-10 shrink-0 flex-col items-center border-r border-line bg-surface md:flex">
         <Tooltip content="展开侧栏">
           <button
             onClick={onToggleCollapse}
@@ -286,7 +290,11 @@ export function Sidebar({
   return (
     <aside
       style={{ width: sidebarWidth }}
-      className="relative flex shrink-0 flex-col border-r border-line bg-surface"
+      className={`relative flex shrink-0 flex-col border-r border-line bg-surface ${
+        mobile
+          ? "fixed inset-y-0 left-0 z-40 md:hidden"
+          : "hidden md:flex"
+      }`}
     >
       <div
         onMouseDown={onResize}
@@ -706,7 +714,10 @@ export function Sidebar({
             <FileTree
               data={data}
               activeKey={activeKey}
-              onSelect={onSelect}
+              onSelect={(key) => {
+                onSelect(key);
+                if (mobile) onCloseMobile?.();
+              }}
               folders={folders}
               onNew={readOnly ? undefined : onNew}
               onRenameDoc={readOnly ? undefined : onRenameDoc}

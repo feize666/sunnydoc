@@ -57,6 +57,7 @@ class DocStore:
         self._shares: list[dict[str, Any]] = []
         self._favorites: list[dict[str, Any]] = []
         self._share_links: list[dict[str, Any]] = []
+        self._comments: list[dict[str, Any]] = []
         # 启动时判定存储后端：PostgreSQL 可用则用库，否则 JSON 降级
         if db.available():
             self._backend = "db"
@@ -90,6 +91,7 @@ class DocStore:
                 self._shares = data.get("shares", [])
                 self._favorites = data.get("favorites", [])
                 self._share_links = data.get("share_links", [])
+                self._comments = data.get("comments", [])
         # 补齐旧数据缺失的字段，保证 all() 返回结构一致
         for d in self._docs:
             d.setdefault("folder_id", None)
@@ -132,6 +134,7 @@ class DocStore:
                     "shares": self._shares,
                     "favorites": self._favorites,
                     "share_links": self._share_links,
+                    "comments": self._comments,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -1122,6 +1125,48 @@ class DocStore:
         before = len(self._users)
         self._users = [u for u in self._users if u["id"] != user_id]
         if len(self._users) != before:
+            self._save()
+            return True
+        return False
+
+    # ---------- 文档评论/批注 ----------
+
+    def add_comment(self, doc_id: str, user_id: str, content: str, quote: str | None = None) -> dict[str, Any]:
+        if self._backend == "db":
+            return db.add_comment(doc_id, user_id, content, quote)
+        comment = {
+            "id": uuid.uuid4().hex,
+            "doc_id": doc_id,
+            "user_id": user_id,
+            "content": content,
+            "quote": quote,
+            "created_at": time.time(),
+        }
+        self._comments.append(comment)
+        self._save()
+        return comment
+
+    def list_comments(self, doc_id: str) -> list[dict[str, Any]]:
+        if self._backend == "db":
+            return db.list_comments(doc_id)
+        return [
+            c for c in self._comments if c["doc_id"] == doc_id
+        ]
+
+    def get_comment(self, comment_id: str) -> dict[str, Any] | None:
+        if self._backend == "db":
+            return db.get_comment(comment_id)
+        for c in self._comments:
+            if c["id"] == comment_id:
+                return dict(c)
+        return None
+
+    def delete_comment(self, comment_id: str) -> bool:
+        if self._backend == "db":
+            return db.delete_comment(comment_id)
+        before = len(self._comments)
+        self._comments = [c for c in self._comments if c["id"] != comment_id]
+        if len(self._comments) != before:
             self._save()
             return True
         return False

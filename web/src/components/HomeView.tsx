@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Kb, RecentDoc, User, DocMeta } from "@/lib/api";
+import type { Kb, RecentDoc, User, DocMeta, Stats } from "@/lib/api";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Tooltip } from "./Tooltip";
 import { UserMenu } from "./UserMenu";
@@ -47,6 +47,7 @@ export function HomeView({
   onOpenRecent,
   favorites,
   onOpenFavorite,
+  stats,
   user,
   onOpenProfile,
   onOpenUsers,
@@ -68,6 +69,7 @@ export function HomeView({
   onOpenRecent: (docId: string, kbId: string | null) => void;
   favorites: DocMeta[];
   onOpenFavorite: (doc: DocMeta) => void;
+  stats?: Stats | null;
   user?: User;
   onOpenProfile?: () => void;
   onOpenUsers?: () => void;
@@ -130,6 +132,31 @@ export function HomeView({
 
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-4xl px-6 py-8">
+          {/* 数据概览 */}
+          {stats && (
+            <section className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                { label: "文档", value: stats.total_docs, icon: "📄" },
+                { label: "知识库", value: stats.total_kbs, icon: "📚" },
+                { label: "收藏", value: stats.total_favorites, icon: "⭐" },
+                { label: "最近浏览", value: stats.recent_count, icon: "🕘" },
+              ].map((s) => (
+                <div
+                  key={s.label}
+                  className="flex items-center gap-3 rounded-xl border border-line bg-background px-4 py-3.5 shadow-sm"
+                >
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-accent-soft text-lg">
+                    {s.icon}
+                  </span>
+                  <div className="min-w-0 leading-tight">
+                    <div className="text-xl font-semibold text-text">{s.value}</div>
+                    <div className="text-[12px] text-faint">{s.label}</div>
+                  </div>
+                </div>
+              ))}
+            </section>
+          )}
+
           {/* 知识库 */}
           <section>
             <h2 className="mb-4 text-base font-semibold text-text">知识库</h2>

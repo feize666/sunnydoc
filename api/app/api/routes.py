@@ -163,6 +163,16 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
+class CreateCommentRequest(BaseModel):
+    content: str
+    quote: str | None = None
+
+
+class AIAssistRequest(BaseModel):
+    action: str  # polish / translate_en / summarize / continue / explain
+    text: str
+
+
 class AISettingsRequest(BaseModel):
     """AI 功能配置（供应商 + 自定义 base_url / key / model）。"""
 
@@ -1330,6 +1340,23 @@ def list_recent(limit: int = 20, current_user: dict = Depends(get_current_user))
     return {"recent": store.list_recent(limit, current_user["id"])}
 
 
+# ---------- 数据统计（仪表盘） ----------
+
+@router.get("/stats")
+def get_stats(current_user: dict = Depends(get_current_user)):
+    """首页仪表盘统计：文档数 / 知识库数 / 收藏数 / 最近浏览数。"""
+    docs = store.all(user_id=current_user["id"])
+    kbs = store.list_kbs(current_user["id"])
+    favorites = store.list_favorites(current_user["id"])
+    recent = store.list_recent(limit=200, user_id=current_user["id"])
+    return {
+        "total_docs": len(docs),
+        "total_kbs": len(kbs),
+        "total_favorites": len(favorites),
+        "recent_count": len(recent),
+    }
+
+
 # ---------- 导出 ----------
 
 @router.post("/export")
@@ -1667,6 +1694,23 @@ def generate_summary(doc_id: str, current_user: dict = Depends(get_current_user)
     return {"summary": summary}
 
 
+@router.post("/ai/assist")
+def ai_assist(req: AIAssistRequest, current_user: dict = Depends(get_current_user)):
+    """AI 写作辅助（润色/翻译/总结/续写/解释）。"""
+    text = (req.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="文本不能为空")
+    try:
+        result = llm.assist(req.action, text)
+    except llm.LLMError as e:
+        raise HTTPException(status_code=e.status if e.status and e.status > 0 else 502, detail=e.detail)
+    if result is None:
+        if not llm.available():
+            raise HTTPException(status_code=503, detail="AI 服务未配置，请在系统设置中配置")
+        raise HTTPException(status_code=400, detail="不支持的操作类型")
+    return {"result": result}
+
+
 @router.get("/documents/{doc_id}/versions")
 def list_document_versions(doc_id: str, current_user: dict = Depends(get_current_user)):
     """文档版本历史列表。"""
@@ -1690,6 +1734,72 @@ def rollback_document(
     if doc is None:
         raise HTTPException(status_code=404, detail="版本不存在或无权限")
     return {"id": doc["id"], "title": doc["title"]}
+
+
+@router.get("/documents/{doc_id}/comments")
+def list_document_comments(doc_id: str, current_user: dict = Depends(get_current_user)):
+    """文档评论列表（附评论者昵称/头像）。"""
+    if store.get(doc_id, current_user["id"]) is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    comments = store.list_comments(doc_id)
+    items = []
+    for c in comments:
+        u = store.get_user_by_id(c.get("user_id") or "")
+        items.append(
+            {
+                "id": c["id"],
+                "doc_id": c["doc_id"],
+                "content": c["content"],
+                "quote": c.get("quote"),
+                "created_at": c["created_at"],
+                "user": {
+                    "id": c.get("user_id"),
+                    "nickname": (u or {}).get("nickname") or (u or {}).get("username") or "已注销用户",
+                    "avatar": (u or {}).get("avatar"),
+                },
+            }
+        )
+    return {"comments": items}
+
+
+@router.post("/documents/{doc_id}/comments")
+def add_document_comment(
+    doc_id: str,
+    req: CreateCommentRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """新增评论/批注。"""
+    content = (req.content or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="评论内容不能为空")
+    if store.get(doc_id, current_user["id"]) is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    quote = (req.quote or "").strip() or None
+    c = store.add_comment(doc_id, current_user["id"], content, quote)
+    return {
+        "id": c["id"],
+        "doc_id": c["doc_id"],
+        "content": c["content"],
+        "quote": c.get("quote"),
+        "created_at": c["created_at"],
+        "user": {
+            "id": current_user["id"],
+            "nickname": current_user.get("nickname") or current_user.get("username"),
+            "avatar": current_user.get("avatar"),
+        },
+    }
+
+
+@router.delete("/comments/{comment_id}")
+def delete_document_comment(comment_id: str, current_user: dict = Depends(get_current_user)):
+    """删除评论（仅评论作者或管理员）。"""
+    c = store.get_comment(comment_id)
+    if c is None:
+        raise HTTPException(status_code=404, detail="评论不存在")
+    if c.get("user_id") != current_user["id"] and current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="无权删除他人评论")
+    store.delete_comment(comment_id)
+    return {"ok": True}
 
 
 @router.post("/upload/image")

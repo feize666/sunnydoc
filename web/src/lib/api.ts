@@ -454,6 +454,17 @@ export async function generateSummary(docId: string): Promise<string> {
   return data.summary;
 }
 
+export type AIAssistAction = "polish" | "translate_en" | "summarize" | "continue" | "explain";
+
+export async function aiAssist(action: AIAssistAction, text: string): Promise<string> {
+  const data = await request<{ result: string }>("/ai/assist", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, text }),
+  });
+  return data.result;
+}
+
 export async function duplicateDocument(docId: string): Promise<{ id: string; title: string }> {
   return request(`/documents/${docId}/duplicate`, { method: "POST" });
 }
@@ -479,6 +490,44 @@ export async function listDocVersions(docId: string): Promise<DocVersion[]> {
 
 export async function rollbackDocument(docId: string, versionId: string): Promise<void> {
   await request(`/documents/${docId}/rollback/${versionId}`, { method: "POST" });
+}
+
+// —— 文档评论/批注 ——
+
+export interface CommentUser {
+  id: string;
+  nickname: string;
+  avatar?: string | null;
+}
+
+export interface DocComment {
+  id: string;
+  doc_id: string;
+  content: string;
+  quote?: string | null;
+  created_at: number;
+  user: CommentUser;
+}
+
+export async function listComments(docId: string): Promise<DocComment[]> {
+  const data = await request<{ comments: DocComment[] }>(`/documents/${docId}/comments`);
+  return Array.isArray(data?.comments) ? data.comments : [];
+}
+
+export async function addComment(
+  docId: string,
+  content: string,
+  quote?: string,
+): Promise<DocComment> {
+  return request(`/documents/${docId}/comments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content, quote: quote?.trim() || undefined }),
+  });
+}
+
+export async function deleteComment(commentId: string): Promise<void> {
+  await request(`/comments/${commentId}`, { method: "DELETE" });
 }
 
 // —— 知识库 ——
@@ -572,6 +621,17 @@ export async function recordRecent(docId: string): Promise<void> {
 export async function listRecent(limit = 20): Promise<RecentDoc[]> {
   const data = await request<{ recent?: RecentDoc[] }>(`/recent?limit=${limit}`);
   return Array.isArray(data?.recent) ? data.recent : [];
+}
+
+export interface Stats {
+  total_docs: number;
+  total_kbs: number;
+  total_favorites: number;
+  recent_count: number;
+}
+
+export async function getStats(): Promise<Stats> {
+  return request<Stats>("/stats");
 }
 
 export interface WebSource {

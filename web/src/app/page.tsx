@@ -24,6 +24,7 @@ import { TrashView } from "@/components/TrashView";
 import { TagsDialog } from "@/components/TagsDialog";
 import { VersionHistoryDialog } from "@/components/VersionHistoryDialog";
 import { SettingsDialog } from "@/components/SettingsDialog";
+import { CommentPanel } from "@/components/CommentPanel";
 import type { NodeType } from "@/components/NewNodeMenu";
 import type { Doc, TreeNode, SortBy } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
@@ -46,6 +47,7 @@ import {
   deleteKb,
   listRecent,
   recordRecent,
+  getStats,
   searchDocuments,
   getMe,
   logout,
@@ -63,6 +65,7 @@ import {
   type RecentDoc,
   type SearchResult,
   type User,
+  type Stats,
 } from "@/lib/api";
 
 function formatTime(ts: number): string {
@@ -101,6 +104,7 @@ export default function Home() {
   const [openKeys, setOpenKeys] = useState<string[]>([]);
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -138,10 +142,13 @@ export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
   const [versionOpen, setVersionOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [annotateQuote, setAnnotateQuote] = useState<string | null>(null);
   const [currentKbId, setCurrentKbId] = useState<string | null>(null);
   const [kbs, setKbs] = useState<Kb[]>([]);
   const [recent, setRecent] = useState<RecentDoc[]>([]);
   const [favorites, setFavorites] = useState<DocMeta[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
   const [kbsLoading, setKbsLoading] = useState(false);
   const [kbsError, setKbsError] = useState<string | null>(null);
@@ -203,6 +210,15 @@ export default function Home() {
     setOpenKeys([]);
   }, []);
 
+  // 侧栏切换：小屏开抽屉，大屏折叠
+  const handleToggleSidebar = useCallback(() => {
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches) {
+      setMobileSidebarOpen((v) => !v);
+    } else {
+      setSidebarCollapsed((v) => !v);
+    }
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -244,13 +260,22 @@ export default function Home() {
     }
   }, []);
 
+  const refreshStats = useCallback(async () => {
+    try {
+      setStats(await getStats());
+    } catch {
+      /* 统计加载失败不影响首页 */
+    }
+  }, []);
+
   // 登录后才加载首页数据（避免未登录时带旧 token 请求 401，导致错误残留）
   useEffect(() => {
     if (!user) return;
     refreshKbs();
     refreshRecent();
     refreshFavorites();
-  }, [user, refreshKbs, refreshRecent, refreshFavorites]);
+    refreshStats();
+  }, [user, refreshKbs, refreshRecent, refreshFavorites, refreshStats]);
 
   // 知识库加载完成后，尝试恢复上次打开的知识库
   useEffect(() => {
@@ -625,7 +650,9 @@ export default function Home() {
     setOpenKeys([]);
     refreshKbs();
     refreshRecent();
-  }, [refreshKbs, refreshRecent]);
+    refreshFavorites();
+    refreshStats();
+  }, [refreshKbs, refreshRecent, refreshFavorites, refreshStats]);
 
   // 从最近浏览打开文档
   const openRecent = useCallback(
@@ -804,6 +831,47 @@ export default function Home() {
     return <LoginView onAuthed={handleAuthed} />;
   }
 
+  // Sidebar 共享 props（桌面版与移动抽屉复用）
+  const sidebarProps = {
+    data: tree,
+    activeKey,
+    onSelect: openDoc,
+    folders,
+    onImport: () => setImportOpen(true),
+    onNewDoc: () => setNewDocOpen(true),
+    onNewFolder: () => setNewFolderOpen(true),
+    onExport: () => setExportOpen(true),
+    onRefresh: refreshList,
+    onDeleteDoc: handleDelete,
+    onDeleteFolder: handleDeleteFolder,
+    onRenameFolder: handleRenameFolder,
+    onMoveDoc: handleMoveDoc,
+    onMoveFolder: handleMoveFolder,
+    onNew: handleNew,
+    onRenameDoc: handleRenameDoc,
+    onDuplicateDoc: handleDuplicateDoc,
+    onPinDoc: handleTogglePin,
+    onExportDoc: handleExportDoc,
+    listError,
+    kbName: currentKb?.name,
+    onBackHome: goHome,
+    searchQuery,
+    onSearchChange: setSearchQuery,
+    searchType,
+    onSearchTypeChange: setSearchType,
+    searchTag,
+    onSearchTagChange: setSearchTag,
+    searchSort,
+    onSearchSortChange: setSearchSort,
+    searchResults,
+    searching,
+    onOpenSearchResult: handleOpenSearchResult,
+    sortBy,
+    onSortChange: setSortBy,
+    readOnly,
+    onOpenTrash: handleOpenTrash,
+  };
+
   return (
     <div className="flex h-full flex-col bg-background">
       {view === "kb" ? (
@@ -815,7 +883,7 @@ export default function Home() {
             activeKey={activeKey}
             onSelect={openDoc}
             onClose={closeDoc}
-            onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
+            onToggleSidebar={handleToggleSidebar}
             onOpenPalette={() => setPaletteOpen(true)}
             theme={theme}
             onToggleTheme={() =>
@@ -834,45 +902,9 @@ export default function Home() {
 
           <div className="flex min-h-0 flex-1">
             <Sidebar
-              data={tree}
-              activeKey={activeKey}
-              onSelect={openDoc}
+              {...sidebarProps}
               collapsed={sidebarCollapsed}
               onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
-              folders={folders}
-              onImport={() => setImportOpen(true)}
-              onNewDoc={() => setNewDocOpen(true)}
-              onNewFolder={() => setNewFolderOpen(true)}
-              onExport={() => setExportOpen(true)}
-              onRefresh={refreshList}
-              onDeleteDoc={handleDelete}
-              onDeleteFolder={handleDeleteFolder}
-              onRenameFolder={handleRenameFolder}
-              onMoveDoc={handleMoveDoc}
-              onMoveFolder={handleMoveFolder}
-              onNew={handleNew}
-              onRenameDoc={handleRenameDoc}
-              onDuplicateDoc={handleDuplicateDoc}
-              onPinDoc={handleTogglePin}
-              onExportDoc={handleExportDoc}
-              listError={listError}
-              kbName={currentKb?.name}
-              onBackHome={goHome}
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-              searchType={searchType}
-              onSearchTypeChange={setSearchType}
-              searchTag={searchTag}
-              onSearchTagChange={setSearchTag}
-              searchSort={searchSort}
-              onSearchSortChange={setSearchSort}
-              searchResults={searchResults}
-              searching={searching}
-              onOpenSearchResult={handleOpenSearchResult}
-              sortBy={sortBy}
-              onSortChange={setSortBy}
-              readOnly={readOnly}
-              onOpenTrash={handleOpenTrash}
             />
             <Editor
               doc={activeDoc}
@@ -911,8 +943,40 @@ export default function Home() {
               onOpenHistory={
                 activeKey ? () => setVersionOpen(true) : undefined
               }
+              onOpenComments={
+                activeKey ? () => setCommentsOpen(true) : undefined
+              }
+              onAnnotate={
+                activeKey
+                  ? (q) => {
+                      setAnnotateQuote(q);
+                      setCommentsOpen(true);
+                    }
+                  : undefined
+              }
             />
           </div>
+
+          {/* 移动端侧栏抽屉 */}
+          {mobileSidebarOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-30 bg-black/30 md:hidden"
+                onClick={() => setMobileSidebarOpen(false)}
+              />
+              <Sidebar
+                {...sidebarProps}
+                onSelect={(key) => {
+                  openDoc(key);
+                  setMobileSidebarOpen(false);
+                }}
+                collapsed={false}
+                onToggleCollapse={() => setMobileSidebarOpen(false)}
+                mobile
+                onCloseMobile={() => setMobileSidebarOpen(false)}
+              />
+            </>
+          )}
 
           <StatusBar
             wordCount={wordCount}
@@ -942,6 +1006,7 @@ export default function Home() {
           onOpenRecent={openRecent}
           favorites={favorites}
           onOpenFavorite={openFavorite}
+          stats={stats}
           user={user}
           onOpenProfile={handleOpenProfile}
           onOpenUsers={handleOpenUsers}
@@ -1064,6 +1129,20 @@ export default function Home() {
       />
 
       <AiPanel theme={theme} open={aiOpen} onClose={() => setAiOpen(false)} onOpenCitation={handleOpenCitation} />
+
+      <CommentPanel
+        docId={activeKey}
+        open={commentsOpen && view === "kb"}
+        onClose={() => {
+          setCommentsOpen(false);
+          setAnnotateQuote(null);
+        }}
+        currentUserId={user.id}
+        isAdmin={user.role === "admin"}
+        readOnly={readOnly}
+        initialQuote={annotateQuote}
+        onConsumedQuote={() => setAnnotateQuote(null)}
+      />
 
       {/* 全局拖拽导入遮罩 */}
       {dragOver && (

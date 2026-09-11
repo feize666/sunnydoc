@@ -11,6 +11,7 @@ import { RichEditor } from "./RichEditor";
 import { TableEditor } from "./TableEditor";
 import { BoardEditor } from "./BoardEditor";
 import { DatasheetEditor } from "./DatasheetEditor";
+import { AiAssistPopover } from "./AiAssistPopover";
 import { CopyIcon, CheckIcon, EditIcon, CodeIcon } from "./icons";
 import { useResizable } from "@/hooks/useResizable";
 
@@ -66,6 +67,9 @@ export function Editor({
   onEditTags,
   onGenerateSummary,
   onOpenHistory,
+  onOpenComments,
+  onAnnotate,
+  commentCount,
 }: {
   doc: Doc | null;
   loading?: boolean;
@@ -85,6 +89,9 @@ export function Editor({
   onEditTags?: () => void;
   onGenerateSummary?: () => void;
   onOpenHistory?: () => void;
+  onOpenComments?: () => void;
+  onAnnotate?: (quote: string) => void;
+  commentCount?: number;
 }) {
   const [mode, setMode] = useState<Mode>("preview");
   const [draftTitle, setDraftTitle] = useState("");
@@ -94,6 +101,43 @@ export function Editor({
   const [copied, setCopied] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const { width: tocWidth, onMouseDown: onTocResize } = useResizable(224, 180, 400, "toc_width", -1);
+
+  // 划词批注：记录选中文字及浮动按钮位置
+  const [annotate, setAnnotate] = useState<{ x: number; y: number; text: string } | null>(null);
+
+  // 划词 AI 辅助面板
+  const [aiAssist, setAiAssist] = useState<{ x: number; y: number; text: string } | null>(null);
+
+  const handleTextSelect = () => {
+    const sel = window.getSelection();
+    const text = sel?.toString().trim();
+    const container = contentRef.current;
+    if (!text || !container || !onAnnotate) {
+      setAnnotate(null);
+      return;
+    }
+    // 选区必须位于正文容器内
+    const range = sel!.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      setAnnotate(null);
+      return;
+    }
+    setAnnotate({ x: rect.left + rect.width / 2, y: rect.top, text });
+  };
+
+  // 点击正文外区域时关闭划词批注浮标
+  useEffect(() => {
+    if (!annotate) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest("[data-annotate-btn]") && !contentRef.current?.contains(t)) {
+        setAnnotate(null);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [annotate]);
 
   // 大纲（随正文变化重算；预览态用 doc.body，编辑/源码态用 draft）
   const toc: TocItem[] = useMemo(() => {
@@ -242,7 +286,7 @@ export function Editor({
         {/* 操作栏（始终显示）：复制 / 分享 / 收藏 / 编辑 卡片按钮，右侧一排 */}
         <div className="flex h-12 shrink-0 items-center border-b border-line bg-surface px-4">
           <div className="flex-1" />
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <Tooltip content={copied ? "已复制" : "复制 Markdown"}>
               <button
                 onClick={copyMarkdown}
@@ -336,6 +380,24 @@ export function Editor({
                     <path d="M3 3v5h5" />
                   </svg>
                   历史
+                </button>
+              </Tooltip>
+            )}
+            {onOpenComments && (
+              <Tooltip content="评论">
+                <button
+                  onClick={onOpenComments}
+                  className="btn btn-sm btn-secondary hover:border-accent/40 hover:text-accent"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                  评论
+                  {commentCount ? (
+                    <span className="ml-0.5 rounded-full bg-accent-soft px-1.5 text-[10px] font-medium leading-[16px] text-accent">
+                      {commentCount}
+                    </span>
+                  ) : null}
                 </button>
               </Tooltip>
             )}
@@ -458,6 +520,7 @@ export function Editor({
                   ref={contentRef}
                   className="md-body mt-6"
                   onClick={handleCodeBlockCopy}
+                  onMouseUp={handleTextSelect}
                   dangerouslySetInnerHTML={{ __html: previewHtml }}
                 />
               )}
@@ -530,6 +593,57 @@ export function Editor({
             ))}
           </ul>
         </aside>
+      )}
+
+      {/* 划词浮动操作条：AI 辅助 + 批注 */}
+      {annotate && (
+        <div
+          data-annotate-btn
+          style={{ left: annotate.x, top: Math.max(8, annotate.y - 36) }}
+          className="fixed z-50 flex -translate-x-1/2 items-center gap-1"
+        >
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setAiAssist({ x: annotate.x, y: annotate.y, text: annotate.text });
+              setAnnotate(null);
+              window.getSelection()?.removeAllRanges();
+            }}
+            className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-[12px] font-medium text-white shadow-md transition-opacity hover:opacity-90"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
+              <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" />
+            </svg>
+            AI
+          </button>
+          {onAnnotate && (
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onAnnotate(annotate.text);
+                setAnnotate(null);
+                window.getSelection()?.removeAllRanges();
+              }}
+              className="flex items-center gap-1 rounded-md bg-surface px-2.5 py-1 text-[12px] font-medium text-text shadow-md ring-1 ring-line transition-colors hover:bg-hover"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+              批注
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 划词 AI 辅助面板 */}
+      {aiAssist && (
+        <AiAssistPopover
+          x={aiAssist.x}
+          y={aiAssist.y}
+          text={aiAssist.text}
+          onClose={() => setAiAssist(null)}
+        />
       )}
     </main>
   );

@@ -223,6 +223,20 @@ def init() -> None:
             )
             """
         )
+        # 文档评论/批注
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS comments (
+                id varchar PRIMARY KEY,
+                doc_id varchar,
+                user_id varchar,
+                content text,
+                quote text,
+                created_at double precision
+            )
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_comments_doc ON comments (doc_id)")
     conn.commit()
 
 
@@ -1505,3 +1519,71 @@ def set_setting(key: str, value: str) -> None:
             (key, value, time.time()),
         )
     conn.commit()
+
+
+# ---------- 文档评论/批注 ----------
+
+def _comment_from_row(row: Any) -> dict[str, Any]:
+    return {
+        "id": row[0],
+        "doc_id": row[1],
+        "user_id": row[2],
+        "content": row[3],
+        "quote": row[4],
+        "created_at": row[5],
+    }
+
+
+_COMMENT_COLS = "id, doc_id, user_id, content, quote, created_at"
+
+
+def add_comment(doc_id: str, user_id: str, content: str, quote: str | None = None) -> dict[str, Any]:
+    """新增评论/批注。"""
+    comment_id = uuid.uuid4().hex
+    created_at = time.time()
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO comments (id, doc_id, user_id, content, quote, created_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s)",
+            (comment_id, doc_id, user_id, content, quote, created_at),
+        )
+    conn.commit()
+    return {
+        "id": comment_id,
+        "doc_id": doc_id,
+        "user_id": user_id,
+        "content": content,
+        "quote": quote,
+        "created_at": created_at,
+    }
+
+
+def list_comments(doc_id: str) -> list[dict[str, Any]]:
+    """按创建时间正序返回文档全部评论。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            f"SELECT {_COMMENT_COLS} FROM comments WHERE doc_id = %s ORDER BY created_at",
+            (doc_id,),
+        )
+        return [_comment_from_row(r) for r in cur.fetchall()]
+
+
+def delete_comment(comment_id: str) -> bool:
+    """删除单条评论，返回是否删除成功。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM comments WHERE id = %s", (comment_id,))
+        deleted = cur.rowcount > 0
+    conn.commit()
+    return deleted
+
+
+def get_comment(comment_id: str) -> dict[str, Any] | None:
+    """按 id 取单条评论，无则 None。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT {_COMMENT_COLS} FROM comments WHERE id = %s", (comment_id,))
+        row = cur.fetchone()
+    return _comment_from_row(row) if row else None
