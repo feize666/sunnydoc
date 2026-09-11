@@ -25,6 +25,7 @@ import { TagsDialog } from "@/components/TagsDialog";
 import { VersionHistoryDialog } from "@/components/VersionHistoryDialog";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { CommentPanel } from "@/components/CommentPanel";
+import { NotificationPanel } from "@/components/NotificationPanel";
 import type { NodeType } from "@/components/NewNodeMenu";
 import type { Doc, TreeNode, SortBy } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
@@ -48,6 +49,7 @@ import {
   listRecent,
   recordRecent,
   getStats,
+  getUnreadCount,
   searchDocuments,
   getMe,
   logout,
@@ -144,6 +146,8 @@ export default function Home() {
   const [versionOpen, setVersionOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [annotateQuote, setAnnotateQuote] = useState<string | null>(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [currentKbId, setCurrentKbId] = useState<string | null>(null);
   const [kbs, setKbs] = useState<Kb[]>([]);
   const [recent, setRecent] = useState<RecentDoc[]>([]);
@@ -268,6 +272,14 @@ export default function Home() {
     }
   }, []);
 
+  const refreshUnread = useCallback(async () => {
+    try {
+      setUnreadCount(await getUnreadCount());
+    } catch {
+      /* 未读数加载失败不影响 */
+    }
+  }, []);
+
   // 登录后才加载首页数据（避免未登录时带旧 token 请求 401，导致错误残留）
   useEffect(() => {
     if (!user) return;
@@ -275,7 +287,8 @@ export default function Home() {
     refreshRecent();
     refreshFavorites();
     refreshStats();
-  }, [user, refreshKbs, refreshRecent, refreshFavorites, refreshStats]);
+    refreshUnread();
+  }, [user, refreshKbs, refreshRecent, refreshFavorites, refreshStats, refreshUnread]);
 
   // 知识库加载完成后，尝试恢复上次打开的知识库
   useEffect(() => {
@@ -893,6 +906,8 @@ export default function Home() {
             onToggleAi={() => setAiOpen((v) => !v)}
             aiOpen={aiOpen}
             onOpenFavorites={() => setFavoritesOpen(true)}
+            onOpenNotifications={() => setNotificationsOpen((v) => !v)}
+            unreadCount={unreadCount}
             user={user}
             onOpenProfile={handleOpenProfile}
             onOpenUsers={handleOpenUsers}
@@ -1142,6 +1157,13 @@ export default function Home() {
         readOnly={readOnly}
         initialQuote={annotateQuote}
         onConsumedQuote={() => setAnnotateQuote(null)}
+      />
+
+      <NotificationPanel
+        open={notificationsOpen}
+        onClose={() => setNotificationsOpen(false)}
+        onOpenDoc={openRecent}
+        onRead={setUnreadCount}
       />
 
       {/* 全局拖拽导入遮罩 */}

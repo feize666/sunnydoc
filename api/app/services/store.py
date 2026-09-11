@@ -58,6 +58,7 @@ class DocStore:
         self._favorites: list[dict[str, Any]] = []
         self._share_links: list[dict[str, Any]] = []
         self._comments: list[dict[str, Any]] = []
+        self._notifications: list[dict[str, Any]] = []
         # 启动时判定存储后端：PostgreSQL 可用则用库，否则 JSON 降级
         if db.available():
             self._backend = "db"
@@ -92,6 +93,7 @@ class DocStore:
                 self._favorites = data.get("favorites", [])
                 self._share_links = data.get("share_links", [])
                 self._comments = data.get("comments", [])
+                self._notifications = data.get("notifications", [])
         # 补齐旧数据缺失的字段，保证 all() 返回结构一致
         for d in self._docs:
             d.setdefault("folder_id", None)
@@ -135,6 +137,7 @@ class DocStore:
                     "favorites": self._favorites,
                     "share_links": self._share_links,
                     "comments": self._comments,
+                    "notifications": self._notifications,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -1131,9 +1134,17 @@ class DocStore:
 
     # ---------- 文档评论/批注 ----------
 
-    def add_comment(self, doc_id: str, user_id: str, content: str, quote: str | None = None) -> dict[str, Any]:
+    def add_comment(
+        self,
+        doc_id: str,
+        user_id: str,
+        content: str,
+        quote: str | None = None,
+        parent_id: str | None = None,
+        mentions: list[str] | None = None,
+    ) -> dict[str, Any]:
         if self._backend == "db":
-            return db.add_comment(doc_id, user_id, content, quote)
+            return db.add_comment(doc_id, user_id, content, quote, parent_id, mentions)
         comment = {
             "id": uuid.uuid4().hex,
             "doc_id": doc_id,
@@ -1141,6 +1152,8 @@ class DocStore:
             "content": content,
             "quote": quote,
             "created_at": time.time(),
+            "parent_id": parent_id,
+            "mentions": mentions or [],
         }
         self._comments.append(comment)
         self._save()
@@ -1170,6 +1183,70 @@ class DocStore:
             self._save()
             return True
         return False
+
+    # ---------- 通知 ----------
+
+    def add_notification(
+        self,
+        user_id: str,
+        type_: str,
+        actor_id: str | None,
+        doc_id: str | None,
+        kb_id: str | None,
+        content: str,
+    ) -> dict[str, Any]:
+        if self._backend == "db":
+            return db.add_notification(user_id, type_, actor_id, doc_id, kb_id, content)
+        n = {
+            "id": uuid.uuid4().hex,
+            "user_id": user_id,
+            "type": type_,
+            "actor_id": actor_id,
+            "doc_id": doc_id,
+            "kb_id": kb_id,
+            "content": content,
+            "read": False,
+            "created_at": time.time(),
+        }
+        self._notifications.append(n)
+        self._save()
+        return n
+
+    def list_notifications(self, user_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        if self._backend == "db":
+            return db.list_notifications(user_id, limit)
+        return sorted(
+            (n for n in self._notifications if n["user_id"] == user_id),
+            key=lambda n: n.get("created_at", 0),
+            reverse=True,
+        )[:limit]
+
+    def unread_count(self, user_id: str) -> int:
+        if self._backend == "db":
+            return db.unread_count(user_id)
+        return sum(1 for n in self._notifications if n["user_id"] == user_id and not n.get("read"))
+
+    def mark_notification_read(self, notification_id: str, user_id: str) -> bool:
+        if self._backend == "db":
+            return db.mark_notification_read(notification_id, user_id)
+        for n in self._notifications:
+            if n["id"] == notification_id and n["user_id"] == user_id and not n.get("read"):
+                n["read"] = True
+                self._save()
+                return True
+        return False
+
+    def mark_all_notifications_read(self, user_id: str) -> int:
+        if self._backend == "db":
+            return db.mark_all_notifications_read(user_id)
+        cnt = 0
+        for n in self._notifications:
+            if n["user_id"] == user_id and not n.get("read"):
+                n["read"] = True
+                cnt += 1
+        if cnt:
+            self._save()
+        return cnt
 
 
 store = DocStore()

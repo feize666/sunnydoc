@@ -236,7 +236,27 @@ def init() -> None:
             )
             """
         )
+        # 评论回复（嵌套一层）+ 提及的用户 id 列表（JSON 字符串）
+        cur.execute("ALTER TABLE comments ADD COLUMN IF NOT EXISTS parent_id varchar")
+        cur.execute("ALTER TABLE comments ADD COLUMN IF NOT EXISTS mentions text")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_comments_doc ON comments (doc_id)")
+        # 通知（被 @ 提及 / 评论被回复 / 知识库共享）
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notifications (
+                id varchar PRIMARY KEY,
+                user_id varchar,
+                type varchar,
+                actor_id varchar,
+                doc_id varchar,
+                kb_id varchar,
+                content text,
+                read boolean DEFAULT false,
+                created_at double precision
+            )
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications (user_id, read)")
     conn.commit()
 
 
@@ -1524,6 +1544,11 @@ def set_setting(key: str, value: str) -> None:
 # ---------- 文档评论/批注 ----------
 
 def _comment_from_row(row: Any) -> dict[str, Any]:
+    mentions_raw = row[6] if len(row) > 6 else None
+    try:
+        mentions = json.loads(mentions_raw) if mentions_raw else []
+    except Exception:  # noqa: BLE001
+        mentions = []
     return {
         "id": row[0],
         "doc_id": row[1],
@@ -1531,22 +1556,32 @@ def _comment_from_row(row: Any) -> dict[str, Any]:
         "content": row[3],
         "quote": row[4],
         "created_at": row[5],
+        "parent_id": row[6] if len(row) > 6 else None,
+        "mentions": mentions,
     }
 
 
-_COMMENT_COLS = "id, doc_id, user_id, content, quote, created_at"
+_COMMENT_COLS = "id, doc_id, user_id, content, quote, created_at, parent_id, mentions"
 
 
-def add_comment(doc_id: str, user_id: str, content: str, quote: str | None = None) -> dict[str, Any]:
-    """新增评论/批注。"""
+def add_comment(
+    doc_id: str,
+    user_id: str,
+    content: str,
+    quote: str | None = None,
+    parent_id: str | None = None,
+    mentions: list[str] | None = None,
+) -> dict[str, Any]:
+    """新增评论/批注。mentions 为被 @ 提及的用户 id 列表。"""
     comment_id = uuid.uuid4().hex
     created_at = time.time()
+    mentions_json = json.dumps(mentions or [], ensure_ascii=False)
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO comments (id, doc_id, user_id, content, quote, created_at)"
-            " VALUES (%s, %s, %s, %s, %s, %s)",
-            (comment_id, doc_id, user_id, content, quote, created_at),
+            "INSERT INTO comments (id, doc_id, user_id, content, quote, created_at, parent_id, mentions)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (comment_id, doc_id, user_id, content, quote, created_at, parent_id, mentions_json),
         )
     conn.commit()
     return {
@@ -1556,6 +1591,8 @@ def add_comment(doc_id: str, user_id: str, content: str, quote: str | None = Non
         "content": content,
         "quote": quote,
         "created_at": created_at,
+        "parent_id": parent_id,
+        "mentions": mentions or [],
     }
 
 
@@ -1587,3 +1624,103 @@ def get_comment(comment_id: str) -> dict[str, Any] | None:
         cur.execute(f"SELECT {_COMMENT_COLS} FROM comments WHERE id = %s", (comment_id,))
         row = cur.fetchone()
     return _comment_from_row(row) if row else None
+
+
+# ---------- 通知 ----------
+
+def _notification_from_row(row: Any) -> dict[str, Any]:
+    return {
+        "id": row[0],
+        "user_id": row[1],
+        "type": row[2],
+        "actor_id": row[3],
+        "doc_id": row[4],
+        "kb_id": row[5],
+        "content": row[6],
+        "read": bool(row[7]),
+        "created_at": row[8],
+    }
+
+
+_NOTIFICATION_COLS = "id, user_id, type, actor_id, doc_id, kb_id, content, read, created_at"
+
+
+def add_notification(
+    user_id: str,
+    type_: str,
+    actor_id: str | None,
+    doc_id: str | None,
+    kb_id: str | None,
+    content: str,
+) -> dict[str, Any]:
+    """新增一条通知。"""
+    nid = uuid.uuid4().hex
+    created_at = time.time()
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO notifications (id, user_id, type, actor_id, doc_id, kb_id, content, read, created_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, false, %s)",
+            (nid, user_id, type_, actor_id, doc_id, kb_id, content, created_at),
+        )
+    conn.commit()
+    return {
+        "id": nid,
+        "user_id": user_id,
+        "type": type_,
+        "actor_id": actor_id,
+        "doc_id": doc_id,
+        "kb_id": kb_id,
+        "content": content,
+        "read": False,
+        "created_at": created_at,
+    }
+
+
+def list_notifications(user_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    """返回用户通知（按时间倒序）。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            f"SELECT {_NOTIFICATION_COLS} FROM notifications WHERE user_id = %s ORDER BY created_at DESC LIMIT %s",
+            (user_id, limit),
+        )
+        return [_notification_from_row(r) for r in cur.fetchall()]
+
+
+def unread_count(user_id: str) -> int:
+    """用户未读通知数。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM notifications WHERE user_id = %s AND read = false",
+            (user_id,),
+        )
+        row = cur.fetchone()
+        return int(row[0]) if row else 0
+
+
+def mark_notification_read(notification_id: str, user_id: str) -> bool:
+    """标记单条通知为已读。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE notifications SET read = true WHERE id = %s AND user_id = %s",
+            (notification_id, user_id),
+        )
+        updated = cur.rowcount > 0
+    conn.commit()
+    return updated
+
+
+def mark_all_notifications_read(user_id: str) -> int:
+    """标记用户全部通知为已读，返回更新条数。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE notifications SET read = true WHERE user_id = %s AND read = false",
+            (user_id,),
+        )
+        updated = cur.rowcount
+    conn.commit()
+    return updated

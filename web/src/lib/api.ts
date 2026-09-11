@@ -506,7 +506,10 @@ export interface DocComment {
   content: string;
   quote?: string | null;
   created_at: number;
+  parent_id?: string | null;
+  mentions?: string[];
   user: CommentUser;
+  reply_to?: CommentUser | null;
 }
 
 export async function listComments(docId: string): Promise<DocComment[]> {
@@ -517,17 +520,61 @@ export async function listComments(docId: string): Promise<DocComment[]> {
 export async function addComment(
   docId: string,
   content: string,
-  quote?: string,
+  options?: { quote?: string; parentId?: string; mentions?: string[] },
 ): Promise<DocComment> {
   return request(`/documents/${docId}/comments`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content, quote: quote?.trim() || undefined }),
+    body: JSON.stringify({
+      content,
+      quote: options?.quote?.trim() || undefined,
+      parent_id: options?.parentId || undefined,
+      mentions: options?.mentions?.length ? options.mentions : undefined,
+    }),
   });
 }
 
 export async function deleteComment(commentId: string): Promise<void> {
   await request(`/comments/${commentId}`, { method: "DELETE" });
+}
+
+// —— 通知中心 ——
+
+export interface Notification {
+  id: string;
+  type: "mention" | "reply" | "share";
+  doc_id?: string | null;
+  kb_id?: string | null;
+  content: string;
+  read: boolean;
+  created_at: number;
+  actor: CommentUser;
+}
+
+export async function listNotifications(limit = 50): Promise<{
+  notifications: Notification[];
+  unread: number;
+}> {
+  const data = await request<{ notifications: Notification[]; unread: number }>(
+    `/notifications?limit=${limit}`,
+  );
+  return {
+    notifications: Array.isArray(data?.notifications) ? data.notifications : [],
+    unread: data?.unread ?? 0,
+  };
+}
+
+export async function getUnreadCount(): Promise<number> {
+  const data = await request<{ unread: number }>("/notifications/unread-count");
+  return data?.unread ?? 0;
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  await request(`/notifications/${id}/read`, { method: "POST" });
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+  await request("/notifications/read-all", { method: "POST" });
 }
 
 // —— 知识库 ——

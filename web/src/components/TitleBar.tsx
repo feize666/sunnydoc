@@ -19,6 +19,8 @@ export function TitleBar({
   onToggleAi,
   aiOpen,
   onOpenFavorites,
+  onOpenNotifications,
+  unreadCount,
   user,
   onOpenProfile,
   onOpenUsers,
@@ -37,6 +39,8 @@ export function TitleBar({
   onToggleAi: () => void;
   aiOpen: boolean;
   onOpenFavorites: () => void;
+  onOpenNotifications?: () => void;
+  unreadCount?: number;
   user?: User;
   onOpenProfile?: () => void;
   onOpenUsers?: () => void;
@@ -139,6 +143,25 @@ export function TitleBar({
           </svg>
         </button>
       </Tooltip>
+
+      {onOpenNotifications && (
+        <Tooltip content="通知">
+          <button
+            onClick={onOpenNotifications}
+            className="relative grid h-9 w-9 place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-text"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            {unreadCount ? (
+              <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[9px] font-semibold leading-none text-white">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            ) : null}
+          </button>
+        </Tooltip>
+      )}
 
       <ThemeToggle theme={theme} onToggle={onToggleTheme} className="h-9 w-9" />
 

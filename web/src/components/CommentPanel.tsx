@@ -1,7 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { listComments, addComment, deleteComment, type DocComment } from "@/lib/api";
+import {
+  listComments,
+  addComment,
+  deleteComment,
+  searchUsers,
+  type DocComment,
+  type UserBrief,
+} from "@/lib/api";
 
 function formatCommentTime(ts: number): string {
   if (!ts) return "";
@@ -49,6 +56,17 @@ export function CommentPanel({
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // 回复目标（嵌套一层）
+  const [replyTo, setReplyTo] = useState<{ id: string; nickname: string } | null>(null);
+
+  // @ 提及
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionResults, setMentionResults] = useState<UserBrief[]>([]);
+  const [mentions, setMentions] = useState<Record<string, string>>({});
+  const mentionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
     if (!docId) return;
@@ -63,12 +81,10 @@ export function CommentPanel({
     }
   }, [docId]);
 
-  // 打开/切换文档时加载评论
   useEffect(() => {
     if (open && docId) load();
   }, [open, docId, load]);
 
-  // 消费外部传入的划词引用
   useEffect(() => {
     if (open && initialQuote) {
       setQuote(initialQuote);
@@ -80,16 +96,65 @@ export function CommentPanel({
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [comments.length, open]);
 
+  // 检测 @ 提及
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setInput(value);
+    const cursor = e.target.selectionStart ?? value.length;
+    const before = value.slice(0, cursor);
+    const atIdx = before.lastIndexOf("@");
+    if (atIdx !== -1) {
+      const after = before.slice(atIdx + 1);
+      const prevChar = atIdx === 0 ? "" : before[atIdx - 1];
+      if ((prevChar === "" || /\s/.test(prevChar)) && after && !/\s/.test(after)) {
+        setMentionQuery(after);
+        setMentionOpen(true);
+        if (mentionTimer.current) clearTimeout(mentionTimer.current);
+        mentionTimer.current = setTimeout(async () => {
+          try {
+            setMentionResults(await searchUsers(after));
+          } catch {
+            setMentionResults([]);
+          }
+        }, 150);
+        return;
+      }
+    }
+    setMentionOpen(false);
+    setMentionQuery("");
+  };
+
+  const pickMention = (u: UserBrief) => {
+    const cursor = textareaRef.current?.selectionStart ?? input.length;
+    const before = input.slice(0, cursor);
+    const atIdx = before.lastIndexOf("@");
+    if (atIdx === -1) return;
+    const beforeAt = before.slice(0, atIdx);
+    const afterCursor = input.slice(cursor);
+    setInput(`${beforeAt}@${u.nickname} ${afterCursor}`);
+    setMentions((m) => ({ ...m, [u.id]: u.nickname || u.username }));
+    setMentionOpen(false);
+    setMentionQuery("");
+    textareaRef.current?.focus();
+  };
+
   const submit = async () => {
     const content = input.trim();
     if (!content || !docId || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
-      const c = await addComment(docId, content, quote ?? undefined);
+      const c = await addComment(docId, content, {
+        quote: quote ?? undefined,
+        parentId: replyTo?.id,
+        mentions: Object.keys(mentions),
+      });
       setComments((prev) => [...prev, c]);
       setInput("");
       setQuote(null);
+      setReplyTo(null);
+      setMentions({});
+      setMentionOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "发布评论失败");
     } finally {
@@ -116,7 +181,7 @@ export function CommentPanel({
   const canComment = !readOnly;
 
   return (
-    <aside className="fixed top-12 bottom-6 right-0 z-40 flex w-[320px] max-w-[90vw] flex-col border-l border-line bg-surface shadow-lg">
+    <aside className="fixed top-12 bottom-6 right-0 z-40 flex w-[340px] max-w-[92vw] flex-col border-l border-line bg-surface shadow-lg">
       <div className="flex shrink-0 items-center justify-between border-b border-line px-4 py-3">
         <span className="text-[15px] font-semibold text-text">
           评论
@@ -146,8 +211,9 @@ export function CommentPanel({
             {comments.map((c) => {
               const isMine = c.user.id === currentUserId;
               const canDelete = isMine || isAdmin;
+              const isReply = !!c.parent_id;
               return (
-                <li key={c.id} className="group">
+                <li key={c.id} className={`group ${isReply ? "ml-7" : ""}`}>
                   {c.quote && (
                     <div className="mb-1.5 rounded-md border-l-2 border-accent/50 bg-accent-soft px-2.5 py-1.5 text-[12px] leading-relaxed text-muted">
                       {c.quote}
@@ -160,6 +226,11 @@ export function CommentPanel({
                         <span className="truncate text-[13px] font-medium text-text">
                           {c.user.nickname}
                         </span>
+                        {isReply && c.reply_to && (
+                          <span className="shrink-0 text-[11px] text-faint">
+                            回复 @{c.reply_to.nickname}
+                          </span>
+                        )}
                         <span className="shrink-0 text-[11px] text-faint">
                           {formatCommentTime(c.created_at)}
                         </span>
@@ -167,19 +238,28 @@ export function CommentPanel({
                       <p className="mt-0.5 whitespace-pre-wrap break-words text-[14px] leading-relaxed text-text">
                         {c.content}
                       </p>
+                      <div className="mt-1 flex items-center gap-3 opacity-0 transition-opacity group-hover:opacity-100">
+                        {canComment && (
+                          <button
+                            onClick={() =>
+                              setReplyTo({ id: c.id, nickname: c.user.nickname })
+                            }
+                            className="text-[12px] text-faint hover:text-accent"
+                          >
+                            回复
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button
+                            onClick={() => remove(c.id)}
+                            disabled={deletingId === c.id}
+                            className="text-[12px] text-faint hover:text-danger disabled:opacity-40"
+                          >
+                            删除
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    {canDelete && (
-                      <button
-                        onClick={() => remove(c.id)}
-                        disabled={deletingId === c.id}
-                        className="shrink-0 rounded p-1 text-faint opacity-0 transition-opacity hover:bg-danger-soft hover:text-danger group-hover:opacity-100 disabled:opacity-40"
-                        title="删除评论"
-                      >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                        </svg>
-                      </button>
-                    )}
                   </div>
                 </li>
               );
@@ -206,11 +286,56 @@ export function CommentPanel({
             </button>
           </div>
         )}
+        {replyTo && (
+          <div className="mb-2 flex items-center justify-between rounded-md bg-surface-2 px-2.5 py-1.5 text-[12px] text-muted">
+            <span>
+              回复 <span className="font-medium text-text">@{replyTo.nickname}</span>
+            </span>
+            <button
+              onClick={() => setReplyTo(null)}
+              className="text-faint hover:text-text"
+              title="取消回复"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
         {canComment ? (
-          <>
+          <div className="relative">
+            {mentionOpen && (
+              <div className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-[180px] overflow-y-auto rounded-lg border border-line bg-background shadow-lg">
+                {mentionResults.length === 0 ? (
+                  <div className="px-3 py-2 text-[12px] text-faint">
+                    {mentionQuery ? "无匹配用户" : "搜索成员…"}
+                  </div>
+                ) : (
+                  mentionResults.map((u) => (
+                    <button
+                      key={u.id}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => pickMention(u)}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-hover"
+                    >
+                      <Avatar name={u.nickname || u.username} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] text-text">
+                          {u.nickname || u.username}
+                        </span>
+                        <span className="block truncate text-[11px] text-faint">
+                          @{u.username}
+                        </span>
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
             <textarea
+              ref={textareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
@@ -218,7 +343,7 @@ export function CommentPanel({
                 }
               }}
               rows={2}
-              placeholder="写下评论…（⌘+Enter 发送）"
+              placeholder="写下评论…（输入 @ 提及成员，⌘+Enter 发送）"
               className="w-full resize-none rounded-lg border border-line bg-background px-3 py-2 text-[14px] leading-relaxed text-text outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
             />
             <div className="mt-2 flex justify-end">
@@ -230,7 +355,7 @@ export function CommentPanel({
                 {submitting ? "发布中…" : "发布"}
               </button>
             </div>
-          </>
+          </div>
         ) : (
           <p className="py-1 text-center text-[12px] text-faint">只读权限，无法评论</p>
         )}

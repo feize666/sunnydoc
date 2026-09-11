@@ -166,6 +166,8 @@ class ResetPasswordRequest(BaseModel):
 class CreateCommentRequest(BaseModel):
     content: str
     quote: str | None = None
+    parent_id: str | None = None
+    mentions: list[str] | None = None
 
 
 class AIAssistRequest(BaseModel):
@@ -1738,13 +1740,23 @@ def rollback_document(
 
 @router.get("/documents/{doc_id}/comments")
 def list_document_comments(doc_id: str, current_user: dict = Depends(get_current_user)):
-    """文档评论列表（附评论者昵称/头像）。"""
+    """文档评论列表（附评论者昵称/头像 + 回复关系）。"""
     if store.get(doc_id, current_user["id"]) is None:
         raise HTTPException(status_code=404, detail="文档不存在")
     comments = store.list_comments(doc_id)
+    by_id = {c["id"]: c for c in comments}
+
+    def _user_info(uid: str | None) -> dict:
+        u = store.get_user_by_id(uid or "") if uid else None
+        return {
+            "id": uid,
+            "nickname": (u or {}).get("nickname") or (u or {}).get("username") or "已注销用户",
+            "avatar": (u or {}).get("avatar"),
+        }
+
     items = []
     for c in comments:
-        u = store.get_user_by_id(c.get("user_id") or "")
+        parent = by_id.get(c.get("parent_id")) if c.get("parent_id") else None
         items.append(
             {
                 "id": c["id"],
@@ -1752,11 +1764,10 @@ def list_document_comments(doc_id: str, current_user: dict = Depends(get_current
                 "content": c["content"],
                 "quote": c.get("quote"),
                 "created_at": c["created_at"],
-                "user": {
-                    "id": c.get("user_id"),
-                    "nickname": (u or {}).get("nickname") or (u or {}).get("username") or "已注销用户",
-                    "avatar": (u or {}).get("avatar"),
-                },
+                "parent_id": c.get("parent_id"),
+                "mentions": c.get("mentions") or [],
+                "user": _user_info(c.get("user_id")),
+                "reply_to": _user_info(parent.get("user_id")) if parent else None,
             }
         )
     return {"comments": items}
@@ -1768,25 +1779,47 @@ def add_document_comment(
     req: CreateCommentRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    """新增评论/批注。"""
+    """新增评论/批注（支持回复 parent_id 与 @ 提及）。"""
     content = (req.content or "").strip()
     if not content:
         raise HTTPException(status_code=400, detail="评论内容不能为空")
-    if store.get(doc_id, current_user["id"]) is None:
+    doc = store.get(doc_id, current_user["id"])
+    if doc is None:
         raise HTTPException(status_code=404, detail="文档不存在")
     quote = (req.quote or "").strip() or None
-    c = store.add_comment(doc_id, current_user["id"], content, quote)
+    parent_id = (req.parent_id or "").strip() or None
+    mentions = [m for m in (req.mentions or []) if m and m != current_user["id"]]
+    # 回复目标不存在时，退化为普通评论
+    if parent_id and store.get_comment(parent_id) is None:
+        parent_id = None
+
+    c = store.add_comment(doc_id, current_user["id"], content, quote, parent_id, mentions)
+
+    actor_name = current_user.get("nickname") or current_user.get("username")
+    kb_id = doc.get("kb_id")
+    # 通知：@ 提及
+    for mid in mentions:
+        store.add_notification(mid, "mention", current_user["id"], doc_id, kb_id, "在评论中提到了你")
+    # 通知：评论被回复
+    if parent_id:
+        parent = store.get_comment(parent_id)
+        if parent and parent.get("user_id") != current_user["id"]:
+            store.add_notification(parent["user_id"], "reply", current_user["id"], doc_id, kb_id, "回复了你的评论")
+
     return {
         "id": c["id"],
         "doc_id": c["doc_id"],
         "content": c["content"],
         "quote": c.get("quote"),
         "created_at": c["created_at"],
+        "parent_id": c.get("parent_id"),
+        "mentions": c.get("mentions") or [],
         "user": {
             "id": current_user["id"],
-            "nickname": current_user.get("nickname") or current_user.get("username"),
+            "nickname": actor_name,
             "avatar": current_user.get("avatar"),
         },
+        "reply_to": None,
     }
 
 
@@ -1799,6 +1832,56 @@ def delete_document_comment(comment_id: str, current_user: dict = Depends(get_cu
     if c.get("user_id") != current_user["id"] and current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="无权删除他人评论")
     store.delete_comment(comment_id)
+    return {"ok": True}
+
+
+# ---------- 通知中心 ----------
+
+@router.get("/notifications")
+def list_notifications(limit: int = 50, current_user: dict = Depends(get_current_user)):
+    """当前用户的通知列表（附触发者昵称/头像）。"""
+    notifications = store.list_notifications(current_user["id"], limit)
+    items = []
+    for n in notifications:
+        u = store.get_user_by_id(n.get("actor_id") or "") if n.get("actor_id") else None
+        items.append(
+            {
+                "id": n["id"],
+                "type": n["type"],
+                "doc_id": n.get("doc_id"),
+                "kb_id": n.get("kb_id"),
+                "content": n["content"],
+                "read": bool(n.get("read")),
+                "created_at": n["created_at"],
+                "actor": {
+                    "id": n.get("actor_id"),
+                    "nickname": (u or {}).get("nickname") or (u or {}).get("username") or "系统",
+                    "avatar": (u or {}).get("avatar"),
+                },
+            }
+        )
+    return {"notifications": items, "unread": store.unread_count(current_user["id"])}
+
+
+@router.get("/notifications/unread-count")
+def notification_unread_count(current_user: dict = Depends(get_current_user)):
+    """未读通知数。"""
+    return {"unread": store.unread_count(current_user["id"])}
+
+
+@router.post("/notifications/{notification_id}/read")
+def mark_notification_read(
+    notification_id: str, current_user: dict = Depends(get_current_user)
+):
+    """标记单条通知已读。"""
+    store.mark_notification_read(notification_id, current_user["id"])
+    return {"ok": True}
+
+
+@router.post("/notifications/read-all")
+def mark_all_notifications_read(current_user: dict = Depends(get_current_user)):
+    """全部标记已读。"""
+    store.mark_all_notifications_read(current_user["id"])
     return {"ok": True}
 
 
