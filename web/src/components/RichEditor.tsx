@@ -582,21 +582,22 @@ export function RichEditor({
   return (
     <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
       {/* 格式工具栏 */}
-      <div className="flex items-center gap-0.5 overflow-x-auto border-b border-line px-2 py-1.5 [scrollbar-width:thin]">
+      <div className="flex items-center gap-0.5 border-b border-line px-2 py-1.5">
         {/* 标题下拉 */}
-        <select
-          value={headingValue}
-          onChange={(e) => setHeading(e.target.value)}
-          onMouseDown={(e) => e.preventDefault()}
-          className="h-8 w-[86px] shrink-0 cursor-pointer rounded-md border border-line bg-background px-1.5 text-[13px] text-text outline-none hover:bg-hover"
-          title="标题"
-        >
-          <option value="p">正文</option>
-          <option value="1">标题 1</option>
-          <option value="2">标题 2</option>
-          <option value="3">标题 3</option>
-          <option value="4">标题 4</option>
-        </select>
+        <Tooltip content="段落格式">
+          <select
+            value={headingValue}
+            onChange={(e) => setHeading(e.target.value)}
+            onMouseDown={(e) => e.preventDefault()}
+            className="h-8 w-[80px] shrink-0 cursor-pointer rounded-md border border-line bg-background px-1.5 text-[13px] text-text outline-none hover:bg-hover"
+          >
+            <option value="p">正文</option>
+            <option value="1">标题 1</option>
+            <option value="2">标题 2</option>
+            <option value="3">标题 3</option>
+            <option value="4">标题 4</option>
+          </select>
+        </Tooltip>
 
         <ToolDivider />
 
@@ -679,23 +680,23 @@ export function RichEditor({
         <ToolBtn title="代码块" shortcut="⌥⌘C" onClick={() => editor.chain().focus().toggleCodeBlock().run()} active={editor.isActive("codeBlock")}>
           <CodeBlockIcon size={17} />
         </ToolBtn>
-        {/* 代码块语言选择 */}
-        <Tooltip content="代码语言">
-          <select
-            value={editor.isActive("codeBlock") ? currentCodeLang : "text"}
-            onChange={(e) => setCodeLang(e.target.value)}
-            onMouseDown={(e) => e.preventDefault()}
-            disabled={!editor.isActive("codeBlock")}
-            className="h-8 w-[72px] shrink-0 cursor-pointer rounded-md border border-line bg-background px-1 text-[12px] text-muted outline-none hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
-            title="代码块语言"
-          >
-            {CODE_LANGS.map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </Tooltip>
+        {/* 代码块语言选择（仅光标在代码块内时显示） */}
+        {editor.isActive("codeBlock") && (
+          <Tooltip content="代码块语言">
+            <select
+              value={currentCodeLang}
+              onChange={(e) => setCodeLang(e.target.value)}
+              onMouseDown={(e) => e.preventDefault()}
+              className="h-8 w-[72px] shrink-0 cursor-pointer rounded-md border border-line bg-background px-1 text-[12px] text-muted outline-none hover:bg-hover"
+            >
+              {CODE_LANGS.map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </Tooltip>
+        )}
         <ToolBtn title="分割线" onClick={() => editor.chain().focus().setHorizontalRule().run()}>
           <MinusIcon size={17} />
         </ToolBtn>
@@ -760,16 +761,6 @@ export function RichEditor({
             <path d="M6 12l3 3 5-6" />
           </svg>
         </ToolBtn>
-        <ToolBtn title="减少缩进" shortcut="⌘[" onClick={() => editor.chain().focus().liftListItem("listItem").run()}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 12H9M13 6l-6 6 6 6" />
-          </svg>
-        </ToolBtn>
-        <ToolBtn title="增加缩进" shortcut="⌘]" onClick={() => editor.chain().focus().sinkListItem("listItem").run()}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 12h12M11 6l6 6-6 6" />
-          </svg>
-        </ToolBtn>
 
         <ToolDivider />
 
@@ -789,24 +780,28 @@ export function RichEditor({
           </svg>
         </ToolBtn>
 
-        <ToolDivider />
-
-        <ToolBtn title="添加行" onClick={addTableRow}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-        </ToolBtn>
-        <ToolBtn title="添加列" onClick={addTableCol}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M9 3h6M9 21h6M12 3v18" />
-          </svg>
-        </ToolBtn>
-        <ToolBtn title="删除表格" onClick={deleteTable}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="5" width="18" height="16" rx="1" />
-            <path d="M3 9h18M9 5v16M15 5v16M7 7l10 12" />
-          </svg>
-        </ToolBtn>
+        {/* 表格行列操作（仅光标在表格内时显示） */}
+        {findTable() && (
+          <>
+            <ToolDivider />
+            <ToolBtn title="添加行" onClick={addTableRow}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </ToolBtn>
+            <ToolBtn title="添加列" onClick={addTableCol}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M9 3h6M9 21h6M12 3v18" />
+              </svg>
+            </ToolBtn>
+            <ToolBtn title="删除表格" onClick={deleteTable}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="5" width="18" height="16" rx="1" />
+                <path d="M3 9h18M9 5v16M15 5v16M7 7l10 12" />
+              </svg>
+            </ToolBtn>
+          </>
+        )}
 
         <ToolDivider />
 
