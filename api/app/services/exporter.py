@@ -247,3 +247,79 @@ def _export_zip(docs: list[dict[str, Any]]) -> tuple[Any, str, str]:
                 if f.is_file():
                     zf.write(f, f"media/{f.name}")
     return buf.getvalue(), "export.zip", "application/zip"
+
+
+# ---------- 知识库整体导出（zip，保留目录结构） ----------
+
+def build_kb_zip(
+    kb_name: str,
+    docs: list[dict[str, Any]],
+    folders: list[dict[str, Any]],
+) -> tuple[Any, str, str]:
+    """把整个知识库导出为 zip，按文件夹层级组织，含 media 与 manifest。"""
+    import posixpath as _pp
+
+    base = _safe_filename(kb_name or "knowledge_base")
+
+    # 构建 folder id -> 相对路径 的映射（递归，防御循环引用）
+    folder_paths: dict[str, str] = {}
+    _resolving: set[str] = set()
+
+    def resolve(fid: str) -> str:
+        if fid in folder_paths:
+            return folder_paths[fid]
+        if fid in _resolving:  # 防御循环引用
+            return ""
+        _resolving.add(fid)
+        f = next((x for x in folders if x.get("id") == fid), None)
+        path = ""
+        if f:
+            parent = f.get("parent_id")
+            parent_path = resolve(parent) if parent else ""
+            name = _safe_filename(f.get("name") or "未命名文件夹")
+            path = _pp.join(parent_path, name) if parent_path else name
+        _resolving.discard(fid)
+        folder_paths[fid] = path
+        return path
+
+    for f in folders:
+        resolve(f.get("id") or "")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        seen: set[str] = set()
+        manifest: list[dict[str, Any]] = []
+        for d in docs:
+            subdir = folder_paths.get(d.get("folder_id") or "", "")
+            stem = _safe_filename(d["title"])
+            name = f"{stem}.md"
+            full = _pp.join(base, subdir, name) if subdir else _pp.join(base, name)
+            i = 1
+            while full in seen:
+                i += 1
+                alt = f"{stem}({i}).md"
+                full = _pp.join(base, subdir, alt) if subdir else _pp.join(base, alt)
+            seen.add(full)
+            zf.writestr(full, d["text"])
+            manifest.append(
+                {
+                    "title": d["title"],
+                    "path": full,
+                    "source": d.get("source"),
+                    "ext": d.get("ext"),
+                }
+            )
+
+        # 媒体文件
+        if MEDIA_DIR.exists():
+            for f in sorted(MEDIA_DIR.iterdir()):
+                if f.is_file():
+                    zf.write(f, _pp.join(base, "media", f.name))
+
+        # 清单
+        zf.writestr(
+            _pp.join(base, "manifest.json"),
+            json.dumps(manifest, ensure_ascii=False, indent=2),
+        )
+
+    return buf.getvalue(), f"{base}.zip", "application/zip"

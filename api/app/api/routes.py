@@ -129,6 +129,7 @@ class RecordRecentRequest(BaseModel):
 class ExportRequest(BaseModel):
     format: str
     doc_ids: list[str] | None = None
+    kb_id: str | None = None
 
 
 class RegisterRequest(BaseModel):
@@ -1424,18 +1425,31 @@ def list_audit_logs(
 
 @router.post("/export")
 def export_documents(req: ExportRequest, current_user: dict = Depends(get_current_user)):
-    """多格式导出：md/docx/pdf/html/json/zip。doc_ids 为空导出当前用户全部。"""
-    docs = store.all(user_id=current_user["id"])
-    if req.doc_ids:
-        idset = set(req.doc_ids)
-        docs = [d for d in docs if d["id"] in idset]
-    if not docs:
-        raise HTTPException(status_code=404, detail="无文档可导出")
+    """多格式导出：md/docx/pdf/html/json/zip。doc_ids 为空导出当前用户全部。
+    知识库整体导出：kb_id 提供且 format=zip 时，按文件夹层级打包整个知识库。"""
+    if req.kb_id and req.format == "zip":
+        kb = store.get_kb(req.kb_id, current_user["id"])
+        if kb is None:
+            raise HTTPException(status_code=404, detail="知识库不存在")
+        docs = store.all(kb_id=req.kb_id, user_id=current_user["id"])
+        folders = store.list_folders(req.kb_id, current_user["id"])
+        if not docs:
+            raise HTTPException(status_code=404, detail="知识库内无文档")
+        content, filename, content_type = exporter.build_kb_zip(
+            kb.get("name") or "知识库", docs, folders
+        )
+    else:
+        docs = store.all(user_id=current_user["id"])
+        if req.doc_ids:
+            idset = set(req.doc_ids)
+            docs = [d for d in docs if d["id"] in idset]
+        if not docs:
+            raise HTTPException(status_code=404, detail="无文档可导出")
 
-    try:
-        content, filename, content_type = exporter.build(req.format, docs)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        try:
+            content, filename, content_type = exporter.build(req.format, docs)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
 
     cd = f"attachment; filename*=UTF-8''{quote(filename)}"
     # content 是 bytes（或 str），用 Response 直接返回；避免 StreamingResponse 把 bytes 当逐字节迭代器

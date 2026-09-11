@@ -60,7 +60,7 @@ export function ExportDialog({
   kbId?: string | null;
 }) {
   const [format, setFormat] = useState<ExportFormat>("md");
-  const [scope, setScope] = useState<"current" | "all">("current");
+  const [scope, setScope] = useState<"current" | "all" | "kb">("current");
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,9 +71,27 @@ export function ExportDialog({
       setError("当前没有打开的文档，请先选择一篇文档或切换到「导出全部」");
       return;
     }
+    if (scope === "kb" && !kbId) {
+      setError("当前不在知识库中，无法导出整个知识库");
+      return;
+    }
     setExporting(true);
     setError(null);
     try {
+      if (scope === "kb") {
+        // 整个知识库导出：固定 zip，保留目录结构
+        const { filename, blob } = await exportDocuments("zip", undefined, kbId);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        onClose();
+        return;
+      }
       const docIds = scope === "current" && activeDocId ? [activeDocId] : undefined;
       const { filename, blob } = await exportDocuments(format, docIds, kbId);
       const url = URL.createObjectURL(blob);
@@ -119,7 +137,7 @@ export function ExportDialog({
                   : "border-line text-muted hover:bg-hover"
               }`}
             >
-              导出当前文档
+              当前文档
             </button>
             <button
               onClick={() => setScope("all")}
@@ -129,47 +147,69 @@ export function ExportDialog({
                   : "border-line text-muted hover:bg-hover"
               }`}
             >
-              导出全部文档
+              全部文档
+            </button>
+            <button
+              onClick={() => {
+                setScope("kb");
+                setFormat("zip");
+              }}
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                scope === "kb"
+                  ? "border-accent bg-accent-soft text-accent"
+                  : "border-line text-muted hover:bg-hover"
+              }`}
+            >
+              整个知识库
             </button>
           </div>
+          {scope === "kb" && (
+            <p className="mt-2 rounded-md bg-surface-2 px-2.5 py-1.5 text-[12px] text-muted">
+              以 ZIP 压缩包导出整个知识库，保留文件夹目录结构，含媒体文件与清单 manifest.json
+            </p>
+          )}
 
-          <label className="mb-1.5 mt-4 block text-xs text-muted">导出格式</label>
-          <div className="grid grid-cols-3 gap-2">
-            {FORMATS.map((f) => {
-              const active = format === f.id;
-              return (
-                <button
-                  key={f.id}
-                  onClick={() => setFormat(f.id)}
-                  className={`flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors ${
-                    active
-                      ? "border-accent bg-accent-soft"
-                      : "border-line hover:bg-hover"
-                  }`}
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    className={active ? "text-accent" : "text-muted"}
-                  >
-                    <path d={f.icon} />
-                  </svg>
-                  <span
-                    className={`text-[14px] font-medium ${
-                      active ? "text-accent" : "text-text"
-                    }`}
-                  >
-                    {f.label}
-                  </span>
-                  <span className="text-[12px] text-faint">{f.desc}</span>
-                </button>
-              );
-            })}
-          </div>
+          {scope !== "kb" && (
+            <>
+              <label className="mb-1.5 mt-4 block text-xs text-muted">导出格式</label>
+              <div className="grid grid-cols-3 gap-2">
+                {FORMATS.map((f) => {
+                  const active = format === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      onClick={() => setFormat(f.id)}
+                      className={`flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors ${
+                        active
+                          ? "border-accent bg-accent-soft"
+                          : "border-line hover:bg-hover"
+                      }`}
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        className={active ? "text-accent" : "text-muted"}
+                      >
+                        <path d={f.icon} />
+                      </svg>
+                      <span
+                        className={`text-[14px] font-medium ${
+                          active ? "text-accent" : "text-text"
+                        }`}
+                      >
+                        {f.label}
+                      </span>
+                      <span className="text-[12px] text-faint">{f.desc}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
 
           {error && (
             <div className="mt-3 rounded-md border border-danger/40 bg-danger-soft px-2 py-1.5 text-xs text-danger">
