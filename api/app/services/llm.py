@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from app.core.config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
+from app.core.config import ai_config
 
 RAG_SYSTEM_PROMPT = (
     "你是 sunnydoc 知识库问答助手。请严格根据提供的文档片段回答问题。\n"
@@ -23,8 +23,13 @@ CHAT_SYSTEM_PROMPT = (
 )
 
 
+def _cfg() -> dict:
+    """每次调用时动态读取配置（支持运行时更换 key/供应商）。"""
+    return ai_config()
+
+
 def available() -> bool:
-    return bool(LLM_API_KEY)
+    return bool(_cfg().get("llm_api_key"))
 
 
 def _build_messages(
@@ -58,7 +63,7 @@ def _build_payload(
     stream: bool,
 ) -> dict[str, Any]:
     return {
-        "model": LLM_MODEL,
+        "model": _cfg().get("llm_model"),
         "messages": _build_messages(query, contexts, history),
         "temperature": 0.3,
         "max_tokens": 800,
@@ -78,8 +83,8 @@ def generate(
 
     try:
         resp = httpx.post(
-            f"{LLM_BASE_URL.rstrip('/')}/chat/completions",
-            headers={"Authorization": f"Bearer {LLM_API_KEY}"},
+            f"{_cfg().get('llm_base_url', '').rstrip('/')}/chat/completions",
+            headers={"Authorization": f"Bearer {_cfg().get('llm_api_key')}"},
             json=_build_payload(query, contexts, history, stream=False),
             timeout=60.0,
         )
@@ -103,10 +108,10 @@ def summarize(text: str) -> str | None:
     )
     try:
         resp = httpx.post(
-            f"{LLM_BASE_URL.rstrip('/')}/chat/completions",
-            headers={"Authorization": f"Bearer {LLM_API_KEY}"},
+            f"{_cfg().get('llm_base_url', '').rstrip('/')}/chat/completions",
+            headers={"Authorization": f"Bearer {_cfg().get('llm_api_key')}"},
             json={
-                "model": LLM_MODEL,
+                "model": _cfg().get("llm_model"),
                 "messages": [
                     {"role": "system", "content": "你是文档摘要助手，只输出简洁准确的中文摘要。"},
                     {"role": "user", "content": prompt},
@@ -137,8 +142,8 @@ def generate_stream(
     try:
         with httpx.stream(
             "POST",
-            f"{LLM_BASE_URL.rstrip('/')}/chat/completions",
-            headers={"Authorization": f"Bearer {LLM_API_KEY}"},
+            f"{_cfg().get('llm_base_url', '').rstrip('/')}/chat/completions",
+            headers={"Authorization": f"Bearer {_cfg().get('llm_api_key')}"},
             json=_build_payload(query, contexts, history, stream=True),
             timeout=60.0,
         ) as resp:

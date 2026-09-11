@@ -6,15 +6,16 @@ from typing import Any
 
 import httpx
 
-from app.core.config import (
-    EMBEDDING_API_KEY,
-    RERANK_BASE_URL,
-    RERANK_MODEL,
-)
+from app.core.config import ai_config
+
+
+def _cfg() -> dict:
+    """每次调用时动态读取配置。"""
+    return ai_config()
 
 
 def available() -> bool:
-    return bool(EMBEDDING_API_KEY)
+    return bool(_cfg().get("embedding_api_key"))
 
 
 def rerank(
@@ -27,7 +28,7 @@ def rerank(
         return None
 
     payload = {
-        "model": RERANK_MODEL,
+        "model": _cfg().get("rerank_model"),
         "query": query,
         "documents": documents,
         "top_n": min(top_n, len(documents)),
@@ -35,8 +36,8 @@ def rerank(
 
     try:
         resp = httpx.post(
-            f"{RERANK_BASE_URL.rstrip('/')}/reranks",
-            headers={"Authorization": f"Bearer {EMBEDDING_API_KEY}"},
+            f"{_cfg().get('rerank_base_url', '').rstrip('/')}/reranks",
+            headers={"Authorization": f"Bearer {_cfg().get('embedding_api_key')}"},
             json=payload,
             timeout=30.0,
         )

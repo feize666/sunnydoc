@@ -6,11 +6,16 @@ from typing import Any
 
 import httpx
 
-from app.core.config import EMBEDDING_API_KEY, EMBEDDING_BASE_URL, EMBEDDING_MODEL
+from app.core.config import ai_config
+
+
+def _cfg() -> dict:
+    """每次调用时动态读取配置。"""
+    return ai_config()
 
 
 def available() -> bool:
-    return bool(EMBEDDING_API_KEY)
+    return bool(_cfg().get("embedding_api_key"))
 
 
 def embed(texts: list[str]) -> list[list[float]] | None:
@@ -20,11 +25,11 @@ def embed(texts: list[str]) -> list[list[float]] | None:
     if not texts:
         return None
 
-    payload = {"model": EMBEDDING_MODEL, "input": texts}
+    payload = {"model": _cfg().get("embedding_model"), "input": texts}
     try:
         resp = httpx.post(
-            f"{EMBEDDING_BASE_URL.rstrip('/')}/embeddings",
-            headers={"Authorization": f"Bearer {EMBEDDING_API_KEY}"},
+            f"{_cfg().get('embedding_base_url', '').rstrip('/')}/embeddings",
+            headers={"Authorization": f"Bearer {_cfg().get('embedding_api_key')}"},
             json=payload,
             timeout=30.0,
         )

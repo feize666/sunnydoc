@@ -815,3 +815,39 @@ export async function resetUserPassword(
   });
 }
 
+export interface AISettings {
+  provider: string;
+  llm_base_url: string;
+  llm_api_key: string; // 脱敏后的 key
+  llm_model: string;
+  embedding_base_url: string;
+  embedding_api_key: string; // 脱敏后的 key
+  embedding_model: string;
+  rerank_base_url: string;
+  rerank_model: string;
+  llm_configured: boolean;
+  embedding_configured: boolean;
+}
+
+export async function getAISettings(): Promise<AISettings> {
+  return request<AISettings>(`/settings/ai`);
+}
+
+export async function updateAISettings(patch: {
+  provider?: string;
+  llm_base_url?: string;
+  llm_api_key?: string;
+  llm_model?: string;
+  embedding_base_url?: string;
+  embedding_api_key?: string;
+  embedding_model?: string;
+  rerank_base_url?: string;
+  rerank_model?: string;
+}): Promise<{ ok: boolean }> {
+  return request(`/settings/ai`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+}
+

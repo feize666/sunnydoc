@@ -213,6 +213,16 @@ def init() -> None:
             """
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_doc_versions_doc ON document_versions (doc_id)")
+        # 系统设置（键值存储，如 AI 配置）
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS settings (
+                key varchar PRIMARY KEY,
+                value text,
+                updated_at double precision
+            )
+            """
+        )
     conn.commit()
 
 
@@ -1472,3 +1482,26 @@ def delete_share(doc_id: str) -> bool:
         deleted = cur.rowcount > 0
     conn.commit()
     return deleted
+
+
+# ---------- 系统设置（键值存储） ----------
+
+def get_setting(key: str) -> str | None:
+    """读取单个设置项（value 存 JSON 字符串），无则 None。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute("SELECT value FROM settings WHERE key = %s", (key,))
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
+def set_setting(key: str, value: str) -> None:
+    """写入/覆盖单个设置项。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (%s, %s, %s)"
+            " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at",
+            (key, value, time.time()),
+        )
+    conn.commit()

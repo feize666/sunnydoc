@@ -38,3 +38,46 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-v4")
 # Rerank 配置（qwen3-rerank 走 compatible-api 接口）
 RERANK_BASE_URL = os.getenv("RERANK_BASE_URL", "https://dashscope.aliyuncs.com/compatible-api/v1")
 RERANK_MODEL = os.getenv("RERANK_MODEL", "qwen3-rerank")
+
+
+# ---------- 运行时 AI 配置（可在设置页修改，覆盖环境变量默认值） ----------
+
+# 单个 AI 配置键，存到 settings 键值存储
+AI_SETTINGS_KEY = "ai_config"
+
+
+def _ai_from_settings() -> dict | None:
+    """从 settings 存储读取运行时 AI 配置；无则 None。
+
+    延迟 import，避免 core.config 被 services 反向依赖形成循环。
+    """
+    try:
+        from app.services.settings import get_json
+
+        return get_json(AI_SETTINGS_KEY)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def ai_config() -> dict:
+    """合并环境变量默认值与运行时设置，返回完整 AI 配置。"""
+    cfg = {
+        "provider": os.getenv("AI_PROVIDER", "custom"),
+        "llm_base_url": LLM_BASE_URL,
+        "llm_api_key": LLM_API_KEY,
+        "llm_model": LLM_MODEL,
+        "embedding_base_url": EMBEDDING_BASE_URL,
+        "embedding_api_key": EMBEDDING_API_KEY,
+        "embedding_model": EMBEDDING_MODEL,
+        "rerank_base_url": RERANK_BASE_URL,
+        "rerank_model": RERANK_MODEL,
+    }
+    saved = _ai_from_settings()
+    if isinstance(saved, dict):
+        for k, v in saved.items():
+            if k in cfg and v not in (None, ""):
+                cfg[k] = v
+            elif k in cfg and v in (None, ""):
+                # 允许显式清空
+                cfg[k] = ""
+    return cfg

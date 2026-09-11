@@ -17,8 +17,8 @@ from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Uploa
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
-from app.core.config import DEFAULT_TOP_K, MEDIA_DIR, DATA_DIR, TEXT_EXTS
-from app.services import media, parser, qa, llm, web_search, exporter, auth
+from app.core.config import DEFAULT_TOP_K, MEDIA_DIR, DATA_DIR, TEXT_EXTS, ai_config
+from app.services import media, parser, qa, llm, web_search, exporter, auth, settings
 from app.services.store import store
 
 router = APIRouter(prefix="/api/v1")
@@ -161,6 +161,20 @@ class UpdateUserRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     new_password: str
+
+
+class AISettingsRequest(BaseModel):
+    """AI 功能配置（供应商 + 自定义 base_url / key / model）。"""
+
+    provider: str = "custom"  # openai / qwen / deepseek / zhipu / moonshot / siliconflow / ollama / custom
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    llm_model: str = ""
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""
+    embedding_model: str = ""
+    rerank_base_url: str = ""
+    rerank_model: str = ""
 
 
 class AddShareRequest(BaseModel):
@@ -415,6 +429,63 @@ def _run_import_task(
 @router.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# ---------- AI 功能配置 ----------
+
+def _mask_secret(s: str) -> str:
+    """脱敏：保留前 4 后 4，中间打码；过短则全打码。"""
+    if not s:
+        return ""
+    if len(s) <= 8:
+        return "*" * len(s)
+    return s[:4] + "*" * (len(s) - 8) + s[-4:]
+
+
+@router.get("/settings/ai")
+def get_ai_settings(admin: dict = Depends(require_admin)):
+    """读取 AI 配置（key 脱敏）。"""
+    cfg = ai_config()
+    return {
+        "provider": cfg.get("provider", "custom"),
+        "llm_base_url": cfg.get("llm_base_url", ""),
+        "llm_api_key": _mask_secret(cfg.get("llm_api_key", "")),
+        "llm_model": cfg.get("llm_model", ""),
+        "embedding_base_url": cfg.get("embedding_base_url", ""),
+        "embedding_api_key": _mask_secret(cfg.get("embedding_api_key", "")),
+        "embedding_model": cfg.get("embedding_model", ""),
+        "rerank_base_url": cfg.get("rerank_base_url", ""),
+        "rerank_model": cfg.get("rerank_model", ""),
+        "llm_configured": bool(cfg.get("llm_api_key")),
+        "embedding_configured": bool(cfg.get("embedding_api_key")),
+    }
+
+
+@router.put("/settings/ai")
+def update_ai_settings(req: AISettingsRequest, admin: dict = Depends(require_admin)):
+    """保存 AI 配置。key 未传（空串）表示不修改，原样保留已有 key。"""
+    existing = ai_config()
+    payload = {
+        "provider": req.provider or "custom",
+        "llm_base_url": req.llm_base_url.strip(),
+        "llm_model": req.llm_model.strip(),
+        "embedding_base_url": req.embedding_base_url.strip(),
+        "embedding_model": req.embedding_model.strip(),
+        "rerank_base_url": req.rerank_base_url.strip(),
+        "rerank_model": req.rerank_model.strip(),
+    }
+    # api key：仅当用户传入了非空新 key 时才覆盖；空串表示保持原样（不清空）
+    if req.llm_api_key.strip():
+        payload["llm_api_key"] = req.llm_api_key.strip()
+    else:
+        payload["llm_api_key"] = existing.get("llm_api_key", "")
+    if req.embedding_api_key.strip():
+        payload["embedding_api_key"] = req.embedding_api_key.strip()
+    else:
+        payload["embedding_api_key"] = existing.get("embedding_api_key", "")
+
+    settings.set_json("ai_config", payload)
+    return {"ok": True, "provider": payload["provider"]}
 
 
 @router.get("/search")

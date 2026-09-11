@@ -1060,6 +1060,7 @@ export default function Home() {
         onClose={() => setSettingsOpen(false)}
         theme={theme}
         onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+        isAdmin={user?.role === "admin"}
       />
 
       <AiPanel theme={theme} open={aiOpen} onClose={() => setAiOpen(false)} onOpenCitation={handleOpenCitation} />
