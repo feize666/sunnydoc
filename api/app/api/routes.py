@@ -1280,6 +1280,19 @@ def add_share(
     if target["id"] == current_user["id"]:
         raise HTTPException(status_code=400, detail="无需共享给自己")
     share = store.add_share(kb_id, target["id"], permission)
+    # 通知被共享用户
+    kb = store.get_kb(kb_id, current_user["id"])
+    kb_name = (kb or {}).get("name") or "知识库"
+    actor_name = current_user.get("nickname") or current_user.get("username")
+    perm_label = "可编辑" if permission == "write" else "只读"
+    store.add_notification(
+        target["id"],
+        "share",
+        current_user["id"],
+        None,
+        kb_id,
+        f"将知识库「{kb_name}」共享给了你（{perm_label}）",
+    )
     return {
         "user_id": target["id"],
         "username": target["username"],

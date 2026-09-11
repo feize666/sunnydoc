@@ -68,21 +68,28 @@ export function CommentPanel({
   const [mentions, setMentions] = useState<Record<string, string>>({});
   const mentionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!docId) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     try {
       setComments(await listComments(docId));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "加载评论失败");
+      if (!silent) setError(e instanceof Error ? e.message : "加载评论失败");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [docId]);
 
   useEffect(() => {
     if (open && docId) load();
+  }, [open, docId, load]);
+
+  // 评论实时刷新：面板打开时每 15 秒静默拉取最新评论
+  useEffect(() => {
+    if (!open || !docId) return;
+    const timer = setInterval(() => load(true), 15000);
+    return () => clearInterval(timer);
   }, [open, docId, load]);
 
   useEffect(() => {
