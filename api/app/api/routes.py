@@ -1122,6 +1122,9 @@ def update_document(
     if "folder_id" in req.model_fields_set:
         kwargs["folder_id"] = req.folder_id
     if "kb_id" in req.model_fields_set:
+        # 跨知识库移动：校验目标知识库写权限
+        if req.kb_id:
+            _require_kb_write(req.kb_id, current_user)
         kwargs["kb_id"] = req.kb_id
     if "sort_order" in req.model_fields_set:
         kwargs["sort_order"] = req.sort_order

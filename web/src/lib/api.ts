@@ -178,6 +178,14 @@ export async function moveDocument(
   });
 }
 
+export async function moveDocumentToKb(id: string, kbId: string): Promise<void> {
+  await request(`/documents/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kb_id: kbId, folder_id: null }),
+  });
+}
+
 export async function createFolder(
   name: string,
   parentId?: string | null,

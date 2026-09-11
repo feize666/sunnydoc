@@ -103,6 +103,7 @@ export function Sidebar({
   onRenameFolder,
   onMoveDoc,
   onMoveFolder,
+  onMoveToKb,
   onNew,
   onRenameDoc,
   onDuplicateDoc,
@@ -145,6 +146,7 @@ export function Sidebar({
   onRenameFolder?: (folderId: string, name: string) => Promise<void> | void;
   onMoveDoc?: (docId: string, folderId: string | null, sortOrder?: number | null) => void;
   onMoveFolder?: (folderId: string, parentId: string | null, sortOrder?: number | null) => void;
+  onMoveToKb?: (docId: string) => void;
   onNew?: (type: NodeType, parentFolderId: string | null) => void;
   onRenameDoc?: (docId: string, name: string) => Promise<void> | void;
   onDuplicateDoc?: (docId: string) => void;
@@ -729,6 +731,7 @@ export function Sidebar({
               onDeleteFolder={readOnly ? undefined : onDeleteFolder}
               onMoveDoc={readOnly ? undefined : onMoveDoc}
               onMoveFolder={readOnly ? undefined : onMoveFolder}
+              onMoveToKb={readOnly ? undefined : onMoveToKb}
             />
           </>
         )}

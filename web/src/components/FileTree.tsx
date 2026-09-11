@@ -52,6 +52,15 @@ function ExportIcon({ size = 13 }: { size?: number }) {
   );
 }
 
+function KbIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </svg>
+  );
+}
+
 type RenameTarget = { kind: "doc" | "folder"; id: string; name: string };
 type DropPos = "before" | "after" | "inside";
 
@@ -68,6 +77,7 @@ function FileTreeNode({
   onRequestDeleteFolder,
   onMoveDoc,
   onMoveFolder,
+  onMoveToKb,
   onDuplicateDoc,
   onPinDoc,
   onExportDoc,
@@ -85,6 +95,7 @@ function FileTreeNode({
   onRequestDeleteFolder?: (node: TreeNode) => void;
   onMoveDoc?: (docId: string, folderId: string | null, sortOrder?: number | null) => void;
   onMoveFolder?: (folderId: string, parentId: string | null, sortOrder?: number | null) => void;
+  onMoveToKb?: (docId: string) => void;
   onDuplicateDoc?: (docId: string) => void;
   onPinDoc?: (docId: string, pinned: boolean) => void;
   onExportDoc?: (docId: string) => void;
@@ -292,6 +303,13 @@ function FileTreeNode({
   if (onMoveDoc && node.key) {
     docItems.push({ label: "移动到…", icon: <MoveIcon size={14} />, onClick: () => setMoveOpen(true) });
   }
+  if (onMoveToKb && node.key) {
+    docItems.push({
+      label: "移动到知识库",
+      icon: <KbIcon size={14} />,
+      onClick: () => onMoveToKb(node.key!),
+    });
+  }
   if (onDuplicateDoc && node.key) {
     docItems.push({ label: "复制", icon: <CopyIcon size={14} />, onClick: () => onDuplicateDoc(node.key!) });
   }
@@ -368,6 +386,7 @@ export function FileTree({
   onDeleteFolder,
   onMoveDoc,
   onMoveFolder,
+  onMoveToKb,
   onDuplicateDoc,
   onPinDoc,
   onExportDoc,
@@ -383,6 +402,7 @@ export function FileTree({
   onDeleteFolder?: (id: string) => void;
   onMoveDoc?: (docId: string, folderId: string | null, sortOrder?: number | null) => void;
   onMoveFolder?: (folderId: string, parentId: string | null, sortOrder?: number | null) => void;
+  onMoveToKb?: (docId: string) => void;
   onDuplicateDoc?: (docId: string) => void;
   onPinDoc?: (docId: string, pinned: boolean) => void;
   onExportDoc?: (docId: string) => void;
@@ -467,6 +487,7 @@ export function FileTree({
             onRequestDeleteFolder={onDeleteFolder ? setPendingDeleteFolder : undefined}
             onMoveDoc={onMoveDoc}
             onMoveFolder={onMoveFolder}
+            onMoveToKb={onMoveToKb}
             onDuplicateDoc={onDuplicateDoc}
             onPinDoc={onPinDoc}
             onExportDoc={onExportDoc}

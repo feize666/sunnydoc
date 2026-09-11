@@ -26,6 +26,7 @@ import { VersionHistoryDialog } from "@/components/VersionHistoryDialog";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { CommentPanel } from "@/components/CommentPanel";
 import { NotificationPanel } from "@/components/NotificationPanel";
+import { MoveToKbDialog } from "@/components/MoveToKbDialog";
 import type { NodeType } from "@/components/NewNodeMenu";
 import type { Doc, TreeNode, SortBy } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
@@ -148,6 +149,7 @@ export default function Home() {
   const [annotateQuote, setAnnotateQuote] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [moveToKbTarget, setMoveToKbTarget] = useState<{ id: string; title: string } | null>(null);
   const [currentKbId, setCurrentKbId] = useState<string | null>(null);
   const [kbs, setKbs] = useState<Kb[]>([]);
   const [recent, setRecent] = useState<RecentDoc[]>([]);
@@ -860,6 +862,10 @@ export default function Home() {
     onRenameFolder: handleRenameFolder,
     onMoveDoc: handleMoveDoc,
     onMoveFolder: handleMoveFolder,
+    onMoveToKb: (docId: string) => {
+      const meta = metas.find((m) => m.id === docId);
+      setMoveToKbTarget({ id: docId, title: meta?.title ?? docId });
+    },
     onNew: handleNew,
     onRenameDoc: handleRenameDoc,
     onDuplicateDoc: handleDuplicateDoc,
@@ -1164,6 +1170,16 @@ export default function Home() {
         onClose={() => setNotificationsOpen(false)}
         onOpenDoc={openRecent}
         onRead={setUnreadCount}
+      />
+
+      <MoveToKbDialog
+        open={moveToKbTarget !== null}
+        onClose={() => setMoveToKbTarget(null)}
+        onMoved={refreshList}
+        docId={moveToKbTarget?.id ?? null}
+        docTitle={moveToKbTarget?.title ?? ""}
+        kbs={kbs}
+        currentKbId={currentKbId}
       />
 
       {/* 全局拖拽导入遮罩 */}
