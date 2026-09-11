@@ -245,13 +245,26 @@ export function SettingsDialog({
       .finally(() => setLoading(false));
   }, [open]);
 
-  if (!open) return null;
-
+  // 注意：所有 useState/useMemo/useEffect 等 Hook 必须在早退之前调用，
+  // 否则会引起 Hook 顺序变化导致 React 卸载整个应用。
   const isCustom = provider === "custom";
   const matchedCustom = useMemo(
     () => customList.find((p) => p.id === activeCustomId),
     [customList, activeCustomId],
   );
+  const providerOptions = useMemo(() => {
+    const opts: { id: string; name: string; isCustom?: boolean }[] = PROVIDERS.map(
+      (p) => ({ id: p.id, name: p.name }),
+    );
+    if (customList.length) {
+      for (const cp of customList) {
+        opts.push({ id: cp.id, name: `⭐ ${cp.name}`, isCustom: true });
+      }
+    }
+    return opts;
+  }, [customList]);
+
+  if (!open) return null;
 
   const applyProvider = (pid: string) => {
     // 如果改动过 key 或 model，提示
@@ -465,18 +478,7 @@ export function SettingsDialog({
     }
   };
 
-  // 组装 provider 下拉项：内置 + 已保存的自定义预设
-  const providerOptions = useMemo(() => {
-    const opts: { id: string; name: string; isCustom?: boolean }[] = PROVIDERS.map(
-      (p) => ({ id: p.id, name: p.name }),
-    );
-    if (customList.length) {
-      for (const cp of customList) {
-        opts.push({ id: cp.id, name: `⭐ ${cp.name}`, isCustom: true });
-      }
-    }
-    return opts;
-  }, [customList]);
+  // 组装 provider 下拉项在函数顶部（避免 Hook 顺序变化）
 
   const groupBaseConfig = (group: FieldGroup) => {
     if (group === "llm") {
