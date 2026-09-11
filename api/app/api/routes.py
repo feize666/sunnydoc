@@ -313,31 +313,62 @@ def _iter_parse_zip(data: bytes, progress_cb):
 
     返回 (parsed, media_files)。与 parser.parse_zip + parser.extract_media 等效，
     区别是这里边解析边更新进度，并只遍历一次 zip。
+    额外支持知识库导出包（含 manifest.json）：跳过清单、去掉顶层知识库目录、跳过 media 目录。
     """
     parsed: list[dict] = []
     media_files: list[parser.MediaFile] = []
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         infos = [i for i in zf.infolist() if not i.is_dir()]
         total = len(infos)
+
+        # 检测知识库导出包：含 manifest.json，其父目录即知识库名
+        top_prefix = ""
+        is_kb_export = False
+        for info in infos:
+            nm = parser._decode_zip_filename(info).replace("\\", "/").lstrip("/")
+            if nm.endswith("manifest.json"):
+                is_kb_export = True
+                top_prefix = nm.rsplit("/", 1)[0]
+                break
+
         for idx, info in enumerate(infos, 1):
             name = parser._decode_zip_filename(info)
             ext = parser.ext_of(name)
             raw = zf.read(info)
+            norm = name.replace("\\", "/").lstrip("/")
+
+            # 跳过 manifest.json 清单
+            if norm.endswith("manifest.json"):
+                progress_cb(idx, total, name)
+                continue
+
+            # 导出包：去掉顶层知识库目录前缀
+            if is_kb_export and top_prefix:
+                if norm == top_prefix:
+                    norm = ""
+                elif norm.startswith(top_prefix + "/"):
+                    norm = norm[len(top_prefix) + 1 :]
+
+            # 导出包的 media 目录：跳过（md 内 /api/v1/media 引用保持原样）
+            if is_kb_export and (norm == "media" or norm.startswith("media/")):
+                progress_cb(idx, total, name)
+                continue
+
             if ext in TEXT_EXTS:
                 text = raw.decode("utf-8", errors="replace")
-                parsed.append({"name": name, "ext": ext, "text": text})
+                parsed.append({"name": norm, "ext": ext, "text": text})
             elif ext == ".pdf":
-                parsed.append({"name": name, "ext": ext, "text": parser.parse_pdf(raw)})
+                parsed.append({"name": norm, "ext": ext, "text": parser.parse_pdf(raw)})
             elif ext == ".docx":
-                parsed.append({"name": name, "ext": ext, "text": parser.parse_docx(raw)})
+                parsed.append({"name": norm, "ext": ext, "text": parser.parse_docx(raw)})
             elif ext == ".xlsx":
-                parsed.append({"name": name, "ext": ext, "text": parser.parse_xlsx(raw)})
+                parsed.append({"name": norm, "ext": ext, "text": parser.parse_xlsx(raw)})
             elif ext in parser.MEDIA_EXTS:
-                zip_path = name.lstrip("/")
+                zip_path = norm.lstrip("/")
                 media_files.append(
                     parser.MediaFile(
                         zip_path=zip_path,
-                        filename=name.rsplit("/", 1)[-1],
+                        filename=norm.rsplit("/", 1)[-1],
                         ext=ext,
                         content_type=media.content_type(ext),
                         data=raw,
