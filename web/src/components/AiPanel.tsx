@@ -319,11 +319,12 @@ export function AiPanel({
     setCopiedIndex(null);
   };
 
-  const ask = async () => {
-    const q = input.trim();
+  const ask = async (questionOverride?: string, forceWeb?: boolean) => {
+    const q = (questionOverride ?? input).trim();
     if (!q || loading) return;
-    setInput("");
+    if (!questionOverride) setInput("");
     setLoading(true);
+    const webEnabled = forceWeb ?? enableWeb;
 
     // 先加用户消息，再加空的 AI 占位消息
     setMessages((m) => [...m, { role: "user", content: q }, { role: "ai", content: "" }]);
@@ -336,14 +337,25 @@ export function AiPanel({
     };
 
     let gotError: { status: number; detail: string } | null = null;
+    // 本次请求是否命中本地知识库；命中为空且未开联网时，前端智能提示「是否联网搜索」
+    let ignoreDelta = false;
     try {
-      await chatStream(q, 5, history, enableWeb, (e) => {
+      await chatStream(q, 5, history, webEnabled, (e) => {
         if (e.type === "citations") {
+          const hitsEmpty = e.hits_empty === true;
+          const webAvailable = e.web_available === true;
           updateAi((msg) => ({ ...msg, citations: e.citations ?? [] }));
+          // 本地未命中 + 未开联网 + 联网搜索可用 → 提示用户是否联网
+          if (hitsEmpty && !webEnabled && webAvailable) {
+            ignoreDelta = true;
+            updateAi((msg) => ({ ...msg, suggestWeb: true, content: "" }));
+          }
         } else if (e.type === "sources") {
           updateAi((msg) => ({ ...msg, webSources: e.sources ?? [] }));
         } else if (e.type === "delta") {
-          updateAi((msg) => ({ ...msg, content: msg.content + (e.content ?? "") }));
+          if (!ignoreDelta) {
+            updateAi((msg) => ({ ...msg, content: msg.content + (e.content ?? "") }));
+          }
         } else if (e.type === "error") {
           gotError = { status: e.status ?? 0, detail: e.detail ?? "" };
         }
@@ -371,9 +383,29 @@ export function AiPanel({
         ...msg,
         content: `请求失败（${gotError!.status}）${gotError!.detail ? `：${gotError!.detail}` : ""}\n\n${tip}`,
         error: true,
+        suggestWeb: false,
       }));
     }
     setLoading(false);
+  };
+
+  // 用户点击「联网搜索」按钮：开启联网并重发该问题
+  const retryWithWeb = (question: string) => {
+    if (!question.trim() || loading) return;
+    setEnableWeb(true);
+    // 删除上一条 suggestWeb 占位消息，重新提问
+    setMessages((m) => {
+      const next = [...m];
+      for (let i = next.length - 1; i >= 0; i--) {
+        if (next[i].role === "ai" && next[i].suggestWeb) {
+          next.splice(i, 1);
+          break;
+        }
+      }
+      return next;
+    });
+    // 直接以指定问题重发（强制开启联网，绕过 enableWeb 闭包旧值）
+    setTimeout(() => ask(question, true), 0);
   };
 
   const sortedSessions = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -582,6 +614,40 @@ export function AiPanel({
             >
               {msg.role === "user" ? (
                 msg.content
+              ) : msg.suggestWeb ? (
+                <div className="flex flex-col gap-2.5">
+                  <p className="text-text">
+                    本地知识库中<span className="font-medium text-text">未找到</span>与「{messages[i - 1]?.content ?? ""}」相关的内容。
+                  </p>
+                  <p className="text-[13px] text-muted">我可以联网搜索实时信息来回答，是否为你联网搜索？</p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => retryWithWeb(messages[i - 1]?.content ?? "")}
+                      className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                      </svg>
+                      联网搜索
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // 用户拒绝：移除提示卡片，改为普通提示
+                        setMessages((m) =>
+                          m.map((mm) =>
+                            mm === msg ? { ...mm, suggestWeb: false, content: "已取消联网搜索。你可以换个问法，或补充相关文档后再试。" } : mm,
+                          ),
+                        );
+                      }}
+                      className="rounded-lg border border-line px-3 py-1.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text"
+                    >
+                      暂不
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <AiMarkdown content={msg.content} theme={theme} />
               )}
@@ -648,7 +714,7 @@ export function AiPanel({
         />
         <Tooltip content="发送" className="shrink-0">
           <button
-            onClick={ask}
+            onClick={() => ask()}
             disabled={loading}
             className="btn-accent grid h-[38px] w-[38px] place-items-center rounded-lg text-white disabled:opacity-50"
           >

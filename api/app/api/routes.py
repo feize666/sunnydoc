@@ -993,8 +993,15 @@ def chat_stream(req: ChatRequest, current_user: dict = Depends(get_current_user)
         return f"根据知识库中的「{top['title']}」，找到以下相关内容：\n\n{body}{extra}"
 
     def event_stream():
-        # 1. 先发引用（可能为空）
-        yield f"data: {json.dumps({'type': 'citations', 'citations': citations}, ensure_ascii=False)}\n\n"
+        # 1. 先发引用（含状态：是否本地命中、联网搜索是否可用）
+        meta = {
+            "type": "citations",
+            "citations": citations,
+            "hits_empty": len(hits) == 0,
+            "web_available": bool(web_search.available()),
+            "llm_available": bool(llm.available()),
+        }
+        yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
 
         # 2. 生成回答
         if hits:

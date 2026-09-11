@@ -586,6 +586,9 @@ export interface StreamEvent {
   sources?: WebSource[];
   status?: number;
   detail?: string;
+  hits_empty?: boolean;
+  web_available?: boolean;
+  llm_available?: boolean;
 }
 
 /**

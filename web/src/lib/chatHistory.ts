@@ -6,6 +6,8 @@ export interface Message {
   citations?: Citation[];
   webSources?: WebSource[];
   error?: boolean;
+  /** 是否展示「本地未命中，是否联网搜索」的智能提示卡片 */
+  suggestWeb?: boolean;
 }
 
 export interface ChatSession {
