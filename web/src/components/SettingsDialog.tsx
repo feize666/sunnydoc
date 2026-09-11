@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { CloseIcon, CheckIcon } from "./icons";
 import { Tooltip } from "./Tooltip";
 import { ThemeToggle } from "./ThemeToggle";
@@ -217,6 +217,10 @@ export function SettingsDialog({
   // 切换供应商确认（避免覆盖已编辑的内容）
   const [pendingProviderChange, setPendingProviderChange] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<CustomProvider | null>(null);
+
+  // 遮罩关闭：只在「按下与抬起都在遮罩本身」时才关闭，
+  // 避免拖选文字/下拉内容时 mouseup 落在遮罩上误触发关闭。
+  const overlayDownOnSelf = useRef(false);
 
   // 打开时加载配置
   useEffect(() => {
@@ -514,10 +518,19 @@ export function SettingsDialog({
   };
 
   return (
-    <div className="dialog-overlay" onClick={onClose}>
+    <div
+      className="dialog-overlay"
+      onMouseDown={(e) => {
+        overlayDownOnSelf.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (overlayDownOnSelf.current && e.target === e.currentTarget) onClose();
+        overlayDownOnSelf.current = false;
+      }}
+    >
       <div
         className="dialog-panel flex max-h-[85vh] w-[640px] max-w-[94vw] flex-col"
-        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
           <div className="text-[15px] font-semibold text-text">系统设置</div>
@@ -834,10 +847,19 @@ export function SettingsDialog({
 
       {/* 命名预设对话框 */}
       {saveAsDialog && (
-        <div className="dialog-overlay" onClick={closeSaveAsDialog}>
+        <div
+          className="dialog-overlay"
+          onMouseDown={(e) => {
+            overlayDownOnSelf.current = e.target === e.currentTarget;
+          }}
+          onClick={(e) => {
+            if (overlayDownOnSelf.current && e.target === e.currentTarget) closeSaveAsDialog();
+            overlayDownOnSelf.current = false;
+          }}
+        >
           <div
             className="dialog-panel w-[420px] max-w-[92vw] p-4"
-            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="text-[14px] font-semibold text-text">
               把当前配置另存为命名预设
@@ -874,10 +896,20 @@ export function SettingsDialog({
 
       {/* 切换供应商前确认 */}
       {pendingProviderChange && (
-        <div className="dialog-overlay" onClick={() => setPendingProviderChange(null)}>
+        <div
+          className="dialog-overlay"
+          onMouseDown={(e) => {
+            overlayDownOnSelf.current = e.target === e.currentTarget;
+          }}
+          onClick={(e) => {
+            if (overlayDownOnSelf.current && e.target === e.currentTarget)
+              setPendingProviderChange(null);
+            overlayDownOnSelf.current = false;
+          }}
+        >
           <div
             className="dialog-panel w-[420px] max-w-[92vw] p-4"
-            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="text-[14px] font-semibold text-text">切换供应商会覆盖已编辑内容</div>
             <div className="mt-2 text-[12px] text-faint">
