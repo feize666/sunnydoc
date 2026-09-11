@@ -244,7 +244,7 @@ function ToolBtn({
         type="button"
         onMouseDown={(e) => e.preventDefault()}
         onClick={onClick}
-        className={`flex h-9 min-w-[34px] items-center justify-center rounded-md px-2 text-muted transition-colors ${
+        className={`flex h-9 min-w-[34px] shrink-0 items-center justify-center rounded-md px-2 text-muted transition-colors ${
           active ? "bg-active text-accent" : "hover:bg-hover hover:text-text"
         }`}
       >
@@ -582,13 +582,13 @@ export function RichEditor({
   return (
     <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
       {/* 格式工具栏 */}
-      <div className="flex flex-wrap items-center gap-0.5 border-b border-line px-2 py-1.5">
+      <div className="flex items-center gap-0.5 overflow-x-auto border-b border-line px-2 py-1.5 [scrollbar-width:thin]">
         {/* 标题下拉 */}
         <select
           value={headingValue}
           onChange={(e) => setHeading(e.target.value)}
           onMouseDown={(e) => e.preventDefault()}
-          className="h-8 w-[86px] cursor-pointer rounded-md border border-line bg-background px-1.5 text-[13px] text-text outline-none hover:bg-hover"
+          className="h-8 w-[86px] shrink-0 cursor-pointer rounded-md border border-line bg-background px-1.5 text-[13px] text-text outline-none hover:bg-hover"
           title="标题"
         >
           <option value="p">正文</option>
@@ -619,7 +619,7 @@ export function RichEditor({
         <ToolDivider />
 
         {/* 文字颜色 */}
-        <div className="relative">
+        <div className="relative shrink-0">
           <Tooltip content="文字颜色">
             <button
               type="button"
@@ -686,7 +686,7 @@ export function RichEditor({
             onChange={(e) => setCodeLang(e.target.value)}
             onMouseDown={(e) => e.preventDefault()}
             disabled={!editor.isActive("codeBlock")}
-            className="h-8 w-[72px] cursor-pointer rounded-md border border-line bg-background px-1 text-[12px] text-muted outline-none hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
+            className="h-8 w-[72px] shrink-0 cursor-pointer rounded-md border border-line bg-background px-1 text-[12px] text-muted outline-none hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
             title="代码块语言"
           >
             {CODE_LANGS.map((l) => (
@@ -702,7 +702,7 @@ export function RichEditor({
 
         <ToolDivider />
 
-        <div className="relative">
+        <div className="relative shrink-0">
           <ToolBtn title="链接" shortcut="⌘K" onClick={setLink} active={editor.isActive("link")}>
             <LinkIcon size={17} />
           </ToolBtn>
