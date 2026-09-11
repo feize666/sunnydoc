@@ -59,6 +59,7 @@ class DocStore:
         self._share_links: list[dict[str, Any]] = []
         self._comments: list[dict[str, Any]] = []
         self._notifications: list[dict[str, Any]] = []
+        self._audit_logs: list[dict[str, Any]] = []
         # 启动时判定存储后端：PostgreSQL 可用则用库，否则 JSON 降级
         if db.available():
             self._backend = "db"
@@ -94,6 +95,7 @@ class DocStore:
                 self._share_links = data.get("share_links", [])
                 self._comments = data.get("comments", [])
                 self._notifications = data.get("notifications", [])
+                self._audit_logs = data.get("audit_logs", [])
         # 补齐旧数据缺失的字段，保证 all() 返回结构一致
         for d in self._docs:
             d.setdefault("folder_id", None)
@@ -138,6 +140,7 @@ class DocStore:
                     "share_links": self._share_links,
                     "comments": self._comments,
                     "notifications": self._notifications,
+                    "audit_logs": self._audit_logs,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -1247,6 +1250,40 @@ class DocStore:
         if cnt:
             self._save()
         return cnt
+
+    # ---------- 操作审计日志 ----------
+
+    def add_audit_log(
+        self,
+        user_id: str | None,
+        action: str,
+        target_type: str,
+        target_id: str | None,
+        detail: str,
+    ) -> dict[str, Any]:
+        if self._backend == "db":
+            return db.add_audit_log(user_id, action, target_type, target_id, detail)
+        entry = {
+            "id": uuid.uuid4().hex,
+            "user_id": user_id,
+            "action": action,
+            "target_type": target_type,
+            "target_id": target_id,
+            "detail": detail,
+            "created_at": time.time(),
+        }
+        self._audit_logs.append(entry)
+        self._save()
+        return entry
+
+    def list_audit_logs(self, limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
+        if self._backend == "db":
+            return db.list_audit_logs(limit, offset)
+        return sorted(
+            self._audit_logs,
+            key=lambda a: a.get("created_at", 0),
+            reverse=True,
+        )[offset : offset + limit]
 
 
 store = DocStore()

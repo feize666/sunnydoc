@@ -257,6 +257,21 @@ def init() -> None:
             """
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications (user_id, read)")
+        # 操作审计日志
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id varchar PRIMARY KEY,
+                user_id varchar,
+                action varchar,
+                target_type varchar,
+                target_id varchar,
+                detail text,
+                created_at double precision
+            )
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs (created_at)")
     conn.commit()
 
 
@@ -1724,3 +1739,60 @@ def mark_all_notifications_read(user_id: str) -> int:
         updated = cur.rowcount
     conn.commit()
     return updated
+
+
+# ---------- 操作审计日志 ----------
+
+def _audit_from_row(row: Any) -> dict[str, Any]:
+    return {
+        "id": row[0],
+        "user_id": row[1],
+        "action": row[2],
+        "target_type": row[3],
+        "target_id": row[4],
+        "detail": row[5],
+        "created_at": row[6],
+    }
+
+
+_AUDIT_COLS = "id, user_id, action, target_type, target_id, detail, created_at"
+
+
+def add_audit_log(
+    user_id: str | None,
+    action: str,
+    target_type: str,
+    target_id: str | None,
+    detail: str,
+) -> dict[str, Any]:
+    """写入一条审计日志。"""
+    aid = uuid.uuid4().hex
+    created_at = time.time()
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO audit_logs (id, user_id, action, target_type, target_id, detail, created_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (aid, user_id, action, target_type, target_id, detail, created_at),
+        )
+    conn.commit()
+    return {
+        "id": aid,
+        "user_id": user_id,
+        "action": action,
+        "target_type": target_type,
+        "target_id": target_id,
+        "detail": detail,
+        "created_at": created_at,
+    }
+
+
+def list_audit_logs(limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
+    """按时间倒序返回审计日志。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            f"SELECT {_AUDIT_COLS} FROM audit_logs ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            (limit, offset),
+        )
+        return [_audit_from_row(r) for r in cur.fetchall()]

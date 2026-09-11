@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CloseIcon, PlusIcon } from "./icons";
+import { AuditLogView } from "./AuditLogView";
 
 function formatTime(ts?: number): string {
   if (!ts) return "-";
@@ -38,6 +39,7 @@ export function UserManagementView({
 
   const [target, setTarget] = useState<EditTarget>(null);
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
+  const [tab, setTab] = useState<"users" | "audit">("users");
 
   const refresh = useCallback(async () => {
     try {
@@ -71,18 +73,43 @@ export function UserManagementView({
             <div className="text-[16px] font-semibold text-text">用户管理</div>
             <div className="text-[12px] text-faint">管理账号、角色与状态</div>
           </div>
+          <div className="ml-4 flex items-center gap-1 rounded-lg border border-line bg-surface p-0.5">
+            <button
+              onClick={() => setTab("users")}
+              className={`rounded-md px-3 py-1 text-[13px] transition-colors ${
+                tab === "users" ? "bg-accent-soft text-accent" : "text-muted hover:text-text"
+              }`}
+            >
+              用户
+            </button>
+            <button
+              onClick={() => setTab("audit")}
+              className={`rounded-md px-3 py-1 text-[13px] transition-colors ${
+                tab === "audit" ? "bg-accent-soft text-accent" : "text-muted hover:text-text"
+              }`}
+            >
+              操作日志
+            </button>
+          </div>
         </div>
-        <button
-          onClick={() => setTarget({ mode: "create" })}
-          className="btn btn-accent text-white"
-        >
-          <PlusIcon size={14} />
-          新增用户
-        </button>
+        {tab === "users" && (
+          <button
+            onClick={() => setTarget({ mode: "create" })}
+            className="btn btn-accent text-white"
+          >
+            <PlusIcon size={14} />
+            新增用户
+          </button>
+        )}
       </header>
 
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-4xl px-6 py-6">
+      {tab === "audit" ? (
+        <div className="flex-1 overflow-y-auto">
+          <AuditLogView />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-4xl px-6 py-6">
           {error && (
             <div className="mb-4 rounded-md border border-danger/40 bg-danger-soft px-3 py-2 text-xs text-danger">
               {error}
@@ -184,8 +211,9 @@ export function UserManagementView({
               </table>
             </div>
           )}
+          </div>
         </div>
-      </div>
+      )}
 
       {target && (
         <UserFormDialog

@@ -1,9 +1,13 @@
-"""文档解析服务：多格式提取文本 + zip 媒体提取"""
+"""文档解析服务：多格式提取文本 + zip 媒体提取 + 扫描件 OCR"""
 from __future__ import annotations
 
 import io
+import os
 import posixpath
 import re
+import shutil
+import subprocess
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,7 +54,7 @@ def _decode_zip_filename(info: zipfile.ZipInfo) -> str:
 
 
 def parse_pdf(data: bytes) -> str:
-    """用 PyMuPDF 提取 PDF 文本"""
+    """用 PyMuPDF 提取 PDF 文本；无文字层（扫描件）时回退 OCR。"""
     import pymupdf
 
     doc = pymupdf.open(stream=data, filetype="pdf")
@@ -58,7 +62,60 @@ def parse_pdf(data: bytes) -> str:
     for page in doc:
         parts.append(page.get_text("text"))
     doc.close()
+    text = "\n\n".join(parts)
+
+    # 扫描件检测：文字层过少（<50 字符）且 OCR 可用时，逐页渲染 + OCR
+    if len(text.strip()) < 50 and _ocr_available():
+        ocr_text = _ocr_pdf(data)
+        if ocr_text.strip():
+            return ocr_text
+    return text
+
+
+def _ocr_available() -> bool:
+    """检测系统是否安装 tesseract。"""
+    return shutil.which("tesseract") is not None
+
+
+def _ocr_pdf(data: bytes) -> str:
+    """扫描件 PDF：逐页渲染成 PNG 并用 tesseract OCR 识别。"""
+    import pymupdf
+
+    doc = pymupdf.open(stream=data, filetype="pdf")
+    parts: list[str] = []
+    try:
+        for page in doc:
+            pix = page.get_pixmap(dpi=200)
+            png = pix.tobytes("png")
+            text = _ocr_png(png)
+            if text.strip():
+                parts.append(text.strip())
+    finally:
+        doc.close()
     return "\n\n".join(parts)
+
+
+def _ocr_png(png: bytes) -> str:
+    """调用 tesseract 识别单张 PNG（中文简体 + 英文）。"""
+    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    tmp_path = tmp.name
+    try:
+        tmp.write(png)
+        tmp.close()
+        result = subprocess.run(
+            ["tesseract", tmp_path, "stdout", "-l", "chi_sim+eng", "--psm", "6"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        return result.stdout or ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 def parse_docx(data: bytes) -> str:

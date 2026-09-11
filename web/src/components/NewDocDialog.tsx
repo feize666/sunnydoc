@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createDocument } from "@/lib/api";
 import { CloseIcon } from "./icons";
+import { DOC_TEMPLATES, getTemplate } from "@/lib/templates";
 
 export function NewDocDialog({
   open,
@@ -17,6 +18,7 @@ export function NewDocDialog({
 }) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [templateId, setTemplateId] = useState("blank");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,7 +27,14 @@ export function NewDocDialog({
   const reset = () => {
     setTitle("");
     setContent("");
+    setTemplateId("blank");
     setError(null);
+  };
+
+  const pickTemplate = (id: string) => {
+    setTemplateId(id);
+    const t = getTemplate(id);
+    setContent(t ? t.content : "");
   };
 
   const handleCreate = async () => {
@@ -50,7 +59,7 @@ export function NewDocDialog({
   return (
     <div className="dialog-overlay" onClick={onClose}>
       <div
-        className="dialog-panel w-[560px] max-w-[92vw]"
+        className="dialog-panel w-[640px] max-w-[94vw]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
@@ -64,6 +73,31 @@ export function NewDocDialog({
         </div>
 
         <div className="p-4">
+          {/* 模板选择 */}
+          <label className="mb-2 block text-xs text-muted">选择模板</label>
+          <div className="mb-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
+            {DOC_TEMPLATES.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => pickTemplate(t.id)}
+                className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-2.5 text-center transition-colors ${
+                  templateId === t.id
+                    ? "border-accent/50 bg-accent-soft"
+                    : "border-line bg-background hover:border-accent/40 hover:bg-hover"
+                }`}
+              >
+                <span className="text-lg leading-none">{t.icon}</span>
+                <span
+                  className={`text-[11px] leading-tight ${
+                    templateId === t.id ? "text-accent" : "text-text"
+                  }`}
+                >
+                  {t.name}
+                </span>
+              </button>
+            ))}
+          </div>
+
           <label className="mb-1 block text-xs text-muted">标题</label>
           <input
             autoFocus
@@ -94,10 +128,7 @@ export function NewDocDialog({
           )}
 
           <div className="mt-4 flex justify-end gap-2">
-            <button
-              onClick={onClose}
-              className="btn btn-secondary"
-            >
+            <button onClick={onClose} className="btn btn-secondary">
               取消
             </button>
             <button

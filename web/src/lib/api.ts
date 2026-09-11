@@ -916,6 +916,25 @@ export async function deleteUser(id: string): Promise<void> {
   await request(`/users/${id}`, { method: "DELETE" });
 }
 
+// —— 操作审计日志（仅管理员） ——
+
+export interface AuditLog {
+  id: string;
+  action: string;
+  target_type: string;
+  target_id?: string | null;
+  detail: string;
+  created_at: number;
+  user: { id: string | null; nickname: string };
+}
+
+export async function listAuditLogs(limit = 200, offset = 0): Promise<AuditLog[]> {
+  const data = await request<{ logs: AuditLog[] }>(
+    `/audit-logs?limit=${limit}&offset=${offset}`,
+  );
+  return Array.isArray(data?.logs) ? data.logs : [];
+}
+
 export async function resetUserPassword(
   id: string,
   newPassword: string,

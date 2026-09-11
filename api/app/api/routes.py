@@ -67,6 +67,14 @@ def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
     return current_user
 
 
+def _audit(user: dict, action: str, target_type: str, target_id: str | None, detail: str) -> None:
+    """写入审计日志（失败静默，不影响主流程）。"""
+    try:
+        store.add_audit_log(user.get("id"), action, target_type, target_id, detail)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 class ChatRequest(BaseModel):
     query: str
     top_k: int = DEFAULT_TOP_K
@@ -761,6 +769,7 @@ def create_document(req: CreateDocumentRequest, current_user: dict = Depends(get
         user_id=current_user["id"],
         type=req.type,
     )
+    _audit(current_user, "create", "doc", doc["id"], f"创建文档「{doc['title']}」")
     return {"id": doc["id"], "title": doc["title"], "kb_id": doc.get("kb_id")}
 
 
@@ -1088,6 +1097,7 @@ def update_document(
     doc = store.update(doc_id, user_id=current_user["id"], **kwargs)
     if not doc:
         raise HTTPException(status_code=404, detail="文档不存在")
+    _audit(current_user, "update", "doc", doc["id"], f"更新文档「{doc['title']}」")
     return {
         "id": doc["id"],
         "title": doc["title"],
@@ -1098,7 +1108,9 @@ def update_document(
 
 @router.delete("/documents/{doc_id}")
 def delete_document(doc_id: str, current_user: dict = Depends(get_current_user)):
+    doc = store.get(doc_id, current_user["id"])
     if store.delete(doc_id, current_user["id"]):
+        _audit(current_user, "delete", "doc", doc_id, f"删除文档「{(doc or {}).get('title', doc_id)}」")
         return {"deleted": doc_id}
     raise HTTPException(status_code=404, detail="文档不存在")
 
@@ -1194,6 +1206,7 @@ def create_kb(req: CreateKBRequest, current_user: dict = Depends(get_current_use
     if not name:
         raise HTTPException(status_code=400, detail="名称不能为空")
     kb = store.create_kb(name=name, description=req.description, user_id=current_user["id"])
+    _audit(current_user, "create", "kb", kb["id"], f"创建知识库「{kb['name']}」")
     return {
         "id": kb["id"],
         "name": kb["name"],
@@ -1237,7 +1250,9 @@ def update_kb(
 
 @router.delete("/kbs/{kb_id}")
 def delete_kb(kb_id: str, current_user: dict = Depends(get_current_user)):
+    kb = store.get_kb(kb_id, current_user["id"])
     if store.delete_kb(kb_id, current_user["id"]):
+        _audit(current_user, "delete", "kb", kb_id, f"删除知识库「{(kb or {}).get('name', kb_id)}」")
         return {"deleted": kb_id}
     raise HTTPException(status_code=404, detail="知识库不存在")
 
@@ -1293,6 +1308,7 @@ def add_share(
         kb_id,
         f"将知识库「{kb_name}」共享给了你（{perm_label}）",
     )
+    _audit(current_user, "share", "kb", kb_id, f"将知识库「{kb_name}」共享给 {target['username']}（{perm_label}）")
     return {
         "user_id": target["id"],
         "username": target["username"],
@@ -1370,6 +1386,38 @@ def get_stats(current_user: dict = Depends(get_current_user)):
         "total_favorites": len(favorites),
         "recent_count": len(recent),
     }
+
+
+# ---------- 操作审计日志 ----------
+
+@router.get("/audit-logs")
+def list_audit_logs(
+    limit: int = 200,
+    offset: int = 0,
+    current_user: dict = Depends(get_current_user),
+):
+    """操作审计日志（仅管理员）。"""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    logs = store.list_audit_logs(limit, offset)
+    items = []
+    for lg in logs:
+        u = store.get_user_by_id(lg.get("user_id") or "") if lg.get("user_id") else None
+        items.append(
+            {
+                "id": lg["id"],
+                "action": lg["action"],
+                "target_type": lg["target_type"],
+                "target_id": lg.get("target_id"),
+                "detail": lg["detail"],
+                "created_at": lg["created_at"],
+                "user": {
+                    "id": lg.get("user_id"),
+                    "nickname": (u or {}).get("nickname") or (u or {}).get("username") or "系统",
+                },
+            }
+        )
+    return {"logs": items}
 
 
 # ---------- 导出 ----------
@@ -1619,6 +1667,7 @@ def duplicate_document(doc_id: str, current_user: dict = Depends(get_current_use
     new_doc = store.duplicate(doc_id, current_user["id"])
     if new_doc is None:
         raise HTTPException(status_code=404, detail="文档不存在")
+    _audit(current_user, "duplicate", "doc", new_doc["id"], f"复制文档「{new_doc['title']}」")
     return {"id": new_doc["id"], "title": new_doc["title"], "kb_id": new_doc.get("kb_id")}
 
 
@@ -1819,6 +1868,7 @@ def add_document_comment(
         if parent and parent.get("user_id") != current_user["id"]:
             store.add_notification(parent["user_id"], "reply", current_user["id"], doc_id, kb_id, "回复了你的评论")
 
+    _audit(current_user, "comment", "doc", doc_id, f"评论文档「{(doc or {}).get('title', doc_id)}」")
     return {
         "id": c["id"],
         "doc_id": c["doc_id"],
@@ -1845,6 +1895,7 @@ def delete_document_comment(comment_id: str, current_user: dict = Depends(get_cu
     if c.get("user_id") != current_user["id"] and current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="无权删除他人评论")
     store.delete_comment(comment_id)
+    _audit(current_user, "comment_delete", "doc", c.get("doc_id"), "删除评论")
     return {"ok": True}
 
 
