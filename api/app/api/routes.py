@@ -177,6 +177,33 @@ class AISettingsRequest(BaseModel):
     rerank_model: str = ""
 
 
+class AITestRequest(BaseModel):
+    """测试连通性 / 拉模型列表的入参：可指定当前编辑中的 base_url/key/model，
+    也可传 saved=true 表示读取已保存配置。
+    """
+
+    base_url: str = ""
+    api_key: str = ""
+    model: str = ""
+    saved: bool = False  # true 时使用当前已保存配置
+
+
+class CustomProvider(BaseModel):
+    """用户命名的自定义供应商预设。"""
+
+    id: str = ""
+    name: str = ""
+    provider: str = "custom"
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    llm_model: str = ""
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""
+    embedding_model: str = ""
+    rerank_base_url: str = ""
+    rerank_model: str = ""
+
+
 class AddShareRequest(BaseModel):
     username: str
     permission: str  # read / write
@@ -486,6 +513,129 @@ def update_ai_settings(req: AISettingsRequest, admin: dict = Depends(require_adm
 
     settings.set_json("ai_config", payload)
     return {"ok": True, "provider": payload["provider"]}
+
+
+def _resolve_test_params(req: AITestRequest) -> tuple[str, str, str]:
+    """从请求 + 已保存配置中解析 base_url/api_key/model。"""
+    saved = ai_config() if req.saved else {}
+    base = (req.base_url or saved.get("llm_base_url") or "").strip()
+    # api_key: 请求中空时使用已保存的（GET 时已脱敏，不能直接当真实 key 用 —— 仅允许 saved=true）
+    if req.api_key:
+        key = req.api_key.strip()
+    elif req.saved:
+        key = (saved.get("llm_api_key") or "").strip()
+    else:
+        key = ""
+    model = (req.model or saved.get("llm_model") or "").strip()
+    return base, key, model
+
+
+@router.post("/settings/ai/test")
+def test_ai_settings(req: AITestRequest, admin: dict = Depends(require_admin)):
+    """连通性测试：用 ping 调一次 chat/completions，返回 ok/status/detail。"""
+    base, key, model = _resolve_test_params(req)
+    if not base:
+        return {"ok": False, "status": -1, "detail": "请填写 Base URL", "content": ""}
+    if not key:
+        return {"ok": False, "status": -1, "detail": "请填写 API Key（已保存的密钥不会回显，无法用于测试）", "content": ""}
+    if not model:
+        return {"ok": False, "status": -1, "detail": "请填写模型名（或先点「获取模型列表」）", "content": ""}
+    return llm.test_connection(base, key, model)
+
+
+@router.post("/settings/ai/models")
+def list_ai_models(req: AITestRequest, admin: dict = Depends(require_admin)):
+    """拉取 {base_url}/models 的模型列表。"""
+    saved = ai_config() if req.saved else {}
+    base = (req.base_url or saved.get("llm_base_url") or "").strip()
+    if req.api_key:
+        key = req.api_key.strip()
+    elif req.saved:
+        key = (saved.get("llm_api_key") or "").strip()
+    else:
+        key = ""
+    if not base:
+        return {"ok": False, "status": -1, "models": [], "detail": "请填写 Base URL"}
+    if not key:
+        return {"ok": False, "status": -1, "models": [], "detail": "请填写 API Key（已保存的密钥不会回显，需重新填入）"}
+    return llm.fetch_models(base, key)
+
+
+CUSTOM_PROVIDERS_KEY = "custom_providers"
+
+
+def _load_custom_providers() -> list[dict]:
+    return settings.get_json(CUSTOM_PROVIDERS_KEY, []) or []
+
+
+def _save_custom_providers(items: list[dict]) -> None:
+    settings.set_json(CUSTOM_PROVIDERS_KEY, items)
+
+
+def _mask_custom(p: dict) -> dict:
+    """对自定义预设的 key 做脱敏。"""
+    out = dict(p)
+    if out.get("llm_api_key"):
+        out["llm_api_key"] = _mask_secret(out["llm_api_key"])
+    if out.get("embedding_api_key"):
+        out["embedding_api_key"] = _mask_secret(out["embedding_api_key"])
+    return out
+
+
+@router.get("/settings/ai/custom-providers")
+def list_custom_providers(admin: dict = Depends(require_admin)):
+    items = _load_custom_providers()
+    return {"providers": [_mask_custom(p) for p in items]}
+
+
+@router.post("/settings/ai/custom-providers")
+def upsert_custom_provider(req: CustomProvider, admin: dict = Depends(require_admin)):
+    """新增/更新用户命名的供应商预设。空 id 自动生成。"""
+    items = _load_custom_providers()
+    name = (req.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="请填写预设名称")
+    new_id = (req.id or "").strip() or f"cp-{int(time.time() * 1000)}"
+    # 已存在 id 则覆盖，否则追加
+    existing_idx = next((i for i, p in enumerate(items) if p.get("id") == new_id), -1)
+    # key 处理：传了非空 key 才覆盖（空串视为保留原 key）
+    llm_key = req.llm_api_key.strip()
+    emb_key = req.embedding_api_key.strip()
+    if existing_idx >= 0:
+        old = items[existing_idx]
+        if not llm_key:
+            llm_key = old.get("llm_api_key", "")
+        if not emb_key:
+            emb_key = old.get("embedding_api_key", "")
+    payload = {
+        "id": new_id,
+        "name": name,
+        "provider": req.provider or "custom",
+        "llm_base_url": req.llm_base_url.strip(),
+        "llm_api_key": llm_key,
+        "llm_model": req.llm_model.strip(),
+        "embedding_base_url": req.embedding_base_url.strip(),
+        "embedding_api_key": emb_key,
+        "embedding_model": req.embedding_model.strip(),
+        "rerank_base_url": req.rerank_base_url.strip(),
+        "rerank_model": req.rerank_model.strip(),
+    }
+    if existing_idx >= 0:
+        items[existing_idx] = payload
+    else:
+        items.append(payload)
+    _save_custom_providers(items)
+    return {"ok": True, "id": new_id, "provider": _mask_custom(payload)}
+
+
+@router.delete("/settings/ai/custom-providers/{cp_id}")
+def delete_custom_provider(cp_id: str, admin: dict = Depends(require_admin)):
+    items = _load_custom_providers()
+    new_items = [p for p in items if p.get("id") != cp_id]
+    if len(new_items) == len(items):
+        return {"ok": False, "not_found": True}
+    _save_custom_providers(new_items)
+    return {"ok": True}
 
 
 @router.get("/search")
@@ -841,35 +991,50 @@ def chat_stream(req: ChatRequest, current_user: dict = Depends(get_current_user)
         if hits:
             # 知识库命中 → RAG
             contexts = [h["text"] for h in hits]
-            got = False
-            for piece in llm.generate_stream(req.query, contexts, history):
-                got = True
-                yield f"data: {json.dumps({'type': 'delta', 'content': piece}, ensure_ascii=False)}\n\n"
-            if not got:
-                answer = qa.answer(req.query, req.top_k, history, current_user["id"])["answer"]
-                yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
-        elif req.enable_web and web_search.available():
-            # 未命中 + 联网开 → 联网搜索（流式，含来源）
-            got = False
-            for ev in web_search.search_stream(req.query, history):
-                got = True
-                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
-            if not got:
-                answer = qa.answer(req.query, req.top_k, history, current_user["id"])["answer"]
-                yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
-        else:
-            # 未命中 + 无联网/未开 → 通用对话
-            if llm.available():
+            try:
                 got = False
-                for piece in llm.generate_stream(req.query, [], history):
+                for piece in llm.generate_stream(req.query, contexts, history):
                     got = True
                     yield f"data: {json.dumps({'type': 'delta', 'content': piece}, ensure_ascii=False)}\n\n"
                 if not got:
                     answer = qa.answer(req.query, req.top_k, history, current_user["id"])["answer"]
                     yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
-            else:
-                answer = qa.answer(req.query, req.top_k, history, current_user["id"])["answer"]
-                yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
+            except llm.LLMError as e:
+                yield f"data: {json.dumps({'type': 'error', 'status': e.status, 'detail': e.detail}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                return
+        elif req.enable_web and web_search.available():
+            # 未命中 + 联网开 → 联网搜索（流式，含来源）
+            try:
+                got = False
+                for ev in web_search.search_stream(req.query, history):
+                    got = True
+                    yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+                if not got:
+                    answer = qa.answer(req.query, req.top_k, history, current_user["id"])["answer"]
+                    yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
+            except llm.LLMError as e:
+                yield f"data: {json.dumps({'type': 'error', 'status': e.status, 'detail': e.detail}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                return
+        else:
+            # 未命中 + 无联网/未开 → 通用对话
+            try:
+                if llm.available():
+                    got = False
+                    for piece in llm.generate_stream(req.query, [], history):
+                        got = True
+                        yield f"data: {json.dumps({'type': 'delta', 'content': piece}, ensure_ascii=False)}\n\n"
+                    if not got:
+                        answer = qa.answer(req.query, req.top_k, history, current_user["id"])["answer"]
+                        yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
+                else:
+                    answer = qa.answer(req.query, req.top_k, history, current_user["id"])["answer"]
+                    yield f"data: {json.dumps({'type': 'delta', 'content': answer}, ensure_ascii=False)}\n\n"
+            except llm.LLMError as e:
+                yield f"data: {json.dumps({'type': 'error', 'status': e.status, 'detail': e.detail}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                return
 
         # 3. 结束标记
         yield f"data: {json.dumps({'type': 'done'})}\n\n"

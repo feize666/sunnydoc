@@ -1,4 +1,5 @@
-"""LLM 服务：OpenAI 兼容接口，未配置 API key 时降级为 None"""
+"""LLM 服务：OpenAI 兼容接口，未配置 API key 时降级为 None
+失败时抛出 LLMError（含 status + 错误体），供上层透传给前端。"""
 from __future__ import annotations
 
 import json
@@ -23,6 +24,15 @@ CHAT_SYSTEM_PROMPT = (
 )
 
 
+class LLMError(Exception):
+    """LLM 调用失败（HTTP 非 2xx 或网络异常），status=-1 表示网络异常。"""
+
+    def __init__(self, status: int, detail: str):
+        self.status = status
+        self.detail = detail
+        super().__init__(f"LLM {status}: {detail}")
+
+
 def _cfg() -> dict:
     """每次调用时动态读取配置（支持运行时更换 key/供应商）。"""
     return ai_config()
@@ -30,6 +40,27 @@ def _cfg() -> dict:
 
 def available() -> bool:
     return bool(_cfg().get("llm_api_key"))
+
+
+def _url() -> str:
+    base = (_cfg().get("llm_base_url") or "").rstrip("/")
+    if not base:
+        raise LLMError(-1, "Base URL 未配置")
+    return f"{base}/chat/completions"
+
+
+def _auth_header() -> dict:
+    key = _cfg().get("llm_api_key") or ""
+    if not key:
+        raise LLMError(-1, "API Key 未配置")
+    return {"Authorization": f"Bearer {key}"}
+
+
+def _model_or_err() -> str:
+    m = _cfg().get("llm_model") or ""
+    if not m:
+        raise LLMError(-1, "模型名未配置")
+    return m
 
 
 def _build_messages(
@@ -43,7 +74,6 @@ def _build_messages(
             f"[{i + 1}] {c}" for i, c in enumerate(contexts)
         )
         messages.append({"role": "system", "content": RAG_SYSTEM_PROMPT})
-        # 追加历史（role 已是 user/assistant）
         messages.extend(history)
         messages.append(
             {"role": "user", "content": f"文档片段：\n{context_text}\n\n问题：{query}"}
@@ -56,19 +86,17 @@ def _build_messages(
     return messages
 
 
-def _build_payload(
-    query: str,
-    contexts: list[str],
-    history: list[dict[str, str]],
-    stream: bool,
-) -> dict[str, Any]:
-    return {
-        "model": _cfg().get("llm_model"),
-        "messages": _build_messages(query, contexts, history),
-        "temperature": 0.3,
-        "max_tokens": 800,
-        "stream": stream,
-    }
+def _check_response(resp: httpx.Response) -> None:
+    if resp.status_code >= 400:
+        # 尝试解析 JSON 中的 error.message；否则取前 200 字 body
+        detail = ""
+        try:
+            j = resp.json()
+            err = j.get("error") or {}
+            detail = err.get("message") or j.get("message") or resp.text
+        except Exception:  # noqa: BLE001
+            detail = resp.text
+        raise LLMError(resp.status_code, (detail or "")[:400])
 
 
 def generate(
@@ -76,29 +104,37 @@ def generate(
     contexts: list[str],
     history: list[dict[str, str]] | None = None,
 ) -> str | None:
-    """基于检索上下文用 LLM 生成回答；未配置时返回 None"""
+    """基于检索上下文用 LLM 生成回答；未配置时返回 None；错误时抛出 LLMError。"""
     if not available():
         return None
     history = history or []
-
     try:
         resp = httpx.post(
-            f"{_cfg().get('llm_base_url', '').rstrip('/')}/chat/completions",
-            headers={"Authorization": f"Bearer {_cfg().get('llm_api_key')}"},
-            json=_build_payload(query, contexts, history, stream=False),
+            _url(),
+            headers=_auth_header(),
+            json={
+                "model": _model_or_err(),
+                "messages": _build_messages(query, contexts, history),
+                "temperature": 0.3,
+                "max_tokens": 800,
+                "stream": False,
+            },
             timeout=60.0,
         )
-        resp.raise_for_status()
+        _check_response(resp)
         data: dict[str, Any] = resp.json()
         content = data["choices"][0]["message"]["content"]
         return content.strip() or None
-    except (httpx.HTTPError, KeyError, IndexError, json.JSONDecodeError):
-        # 任何异常都降级，不影响主流程
-        return None
+    except LLMError:
+        raise
+    except httpx.HTTPError as e:
+        raise LLMError(-1, f"网络异常: {e}") from e
+    except (KeyError, IndexError, json.JSONDecodeError) as e:
+        raise LLMError(-1, f"响应解析失败: {e}") from e
 
 
 def summarize(text: str) -> str | None:
-    """用 LLM 生成文档摘要；未配置时返回 None。"""
+    """用 LLM 生成文档摘要；未配置时返回 None；错误时抛出 LLMError。"""
     if not available():
         return None
     prompt = (
@@ -108,10 +144,10 @@ def summarize(text: str) -> str | None:
     )
     try:
         resp = httpx.post(
-            f"{_cfg().get('llm_base_url', '').rstrip('/')}/chat/completions",
-            headers={"Authorization": f"Bearer {_cfg().get('llm_api_key')}"},
+            _url(),
+            headers=_auth_header(),
             json={
-                "model": _cfg().get("llm_model"),
+                "model": _model_or_err(),
                 "messages": [
                     {"role": "system", "content": "你是文档摘要助手，只输出简洁准确的中文摘要。"},
                     {"role": "user", "content": prompt},
@@ -122,11 +158,15 @@ def summarize(text: str) -> str | None:
             },
             timeout=60.0,
         )
-        resp.raise_for_status()
+        _check_response(resp)
         data: dict[str, Any] = resp.json()
         return (data["choices"][0]["message"]["content"] or "").strip() or None
-    except (httpx.HTTPError, KeyError, IndexError, json.JSONDecodeError):
-        return None
+    except LLMError:
+        raise
+    except httpx.HTTPError as e:
+        raise LLMError(-1, f"网络异常: {e}") from e
+    except (KeyError, IndexError, json.JSONDecodeError) as e:
+        raise LLMError(-1, f"响应解析失败: {e}") from e
 
 
 def generate_stream(
@@ -134,20 +174,35 @@ def generate_stream(
     contexts: list[str],
     history: list[dict[str, str]] | None = None,
 ) -> Iterator[str]:
-    """流式生成，逐段 yield 文本增量；失败时 yield 空（由调用方降级）"""
+    """流式生成，逐段 yield 文本增量；失败时抛 LLMError。"""
     if not available():
         return
     history = history or []
 
+    # 先打开请求；调用方在外层 try/except 接收 LLMError
     try:
         with httpx.stream(
             "POST",
-            f"{_cfg().get('llm_base_url', '').rstrip('/')}/chat/completions",
-            headers={"Authorization": f"Bearer {_cfg().get('llm_api_key')}"},
-            json=_build_payload(query, contexts, history, stream=True),
+            _url(),
+            headers=_auth_header(),
+            json={
+                "model": _model_or_err(),
+                "messages": _build_messages(query, contexts, history),
+                "temperature": 0.3,
+                "max_tokens": 800,
+                "stream": True,
+            },
             timeout=60.0,
         ) as resp:
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                detail = ""
+                try:
+                    j = resp.json()
+                    err = j.get("error") or {}
+                    detail = err.get("message") or j.get("message") or resp.read().decode("utf-8", errors="ignore")
+                except Exception:  # noqa: BLE001
+                    detail = resp.read().decode("utf-8", errors="ignore")
+                raise LLMError(resp.status_code, (detail or "")[:400])
             for line in resp.iter_lines():
                 if not line or not line.startswith("data:"):
                     continue
@@ -162,5 +217,126 @@ def generate_stream(
                         yield content
                 except (json.JSONDecodeError, KeyError, IndexError):
                     continue
-    except (httpx.HTTPError, json.JSONDecodeError):
-        return
+    except LLMError:
+        raise
+    except (httpx.HTTPError, json.JSONDecodeError) as e:
+        raise LLMError(-1, f"流式请求失败: {e}") from e
+
+
+# ---------- 独立测试 / 拉模型 ----------
+
+def fetch_models(
+    base_url: str, api_key: str, timeout: float = 15.0
+) -> dict[str, Any]:
+    """请求 {base_url}/models，返回 {ok, status, models, detail}。"""
+    base = (base_url or "").rstrip("/")
+    if not base:
+        return {"ok": False, "status": -1, "models": [], "detail": "Base URL 不能为空"}
+    if not api_key:
+        return {"ok": False, "status": -1, "models": [], "detail": "API Key 不能为空"}
+    try:
+        resp = httpx.get(
+            f"{base}/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=timeout,
+        )
+    except httpx.HTTPError as e:
+        return {"ok": False, "status": -1, "models": [], "detail": f"网络异常: {e}"}
+    if resp.status_code >= 400:
+        detail = ""
+        try:
+            j = resp.json()
+            err = j.get("error") or {}
+            detail = err.get("message") or j.get("message") or resp.text
+        except Exception:  # noqa: BLE001
+            detail = resp.text
+        return {
+            "ok": False,
+            "status": resp.status_code,
+            "models": [],
+            "detail": (detail or "")[:400],
+        }
+    try:
+        j = resp.json()
+        items = j.get("data") or j.get("models") or []
+        models = [
+            (m.get("id") if isinstance(m, dict) else str(m))
+            for m in items
+            if (isinstance(m, dict) and m.get("id")) or m
+        ]
+        return {"ok": True, "status": resp.status_code, "models": models, "detail": ""}
+    except Exception as e:  # noqa: BLE001
+        return {
+            "ok": False,
+            "status": resp.status_code,
+            "models": [],
+            "detail": f"响应解析失败: {e}",
+        }
+
+
+def test_connection(
+    base_url: str,
+    api_key: str,
+    model: str = "",
+    timeout: float = 30.0,
+) -> dict[str, Any]:
+    """用一个小对话请求测试连通性，返回 {ok, status, detail, content}。"""
+    base = (base_url or "").rstrip("/")
+    if not base:
+        return {"ok": False, "status": -1, "detail": "Base URL 不能为空", "content": ""}
+    if not api_key:
+        return {"ok": False, "status": -1, "detail": "API Key 不能为空", "content": ""}
+    if not model:
+        model = _model_or_err() if available() else ""
+    if not model:
+        return {
+            "ok": False,
+            "status": -1,
+            "detail": "模型名必填（先填模型，或点「获取模型列表」选择）",
+            "content": "",
+        }
+    try:
+        resp = httpx.post(
+            f"{base}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 8,
+                "temperature": 0,
+                "stream": False,
+            },
+            timeout=timeout,
+        )
+    except httpx.HTTPError as e:
+        return {"ok": False, "status": -1, "detail": f"网络异常: {e}", "content": ""}
+    if resp.status_code >= 400:
+        detail = ""
+        try:
+            j = resp.json()
+            err = j.get("error") or {}
+            detail = err.get("message") or j.get("message") or resp.text
+        except Exception:  # noqa: BLE001
+            detail = resp.text
+        return {
+            "ok": False,
+            "status": resp.status_code,
+            "detail": (detail or "")[:400],
+            "content": "",
+        }
+    try:
+        j = resp.json()
+        content = (j["choices"][0]["message"]["content"] or "").strip()
+        return {
+            "ok": True,
+            "status": resp.status_code,
+            "detail": "",
+            "content": content,
+        }
+    except Exception as e:  # noqa: BLE001
+        return {
+            "ok": False,
+            "status": resp.status_code,
+            "detail": f"响应解析失败: {e}",
+            "content": "",
+        }

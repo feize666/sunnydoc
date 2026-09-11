@@ -335,6 +335,7 @@ export function AiPanel({
       setMessages((m) => m.map((msg, i) => (i === aiIndex ? updater(msg) : msg)));
     };
 
+    let gotError: { status: number; detail: string } | null = null;
     try {
       await chatStream(q, 5, history, enableWeb, (e) => {
         if (e.type === "citations") {
@@ -343,17 +344,36 @@ export function AiPanel({
           updateAi((msg) => ({ ...msg, webSources: e.sources ?? [] }));
         } else if (e.type === "delta") {
           updateAi((msg) => ({ ...msg, content: msg.content + (e.content ?? "") }));
+        } else if (e.type === "error") {
+          gotError = { status: e.status ?? 0, detail: e.detail ?? "" };
         }
       });
     } catch (e) {
+      gotError = {
+        status: 0,
+        detail: e instanceof Error ? e.message : "未知错误",
+      };
+    }
+    if (gotError) {
+      const tip =
+        gotError.status === 0
+          ? "请确认后端服务已启动"
+          : gotError.status === 401
+            ? "请检查 API Key 是否正确或已过期"
+            : gotError.status === 403
+              ? "API Key 无访问权限"
+              : gotError.status === 404
+                ? "Base URL 或模型名不存在"
+                : gotError.status === 429
+                  ? "请求频率超限，稍后重试"
+                  : "请检查后端日志";
       updateAi((msg) => ({
         ...msg,
-        content: `请求失败：${e instanceof Error ? e.message : "未知错误"}，请确认后端服务已启动。`,
+        content: `请求失败（${gotError!.status}）${gotError!.detail ? `：${gotError!.detail}` : ""}\n\n${tip}`,
         error: true,
       }));
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   };
 
   const sortedSessions = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);

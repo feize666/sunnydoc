@@ -580,10 +580,12 @@ export interface WebSource {
 }
 
 export interface StreamEvent {
-  type: "citations" | "delta" | "sources" | "done";
+  type: "citations" | "delta" | "sources" | "done" | "error";
   citations?: Citation[];
   content?: string;
   sources?: WebSource[];
+  status?: number;
+  detail?: string;
 }
 
 /**
@@ -849,5 +851,73 @@ export async function updateAISettings(patch: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
   });
+}
+
+export interface CustomProvider {
+  id: string;
+  name: string;
+  provider: string;
+  llm_base_url: string;
+  llm_api_key: string; // 脱敏
+  llm_model: string;
+  embedding_base_url: string;
+  embedding_api_key: string; // 脱敏
+  embedding_model: string;
+  rerank_base_url: string;
+  rerank_model: string;
+}
+
+export interface AITestResult {
+  ok: boolean;
+  status: number;
+  detail: string;
+  content?: string;
+  models?: string[];
+}
+
+export async function testAISettings(payload: {
+  base_url?: string;
+  api_key?: string;
+  model?: string;
+  saved?: boolean;
+}): Promise<AITestResult> {
+  return request(`/settings/ai/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchAIModels(payload: {
+  base_url?: string;
+  api_key?: string;
+  saved?: boolean;
+}): Promise<AITestResult> {
+  return request(`/settings/ai/models`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listCustomProviders(): Promise<CustomProvider[]> {
+  const data = await request<{ providers: CustomProvider[] }>(`/settings/ai/custom-providers`);
+  return Array.isArray(data?.providers) ? data.providers : [];
+}
+
+export async function upsertCustomProvider(cp: Partial<CustomProvider>): Promise<{
+  ok: boolean;
+  id: string;
+  provider: CustomProvider;
+}> {
+  return request(`/settings/ai/custom-providers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cp),
+  });
+}
+
+export async function deleteCustomProvider(id: string): Promise<{ ok: boolean }> {
+  return request(`/settings/ai/custom-providers/${id}`, { method: "DELETE" });
 }
 
