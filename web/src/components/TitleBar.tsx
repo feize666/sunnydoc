@@ -3,6 +3,8 @@
 import { CloseIcon } from "./icons";
 import { Tooltip } from "./Tooltip";
 import { ThemeToggle } from "./ThemeToggle";
+import { UserMenu } from "./UserMenu";
+import type { User } from "@/lib/api";
 
 export function TitleBar({
   openDocs,
@@ -17,6 +19,11 @@ export function TitleBar({
   onToggleAi,
   aiOpen,
   onOpenFavorites,
+  user,
+  onOpenProfile,
+  onOpenUsers,
+  onOpenSettings,
+  onLogout,
 }: {
   openDocs: { key: string; title: string }[];
   activeKey: string | null;
@@ -30,6 +37,11 @@ export function TitleBar({
   onToggleAi: () => void;
   aiOpen: boolean;
   onOpenFavorites: () => void;
+  user?: User;
+  onOpenProfile?: () => void;
+  onOpenUsers?: () => void;
+  onOpenSettings?: () => void;
+  onLogout?: () => void;
 }) {
   return (
     <header className="flex h-12 items-center gap-2 border-b border-line bg-background px-3 select-none">
@@ -145,6 +157,16 @@ export function TitleBar({
           AI 问答
         </button>
       </Tooltip>
+
+      {user && onLogout && (
+        <UserMenu
+          user={user}
+          onOpenProfile={onOpenProfile ?? (() => {})}
+          onOpenUsers={onOpenUsers ?? (() => {})}
+          onOpenSettings={onOpenSettings ?? (() => {})}
+          onLogout={onLogout}
+        />
+      )}
     </header>
   );
 }

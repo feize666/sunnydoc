@@ -784,7 +784,7 @@ export default function Home() {
       hint: "Ctrl+Shift+T",
       action: () => setTheme((t) => (t === "light" ? "dark" : "light")),
     },
-    { icon: "⚙️", label: "设置", hint: "Ctrl+," },
+    { icon: "⚙️", label: "系统设置", hint: "Ctrl+," },
   ];
 
   // 公开分享视图（优先，无需登录）
@@ -825,6 +825,11 @@ export default function Home() {
             onToggleAi={() => setAiOpen((v) => !v)}
             aiOpen={aiOpen}
             onOpenFavorites={() => setFavoritesOpen(true)}
+            user={user}
+            onOpenProfile={handleOpenProfile}
+            onOpenUsers={handleOpenUsers}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onLogout={handleLogout}
           />
 
           <div className="flex min-h-0 flex-1">
@@ -912,11 +917,6 @@ export default function Home() {
           <StatusBar
             wordCount={wordCount}
             openCount={openKeys.length}
-            user={user}
-            onOpenProfile={handleOpenProfile}
-            onOpenUsers={handleOpenUsers}
-            onLogout={handleLogout}
-            onOpenSettings={() => setSettingsOpen(true)}
           />
         </>
       ) : view === "users" ? (
