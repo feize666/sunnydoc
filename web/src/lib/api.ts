@@ -741,11 +741,13 @@ export async function chatStream(
   enableWeb: boolean,
   onEvent: (e: StreamEvent) => void,
   attachments?: string[],
+  signal?: AbortSignal,
 ): Promise<void> {
   const res = await fetch(`${BASE}/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ query, top_k: topK, history, enable_web: enableWeb, attachments: attachments ?? [] }),
+    signal,
   });
 
   if (!res.ok || !res.body) {

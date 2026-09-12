@@ -149,6 +149,8 @@ export function AiPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const chatRef = useRef<HTMLDivElement>(null);
+  // 当前流式请求的 AbortController（用于暂停）
+  const abortRef = useRef<AbortController | null>(null);
   const initedRef = useRef(false);
   const skipSyncRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -377,6 +379,8 @@ export function AiPanel({
 
     if (!questionOverride) setInput("");
     setLoading(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
     const webEnabled = forceWeb ?? enableWeb;
 
     // 本次发送携带的附件（元数据 + id）
@@ -426,13 +430,24 @@ export function AiPanel({
         } else if (e.type === "error") {
           gotError = { status: e.status ?? 0, detail: e.detail ?? "" };
         }
-      }, sendIds);
+      }, sendIds, controller.signal);
     } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") {
+        // 用户主动暂停：保留已生成内容；为空时给个提示
+        updateAi((msg) => ({
+          ...msg,
+          content: msg.content || "（已停止生成）",
+        }));
+        abortRef.current = null;
+        setLoading(false);
+        return;
+      }
       gotError = {
         status: 0,
         detail: e instanceof Error ? e.message : "未知错误",
       };
     }
+    abortRef.current = null;
     if (gotError) {
       const tip =
         gotError.status === 0
@@ -936,13 +951,18 @@ export function AiPanel({
             rows={1}
             className="max-h-[120px] flex-1 resize-none rounded-lg border border-line bg-background px-3 py-2 text-[14px] outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
           />
-          <Tooltip content="发送" className="shrink-0">
+          <Tooltip content={loading ? "暂停" : "发送"} className="shrink-0">
             <button
-              onClick={() => ask()}
-              disabled={loading}
-              className="btn-accent grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg text-white disabled:opacity-50"
+              onClick={() => (loading ? abortRef.current?.abort() : ask())}
+              className="btn-accent grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg text-white"
             >
-              <SendIcon size={16} />
+              {loading ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+              ) : (
+                <SendIcon size={16} />
+              )}
             </button>
           </Tooltip>
         </div>
