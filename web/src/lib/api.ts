@@ -462,7 +462,13 @@ export async function generateSummary(docId: string): Promise<string> {
   return data.summary;
 }
 
-export type AIAssistAction = "polish" | "translate_en" | "summarize" | "continue" | "explain";
+export type AIAssistAction =
+  | "polish"
+  | "translate_en"
+  | "translate_zh"
+  | "summarize"
+  | "continue"
+  | "explain";
 
 export async function aiAssist(action: AIAssistAction, text: string): Promise<string> {
   const data = await request<{ result: string }>("/ai/assist", {

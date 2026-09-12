@@ -284,3 +284,60 @@ export function CodeLanguageIcon(p: IconProps) {
     </svg>
   );
 }
+
+export function TranslateIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="m5 8 6 6" />
+      <path d="m4 14 6-6 2-3" />
+      <path d="M2 5h12" />
+      <path d="M7 2h1" />
+      <path d="m22 22-5-10-5 10" />
+      <path d="M14 18h6" />
+    </svg>
+  );
+}
+
+export function FormatPaintIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="m14.622 17.897-10.68-2.913" />
+      <path d="M18.376 2.622a1 1 0 1 1 3.002 3.002L17.36 9.643a.5.5 0 0 0 0 .707l.944.944a2.41 2.41 0 0 1 0 3.408l-.944.944a.5.5 0 0 1-.707 0L8.354 7.348a.5.5 0 0 1 0-.707l.944-.944a2.41 2.41 0 0 1 3.408 0l.944.944a.5.5 0 0 0 .707 0z" />
+      <path d="M9 8c-1.804 2.71-3.97 3.46-6.583 3.948a.507.507 0 0 0-.302.819l7.32 8.883a1 1 0 0 0 1.185.204C12.735 20.405 16 16.792 16 15" />
+    </svg>
+  );
+}
+
+export function ClearFormatIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M4 7V4h16v3" />
+      <path d="M5 20h6" />
+      <path d="M13 4 8 20" />
+      <path d="m15 15 5 5" />
+      <path d="m20 15-5 5" />
+    </svg>
+  );
+}
+
+export function IndentIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M21 12H11" />
+      <path d="M21 18H11" />
+      <path d="M21 6H11" />
+      <path d="m3 8 4 4-4 4" />
+    </svg>
+  );
+}
+
+export function OutdentIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M21 12H11" />
+      <path d="M21 18H11" />
+      <path d="M21 6H11" />
+      <path d="m7 8-4 4 4 4" />
+    </svg>
+  );
+}

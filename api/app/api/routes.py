@@ -180,7 +180,7 @@ class CreateCommentRequest(BaseModel):
 
 
 class AIAssistRequest(BaseModel):
-    action: str  # polish / translate_en / summarize / continue / explain
+    action: str  # polish / translate_en / translate_zh / summarize / continue / explain
     text: str
 
 

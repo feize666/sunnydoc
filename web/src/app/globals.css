@@ -689,29 +689,7 @@ mark.search-hit {
   -webkit-backdrop-filter: blur(6px);
 }
 
-/* 小三角箭头：旋转 45° 的方形，仅露出朝向触发元素的两条描边 */
-.tooltip-bubble::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  width: 8px;
-  height: 8px;
-  transform: translateX(-50%) rotate(45deg);
-  background: var(--tip-bg);
-  border: 1px solid transparent;
-}
-
-.tooltip-bubble--top::after {
-  bottom: -5px;
-  border-right-color: var(--tip-border);
-  border-bottom-color: var(--tip-border);
-}
-
-.tooltip-bubble--bottom::after {
-  top: -5px;
-  border-left-color: var(--tip-border);
-  border-top-color: var(--tip-border);
-}
+/* 箭头已移除：tooltip 改为 portal + fixed 定位，箭头方向随 placement 动态变化，故去掉静态三角 */
 
 /* —— 所见即所得编辑器（TipTap / ProseMirror） —— */
 .rich-editor {

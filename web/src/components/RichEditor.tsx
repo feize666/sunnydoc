@@ -8,7 +8,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
 import { Markdown } from "tiptap-markdown";
-import { uploadImage } from "@/lib/api";
+import { uploadImage, aiAssist } from "@/lib/api";
 import { Tooltip } from "./Tooltip";
 import {
   CodeIcon,
@@ -23,6 +23,11 @@ import {
   ChevronUpIcon,
   ChevronDownIcon,
   CloseIcon,
+  TranslateIcon,
+  FormatPaintIcon,
+  ClearFormatIcon,
+  IndentIcon,
+  OutdentIcon,
 } from "./icons";
 
 /* ---------- 自写扩展（不引第三方，@tiptap/core 已内置） ---------- */
@@ -205,12 +210,19 @@ const TextAlign = Extension.create({
     return {
       setTextAlign:
         (align: string) =>
-        ({ commands }: { commands: { updateAttributes: (t: string, a: object) => boolean } }) =>
-          ["paragraph", "heading"].every((t) => commands.updateAttributes(t, { textAlign: align })),
+        ({ commands }: { commands: { updateAttributes: (t: string, a: object) => boolean } }) => {
+          // 同时作用于段落和标题，不用 every（会因某个 type 不在选区而短路）
+          const a = commands.updateAttributes("paragraph", { textAlign: align });
+          const b = commands.updateAttributes("heading", { textAlign: align });
+          return a || b;
+        },
       unsetTextAlign:
         () =>
-        ({ commands }: { commands: { resetAttributes: (t: string, a: string) => boolean } }) =>
-          ["paragraph", "heading"].every((t) => commands.resetAttributes(t, "textAlign")),
+        ({ commands }: { commands: { resetAttributes: (t: string, a: string) => boolean } }) => {
+          const a = commands.resetAttributes("paragraph", "textAlign");
+          const b = commands.resetAttributes("heading", "textAlign");
+          return a || b;
+        },
     } as unknown as Partial<Record<string, unknown>>;
   },
 });
@@ -310,6 +322,10 @@ export function RichEditor({
   const [findText, setFindText] = useState("");
   const [replaceText, setReplaceText] = useState("");
   const [findIdx, setFindIdx] = useState(0);
+  // 格式刷：暂存复制的 marks（null 表示未启用）
+  const [painterMarks, setPainterMarks] = useState<Record<string, unknown> | null>(null);
+  // 翻译进行中
+  const [translating, setTranslating] = useState(false);
 
   const editor = useEditor({
     extensions: [
@@ -474,6 +490,25 @@ export function RichEditor({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [editor]);
+
+  // 格式刷：启用后，用户拖动选中目标文字时应用复制的 marks
+  useEffect(() => {
+    if (!editor || !painterMarks) return;
+    const handler = () => {
+      const { from, to } = editor.state.selection;
+      if (from === to) return;
+      const chain = editor.chain().focus();
+      for (const [name, attrs] of Object.entries(painterMarks)) {
+        chain.setMark(name, (attrs as Record<string, unknown>) || {});
+      }
+      chain.run();
+      setPainterMarks(null);
+    };
+    editor.on("selectionUpdate", handler);
+    return () => {
+      editor.off("selectionUpdate", handler);
+    };
+  }, [editor, painterMarks]);
 
   if (!editor) {
     return (
@@ -726,19 +761,55 @@ export function RichEditor({
     else editor.chain().focus().toggleHeading({ level: Number(v) as 1 | 2 | 3 | 4 }).run();
   };
 
+  // 格式刷：复制当前光标/选区起始位置的 marks（再点一次取消）
+  const copyFormat = () => {
+    if (painterMarks) {
+      setPainterMarks(null);
+      return;
+    }
+    const marks = editor.state.selection.$from.marks();
+    const m: Record<string, unknown> = {};
+    for (const mark of marks) {
+      m[mark.type.name] = mark.attrs as Record<string, unknown>;
+    }
+    setPainterMarks(Object.keys(m).length ? m : null);
+  };
+
+  // 翻译：选中文字，智能中英互译并原地替换
+  const translate = async () => {
+    const { from, to } = editor.state.selection;
+    if (from === to) return;
+    const text = editor.state.doc.textBetween(from, to, " ");
+    if (!text.trim()) return;
+    setTranslating(true);
+    try {
+      const hasCjk = /[\u4e00-\u9fff]/.test(text);
+      const result = await aiAssist(hasCjk ? "translate_en" : "translate_zh", text);
+      editor.chain().focus().insertContentAt({ from, to }, result).run();
+    } catch (e) {
+      alert(`翻译失败：${e instanceof Error ? e.message : "未知错误"}`);
+    } finally {
+      setTranslating(false);
+    }
+  };
+
+  // 清除格式：移除所有 marks，段落/标题降为正文
+  const clearFormat = () => {
+    editor.chain().focus().unsetAllMarks().clearNodes().run();
+  };
+
   const currentColor = (COLORS.find((c) => editor.isActive("color", { color: c })) ?? "");
   const currentBgColor = (COLORS.find((c) => editor.isActive("backgroundColor", { color: c })) ?? "");
 
   return (
     <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
-      {/* 格式工具栏 */}
-      <div className="flex items-center gap-0.5 overflow-x-auto border-b border-line px-2 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {/* 格式工具栏（sticky 固定，向下滚动时不滚走） */}
+      <div className="sticky top-0 z-20 flex items-center gap-0.5 overflow-x-auto border-b border-line bg-background px-2 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {/* 标题下拉 */}
         <Tooltip content="段落格式">
           <select
             value={headingValue}
             onChange={(e) => setHeading(e.target.value)}
-            onMouseDown={(e) => e.preventDefault()}
             className="h-8 w-[80px] shrink-0 cursor-pointer rounded-md border border-line bg-background px-1.5 text-[13px] text-text outline-none hover:bg-hover"
           >
             <option value="p">正文</option>
@@ -936,7 +1007,6 @@ export function RichEditor({
             <select
               value={currentCodeLang}
               onChange={(e) => setCodeLang(e.target.value)}
-              onMouseDown={(e) => e.preventDefault()}
               className="h-8 w-[72px] shrink-0 cursor-pointer rounded-md border border-line bg-background px-1 text-[12px] text-muted outline-none hover:bg-hover"
             >
               {CODE_LANGS.map((l) => (
@@ -1060,6 +1130,12 @@ export function RichEditor({
             <path d="M4 6h16M14 12h6M4 18h16" />
           </svg>
         </ToolBtn>
+        <ToolBtn title="增加缩进" onClick={() => editor.chain().focus().sinkListItem("listItem").run()} active={false}>
+          <IndentIcon size={17} />
+        </ToolBtn>
+        <ToolBtn title="减少缩进" onClick={() => editor.chain().focus().liftListItem("listItem").run()} active={false}>
+          <OutdentIcon size={17} />
+        </ToolBtn>
 
         {/* 表格行列操作（仅光标在表格内时显示） */}
         {findTable() && (
@@ -1107,6 +1183,22 @@ export function RichEditor({
             <path d="M21 7v6h-6" />
             <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" />
           </svg>
+        </ToolBtn>
+
+        <ToolDivider />
+
+        <ToolBtn title="格式刷" tone="text-accent" onClick={copyFormat} active={painterMarks !== null}>
+          <FormatPaintIcon size={17} />
+        </ToolBtn>
+        <ToolBtn title="清除格式" onClick={clearFormat}>
+          <ClearFormatIcon size={17} />
+        </ToolBtn>
+        <ToolBtn title="翻译（中英互译）" tone="text-success" onClick={translate} disabled={translating}>
+          {translating ? (
+            <span className="animate-pulse text-[12px] leading-none">…</span>
+          ) : (
+            <TranslateIcon size={17} />
+          )}
         </ToolBtn>
 
         <ToolDivider />
