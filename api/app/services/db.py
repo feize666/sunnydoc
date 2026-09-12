@@ -7,14 +7,17 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 import uuid
 from typing import Any
 
 from app.core.config import DATABASE_URL
 
-# 连接与可用性缓存（进程内复用单连接）
-_conn: Any = None
+# 每线程独立连接：避免多线程共享单连接导致的并发冲突与锁竞争。
+# autocommit 模式：SELECT 不再残留 idle-in-transaction 事务（否则会持有
+# ACCESS SHARE 锁，阻塞 ALTER TABLE 等 DDL），单条写操作立即提交。
+_local = threading.local()
 _available: bool | None = None
 
 # 用于区分「未传参」与「显式传 None」的哨兵值
@@ -22,24 +25,27 @@ _UNSET = object()
 
 
 def _connect() -> Any:
-    """惰性建立 psycopg 连接（同步驱动）。"""
-    global _conn
-    if _conn is not None and not _conn.closed:
-        return _conn
+    """取当前线程的 psycopg 连接（惰性建立，autocommit 模式）。"""
+    conn = getattr(_local, "conn", None)
+    if conn is not None and not conn.closed:
+        return conn
     import psycopg  # 延迟 import，未安装驱动时不影响其它路径
 
-    _conn = psycopg.connect(DATABASE_URL)
-    return _conn
+    conn = psycopg.connect(DATABASE_URL)
+    conn.autocommit = True
+    _local.conn = conn
+    return conn
 
 
 def _close() -> None:
-    global _conn
-    if _conn is not None:
+    """关闭当前线程的连接（进程退出/连接失败时清理）。"""
+    conn = getattr(_local, "conn", None)
+    if conn is not None:
         try:
-            _conn.close()
+            conn.close()
         except Exception:
             pass
-        _conn = None
+        _local.conn = None
 
 
 def _vec_to_str(vec: list[float] | None) -> str | None:
@@ -337,31 +343,31 @@ _DOC_COLS = "id, title, text, source, ext, created_at, folder_id, kb_id, user_id
 def add_document(doc: dict[str, Any]) -> dict[str, Any]:
     """写入文档及其 chunks（含向量）。"""
     conn = _connect()
-    with conn.cursor() as cur:
-        cur.execute(
-            "INSERT INTO documents (id, title, text, source, ext, created_at, folder_id, kb_id, user_id, type, sort_order)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (
-                doc["id"],
-                doc["title"],
-                doc["text"],
-                doc["source"],
-                doc["ext"],
-                doc["created_at"],
-                doc.get("folder_id"),
-                doc.get("kb_id"),
-                doc.get("user_id"),
-                doc.get("type", "doc"),
-                doc.get("sort_order", doc["created_at"]),
-            ),
-        )
-        for i, chunk in enumerate(doc["chunks"]):
+    with conn.transaction():
+        with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO chunks (doc_id, segment_index, text, vector)"
-                " VALUES (%s, %s, %s, %s)",
-                (doc["id"], i, chunk["text"], _vec_to_str(chunk.get("vector"))),
+                "INSERT INTO documents (id, title, text, source, ext, created_at, folder_id, kb_id, user_id, type, sort_order)"
+                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    doc["id"],
+                    doc["title"],
+                    doc["text"],
+                    doc["source"],
+                    doc["ext"],
+                    doc["created_at"],
+                    doc.get("folder_id"),
+                    doc.get("kb_id"),
+                    doc.get("user_id"),
+                    doc.get("type", "doc"),
+                    doc.get("sort_order", doc["created_at"]),
+                ),
             )
-    conn.commit()
+            for i, chunk in enumerate(doc["chunks"]):
+                cur.execute(
+                    "INSERT INTO chunks (doc_id, segment_index, text, vector)"
+                    " VALUES (%s, %s, %s, %s)",
+                    (doc["id"], i, chunk["text"], _vec_to_str(chunk.get("vector"))),
+                )
     return doc
 
 
@@ -438,30 +444,30 @@ def get_document(doc_id: str) -> dict[str, Any] | None:
 def update_document(doc_id: str, doc: dict[str, Any]) -> dict[str, Any] | None:
     """更新 documents 表并重建 chunks（含向量）。文档不存在返回 None。"""
     conn = _connect()
-    with conn.cursor() as cur:
-        cur.execute(
-            "UPDATE documents SET title = %s, text = %s, folder_id = %s, kb_id = %s,"
-            " sort_order = COALESCE(%s, sort_order) WHERE id = %s",
-            (
-                doc["title"],
-                doc["text"],
-                doc.get("folder_id"),
-                doc.get("kb_id"),
-                doc.get("sort_order"),
-                doc_id,
-            ),
-        )
-        if cur.rowcount == 0:
-            return None
-        # 重建 chunks：先删旧分片，再写入新分片（含重新计算的向量）
-        cur.execute("DELETE FROM chunks WHERE doc_id = %s", (doc_id,))
-        for i, chunk in enumerate(doc["chunks"]):
+    with conn.transaction():
+        with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO chunks (doc_id, segment_index, text, vector)"
-                " VALUES (%s, %s, %s, %s)",
-                (doc_id, i, chunk["text"], _vec_to_str(chunk.get("vector"))),
+                "UPDATE documents SET title = %s, text = %s, folder_id = %s, kb_id = %s,"
+                " sort_order = COALESCE(%s, sort_order) WHERE id = %s",
+                (
+                    doc["title"],
+                    doc["text"],
+                    doc.get("folder_id"),
+                    doc.get("kb_id"),
+                    doc.get("sort_order"),
+                    doc_id,
+                ),
             )
-    conn.commit()
+            if cur.rowcount == 0:
+                return None
+            # 重建 chunks：先删旧分片，再写入新分片（含重新计算的向量）
+            cur.execute("DELETE FROM chunks WHERE doc_id = %s", (doc_id,))
+            for i, chunk in enumerate(doc["chunks"]):
+                cur.execute(
+                    "INSERT INTO chunks (doc_id, segment_index, text, vector)"
+                    " VALUES (%s, %s, %s, %s)",
+                    (doc_id, i, chunk["text"], _vec_to_str(chunk.get("vector"))),
+                )
     return doc
 
 
@@ -721,31 +727,31 @@ def folder_descendant_ids(folder_id: str) -> set[str]:
 def delete_folder(folder_id: str) -> bool:
     """软删除文件夹：标记自身 + 后代文件夹 deleted_at，子级/本级文档 folder_id 置空。"""
     conn = _connect()
-    with conn.cursor() as cur:
-        # 收集自身 + 所有后代文件夹 id
-        ids = [folder_id]
-        idx = 0
-        while idx < len(ids):
-            cur.execute(
-                "SELECT id FROM folders WHERE parent_id = %s AND deleted_at IS NULL",
-                (ids[idx],),
-            )
-            for (child_id,) in cur.fetchall():
-                if child_id not in ids:
-                    ids.append(child_id)
-            idx += 1
+    with conn.transaction():
+        with conn.cursor() as cur:
+            # 收集自身 + 所有后代文件夹 id
+            ids = [folder_id]
+            idx = 0
+            while idx < len(ids):
+                cur.execute(
+                    "SELECT id FROM folders WHERE parent_id = %s AND deleted_at IS NULL",
+                    (ids[idx],),
+                )
+                for (child_id,) in cur.fetchall():
+                    if child_id not in ids:
+                        ids.append(child_id)
+                idx += 1
 
-        placeholders = ",".join(["%s"] * len(ids))
-        cur.execute(
-            f"UPDATE documents SET folder_id = NULL WHERE folder_id IN ({placeholders})",
-            ids,
-        )
-        cur.execute(
-            f"UPDATE folders SET deleted_at = %s WHERE id IN ({placeholders})",
-            [time.time()] + ids,
-        )
-        deleted = cur.rowcount > 0
-    conn.commit()
+            placeholders = ",".join(["%s"] * len(ids))
+            cur.execute(
+                f"UPDATE documents SET folder_id = NULL WHERE folder_id IN ({placeholders})",
+                ids,
+            )
+            cur.execute(
+                f"UPDATE folders SET deleted_at = %s WHERE id IN ({placeholders})",
+                [time.time()] + ids,
+            )
+            deleted = cur.rowcount > 0
     return deleted
 
 
@@ -889,58 +895,58 @@ def count_docs(kb_id: str) -> int:
 def delete_kb(kb_id: str) -> bool:
     """软删除知识库：标记 kb + 其下文档/文件夹 deleted_at。"""
     conn = _connect()
-    with conn.cursor() as cur:
-        now = time.time()
-        cur.execute(
-            "UPDATE documents SET deleted_at = %s WHERE kb_id = %s AND deleted_at IS NULL",
-            (now, kb_id),
-        )
-        cur.execute(
-            "UPDATE folders SET deleted_at = %s WHERE kb_id = %s AND deleted_at IS NULL",
-            (now, kb_id),
-        )
-        cur.execute(
-            "UPDATE knowledge_bases SET deleted_at = %s WHERE id = %s AND deleted_at IS NULL",
-            (now, kb_id),
-        )
-        deleted = cur.rowcount > 0
-    conn.commit()
+    with conn.transaction():
+        with conn.cursor() as cur:
+            now = time.time()
+            cur.execute(
+                "UPDATE documents SET deleted_at = %s WHERE kb_id = %s AND deleted_at IS NULL",
+                (now, kb_id),
+            )
+            cur.execute(
+                "UPDATE folders SET deleted_at = %s WHERE kb_id = %s AND deleted_at IS NULL",
+                (now, kb_id),
+            )
+            cur.execute(
+                "UPDATE knowledge_bases SET deleted_at = %s WHERE id = %s AND deleted_at IS NULL",
+                (now, kb_id),
+            )
+            deleted = cur.rowcount > 0
     return deleted
 
 
 def restore_kb(kb_id: str) -> bool:
     """从回收站恢复知识库及其下文档/文件夹。"""
     conn = _connect()
-    with conn.cursor() as cur:
-        cur.execute(
-            "UPDATE knowledge_bases SET deleted_at = NULL WHERE id = %s AND deleted_at IS NOT NULL",
-            (kb_id,),
-        )
-        restored = cur.rowcount > 0
-        if restored:
+    with conn.transaction():
+        with conn.cursor() as cur:
             cur.execute(
-                "UPDATE documents SET deleted_at = NULL WHERE kb_id = %s",
+                "UPDATE knowledge_bases SET deleted_at = NULL WHERE id = %s AND deleted_at IS NOT NULL",
                 (kb_id,),
             )
-            cur.execute(
-                "UPDATE folders SET deleted_at = NULL WHERE kb_id = %s",
-                (kb_id,),
-            )
-    conn.commit()
+            restored = cur.rowcount > 0
+            if restored:
+                cur.execute(
+                    "UPDATE documents SET deleted_at = NULL WHERE kb_id = %s",
+                    (kb_id,),
+                )
+                cur.execute(
+                    "UPDATE folders SET deleted_at = NULL WHERE kb_id = %s",
+                    (kb_id,),
+                )
     return restored
 
 
 def purge_kb(kb_id: str) -> bool:
     """彻底删除知识库（物理删除其下文档/文件夹/共享/最近浏览）。"""
     conn = _connect()
-    with conn.cursor() as cur:
-        cur.execute("DELETE FROM documents WHERE kb_id = %s", (kb_id,))
-        cur.execute("DELETE FROM folders WHERE kb_id = %s", (kb_id,))
-        cur.execute("DELETE FROM recent_views WHERE kb_id = %s", (kb_id,))
-        cur.execute("DELETE FROM kb_shares WHERE kb_id = %s", (kb_id,))
-        cur.execute("DELETE FROM knowledge_bases WHERE id = %s", (kb_id,))
-        deleted = cur.rowcount > 0
-    conn.commit()
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM documents WHERE kb_id = %s", (kb_id,))
+            cur.execute("DELETE FROM folders WHERE kb_id = %s", (kb_id,))
+            cur.execute("DELETE FROM recent_views WHERE kb_id = %s", (kb_id,))
+            cur.execute("DELETE FROM kb_shares WHERE kb_id = %s", (kb_id,))
+            cur.execute("DELETE FROM knowledge_bases WHERE id = %s", (kb_id,))
+            deleted = cur.rowcount > 0
     return deleted
 
 
@@ -973,39 +979,39 @@ def list_trash_kbs(user_id: str | None = None) -> list[dict[str, Any]]:
 def purge_expired_trash(before_ts: float) -> None:
     """物理删除回收站中超过 30 天（deleted_at < before_ts）的文档/文件夹/知识库。"""
     conn = _connect()
-    with conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM documents WHERE deleted_at IS NOT NULL AND deleted_at < %s",
-            (before_ts,),
-        )
-        cur.execute(
-            "DELETE FROM folders WHERE deleted_at IS NOT NULL AND deleted_at < %s",
-            (before_ts,),
-        )
-        cur.execute(
-            "DELETE FROM knowledge_bases WHERE deleted_at IS NOT NULL AND deleted_at < %s",
-            (before_ts,),
-        )
-    conn.commit()
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM documents WHERE deleted_at IS NOT NULL AND deleted_at < %s",
+                (before_ts,),
+            )
+            cur.execute(
+                "DELETE FROM folders WHERE deleted_at IS NOT NULL AND deleted_at < %s",
+                (before_ts,),
+            )
+            cur.execute(
+                "DELETE FROM knowledge_bases WHERE deleted_at IS NOT NULL AND deleted_at < %s",
+                (before_ts,),
+            )
 
 
 def add_version(doc_id: str, title: str, text: str, created_at: float) -> dict[str, Any]:
     conn = _connect()
     version_id = uuid.uuid4().hex
-    with conn.cursor() as cur:
-        cur.execute(
-            "INSERT INTO document_versions (id, doc_id, title, text, created_at)"
-            " VALUES (%s, %s, %s, %s, %s)",
-            (version_id, doc_id, title, text, created_at),
-        )
-        # 每文档最多保留 50 个版本
-        cur.execute(
-            "DELETE FROM document_versions WHERE doc_id = %s AND id IN ("
-            " SELECT id FROM document_versions WHERE doc_id = %s"
-            " ORDER BY created_at DESC OFFSET 50)",
-            (doc_id, doc_id),
-        )
-    conn.commit()
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO document_versions (id, doc_id, title, text, created_at)"
+                " VALUES (%s, %s, %s, %s, %s)",
+                (version_id, doc_id, title, text, created_at),
+            )
+            # 每文档最多保留 50 个版本
+            cur.execute(
+                "DELETE FROM document_versions WHERE doc_id = %s AND id IN ("
+                " SELECT id FROM document_versions WHERE doc_id = %s"
+                " ORDER BY created_at DESC OFFSET 50)",
+                (doc_id, doc_id),
+            )
     return {"id": version_id, "doc_id": doc_id, "title": title, "created_at": created_at}
 
 
@@ -1123,17 +1129,17 @@ def record_recent(doc_id: str, kb_id: str | None, user_id: str | None) -> dict[s
     rec_id = uuid.uuid4().hex
     viewed_at = time.time()
     conn = _connect()
-    with conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM recent_views WHERE doc_id = %s AND user_id IS NOT DISTINCT FROM %s",
-            (doc_id, user_id),
-        )
-        cur.execute(
-            "INSERT INTO recent_views (id, doc_id, kb_id, viewed_at, user_id)"
-            " VALUES (%s, %s, %s, %s, %s)",
-            (rec_id, doc_id, kb_id, viewed_at, user_id),
-        )
-    conn.commit()
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM recent_views WHERE doc_id = %s AND user_id IS NOT DISTINCT FROM %s",
+                (doc_id, user_id),
+            )
+            cur.execute(
+                "INSERT INTO recent_views (id, doc_id, kb_id, viewed_at, user_id)"
+                " VALUES (%s, %s, %s, %s, %s)",
+                (rec_id, doc_id, kb_id, viewed_at, user_id),
+            )
     return {
         "id": rec_id,
         "doc_id": doc_id,
