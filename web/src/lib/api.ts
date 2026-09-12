@@ -96,6 +96,7 @@ export interface SearchResult {
   title: string;
   snippet: string;
   match_in_title: boolean;
+  match_count?: number;
   folder_id?: string | null;
   kb_id?: string | null;
   source?: string;

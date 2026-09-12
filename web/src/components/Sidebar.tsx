@@ -16,25 +16,46 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
-/** 安全地高亮关键词（先转义，再包裹 <mark>） */
+/** 安全地高亮关键词（先转义，再包裹 <mark>）；支持多关键词（空格分隔）。 */
 function highlightKw(text: string, kw: string): string {
   const escaped = escapeHtml(text);
   if (!kw) return escaped;
-  const kwEsc = escapeHtml(kw);
+  const kws = kw.trim().split(/\s+/).filter(Boolean).map(escapeHtml);
+  if (kws.length === 0) return escaped;
   const lower = escaped.toLowerCase();
-  const kwl = kwEsc.toLowerCase();
-  let out = "";
-  let i = 0;
-  while (i < escaped.length) {
-    const idx = lower.indexOf(kwl, i);
-    if (idx === -1) {
-      out += escaped.slice(i);
-      break;
+  // 收集所有命中区间
+  const ranges: Array<[number, number]> = [];
+  for (const k of kws) {
+    const kl = k.toLowerCase();
+    let i = 0;
+    while (i < escaped.length) {
+      const idx = lower.indexOf(kl, i);
+      if (idx === -1) break;
+      ranges.push([idx, idx + k.length]);
+      i = idx + k.length;
     }
-    out += escaped.slice(i, idx);
-    out += `<mark class="search-hit">${escaped.slice(idx, idx + kwEsc.length)}</mark>`;
-    i = idx + kwEsc.length;
   }
+  if (ranges.length === 0) return escaped;
+  // 合并重叠区间
+  ranges.sort((a, b) => a[0] - b[0]);
+  const merged: Array<[number, number]> = [];
+  for (const r of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && r[0] <= last[1]) {
+      last[1] = Math.max(last[1], r[1]);
+    } else {
+      merged.push([r[0], r[1]]);
+    }
+  }
+  // 按区间插入 mark
+  let out = "";
+  let pos = 0;
+  for (const [s, e] of merged) {
+    out += escaped.slice(pos, s);
+    out += `<mark class="search-hit">${escaped.slice(s, e)}</mark>`;
+    pos = e;
+  }
+  out += escaped.slice(pos);
   return out;
 }
 
@@ -681,6 +702,11 @@ export function Sidebar({
                       __html: highlightKw(r.snippet, searchQuery.trim()),
                     }}
                   />
+                  {(r.match_count ?? 0) > 0 && (
+                    <span className="text-[11px] text-faint/80">
+                      命中 {r.match_count} 处
+                    </span>
+                  )}
                   {(r.tags && r.tags.length > 0) && (
                     <span className="flex flex-wrap items-center gap-1">
                       {r.tags.map((t) => (

@@ -767,7 +767,9 @@ def search_documents(
     if not query:
         return {"query": q, "total": 0, "results": []}
 
+    # 多关键词：按空白拆分，全部命中才匹配（AND 语义）
     ql = query.lower()
+    kws = [k for k in ql.split() if k]
     results: list[dict] = []
     for d in store.all(kb_id, current_user["id"]):
         if type and d.get("type", "doc") != type:
@@ -776,12 +778,17 @@ def search_documents(
             continue
         title = d.get("title") or ""
         text = d.get("text") or ""
-        title_idx = title.lower().find(ql)
-        text_idx = text.lower().find(ql)
-        if title_idx == -1 and text_idx == -1:
+        title_lower = title.lower()
+        text_lower = text.lower()
+        # 每个关键词都要在标题或正文中命中
+        if not all(k in title_lower or k in text_lower for k in kws):
             continue
+        # snippet 定位到首个关键词在正文中的命中位置
+        first_kw = kws[0]
+        text_idx = text_lower.find(first_kw)
+        title_idx = title_lower.find(first_kw)
         if text_idx >= 0:
-            snippet = _make_snippet(text, text_idx, len(query))
+            snippet = _make_snippet(text, text_idx, len(first_kw))
         else:
             snippet = text[:120].replace("\n", " ")
         results.append(
@@ -789,7 +796,8 @@ def search_documents(
                 "doc_id": d["id"],
                 "title": title,
                 "snippet": snippet,
-                "match_in_title": title_idx >= 0,
+                "match_in_title": all(k in title_lower for k in kws),
+                "match_count": sum(text_lower.count(k) for k in kws),
                 "folder_id": d.get("folder_id"),
                 "kb_id": d.get("kb_id"),
                 "source": d.get("source"),

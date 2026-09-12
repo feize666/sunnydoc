@@ -76,25 +76,45 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-/** 对文本做大小写不敏感的关键词高亮，非命中部分转义。 */
+/** 对文本做大小写不敏感的关键词高亮（支持多关键词），非命中部分转义。 */
 function highlightText(content: string, keyword: string): string {
   if (!keyword) return escapeHtml(content);
+  const kws = keyword.trim().split(/\s+/).filter(Boolean);
+  if (kws.length === 0) return escapeHtml(content);
   const lower = content.toLowerCase();
-  const kw = keyword.toLowerCase();
-  let out = "";
-  let i = 0;
-  while (i < content.length) {
-    const idx = lower.indexOf(kw, i);
-    if (idx === -1) {
-      out += escapeHtml(content.slice(i));
-      break;
+  // 收集所有命中区间
+  const ranges: Array<[number, number]> = [];
+  for (const k of kws) {
+    const kl = k.toLowerCase();
+    let i = 0;
+    while (i < content.length) {
+      const idx = lower.indexOf(kl, i);
+      if (idx === -1) break;
+      ranges.push([idx, idx + k.length]);
+      i = idx + k.length;
     }
-    out += escapeHtml(content.slice(i, idx));
-    out += `<mark class="search-hit">${escapeHtml(
-      content.slice(idx, idx + keyword.length),
-    )}</mark>`;
-    i = idx + keyword.length;
   }
+  if (ranges.length === 0) return escapeHtml(content);
+  // 合并重叠区间
+  ranges.sort((a, b) => a[0] - b[0]);
+  const merged: Array<[number, number]> = [];
+  for (const r of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && r[0] <= last[1]) {
+      last[1] = Math.max(last[1], r[1]);
+    } else {
+      merged.push([r[0], r[1]]);
+    }
+  }
+  // 按区间插入 mark
+  let out = "";
+  let pos = 0;
+  for (const [s, e] of merged) {
+    out += escapeHtml(content.slice(pos, s));
+    out += `<mark class="search-hit">${escapeHtml(content.slice(s, e))}</mark>`;
+    pos = e;
+  }
+  out += escapeHtml(content.slice(pos));
   return out;
 }
 
