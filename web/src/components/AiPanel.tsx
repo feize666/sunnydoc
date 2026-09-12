@@ -38,13 +38,7 @@ import {
   type MessageAttachment,
 } from "@/lib/chatHistory";
 
-const initialMessages: Message[] = [
-  {
-    role: "ai",
-    content:
-      "你好，我可以基于知识库文档回答，也能联网搜索实时信息。试试问我关于「部署」或「今天天气」相关的内容。",
-  },
-];
+const initialMessages: Message[] = [];
 
 function formatTime(ts: number): string {
   const d = new Date(ts);
@@ -136,6 +130,8 @@ export function AiPanel({
   const [confirmClear, setConfirmClear] = useState(false);
   // 浮窗位置（null 表示用默认右下角定位）
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  // 扩大/缩小（扩大时面板占据更大的区域）
+  const [expanded, setExpanded] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
   const { width: panelWidth, onMouseDown: onPanelResize } = useResizable(460, 380, 720, "ai_panel_width", -1);
 
@@ -250,9 +246,9 @@ export function AiPanel({
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
   }, [messages, loading]);
 
-  // 从消息列表构建对话历史（排除第一条欢迎语，只取最近 8 条）
+  // 从消息列表构建对话历史（只取最近 8 条有效消息）
   const buildHistory = (msgs: Message[]): ChatMessage[] => {
-    const real = msgs.slice(1).filter((m) => m.content && !m.error);
+    const real = msgs.filter((m) => m.content && !m.error);
     return real.slice(-8).map((m) => ({
       role: m.role === "user" ? "user" : "assistant",
       content: m.content,
@@ -568,8 +564,16 @@ export function AiPanel({
   return (
     <aside
       ref={panelRef}
-      style={pos ? { left: pos.x, top: pos.y, width: panelWidth } : { right: 24, bottom: 24, width: panelWidth }}
-      className="fixed z-50 flex h-[78vh] max-h-[820px] min-h-[480px] max-w-[92vw] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-lg"
+      style={
+        expanded
+          ? { right: 16, top: 16, width: "min(1000px, 94vw)" }
+          : pos
+            ? { left: pos.x, top: pos.y, width: panelWidth }
+            : { right: 24, bottom: 24, width: panelWidth }
+      }
+      className={`fixed z-50 flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-lg ${
+        expanded ? "h-[92vh] max-h-[92vh]" : "h-[78vh] max-h-[820px] min-h-[480px]"
+      } max-w-[94vw]`}
     >
       <div
         onMouseDown={onPanelResize}
@@ -607,6 +611,16 @@ export function AiPanel({
         </div>
 
         <div className="flex items-center gap-1">
+          <Tooltip content="新建会话">
+            <button
+              onClick={newSession}
+              disabled={loading}
+              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-accent transition-colors hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <PlusIcon size={14} />
+              新建
+            </button>
+          </Tooltip>
           <Tooltip content="历史会话">
             <button
               onClick={() => setShowHistory((v) => !v)}
@@ -616,6 +630,22 @@ export function AiPanel({
             >
               <HistoryIcon size={14} />
               历史
+            </button>
+          </Tooltip>
+          <Tooltip content={expanded ? "还原大小" : "扩大"}>
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-muted transition-colors hover:bg-hover hover:text-text"
+            >
+              {expanded ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3" />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
+                </svg>
+              )}
             </button>
           </Tooltip>
           <Tooltip content="清空对话">
@@ -647,14 +677,6 @@ export function AiPanel({
           <div className="absolute left-3 right-3 top-11 z-20 overflow-hidden rounded-xl border border-line bg-background shadow-lg">
             <div className="flex items-center justify-between border-b border-line px-3 py-2">
               <span className="text-[13px] font-semibold text-text">历史会话</span>
-              <button
-                onClick={newSession}
-                disabled={loading}
-                className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] text-accent transition-colors hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <PlusIcon size={12} />
-                新建
-              </button>
             </div>
             {sortedSessions.length === 0 ? (
               <div className="px-3 py-5 text-center text-[13px] text-faint">暂无历史会话</div>
@@ -699,6 +721,19 @@ export function AiPanel({
       )}
 
       <div ref={chatRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-3.5">
+        {messages.length === 0 && !loading && (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16 text-center">
+            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-accent-soft text-accent">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+            </div>
+            <div className="text-[14px] font-medium text-text">开始新的对话</div>
+            <div className="text-[12px] text-faint">
+              基于知识库问答，或上传附件后提问
+            </div>
+          </div>
+        )}
         {messages.map((msg, i) => (
           <div
             key={i}
