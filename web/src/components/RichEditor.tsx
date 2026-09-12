@@ -210,18 +210,41 @@ const TextAlign = Extension.create({
     return {
       setTextAlign:
         (align: string) =>
-        ({ commands }: { commands: { updateAttributes: (t: string, a: object) => boolean } }) => {
-          // 同时作用于段落和标题，不用 every（会因某个 type 不在选区而短路）
-          const a = commands.updateAttributes("paragraph", { textAlign: align });
-          const b = commands.updateAttributes("heading", { textAlign: align });
-          return a || b;
+        ({ state, dispatch }: any) => {
+          const { from, to } = state.selection;
+          let changed = false;
+          const tr = state.tr;
+          state.doc.nodesBetween(from, to, (node: any, pos: number) => {
+            if (
+              (node.type.name === "paragraph" || node.type.name === "heading") &&
+              node.attrs.textAlign !== align
+            ) {
+              tr.setNodeMarkup(pos, undefined, { ...node.attrs, textAlign: align });
+              changed = true;
+            }
+          });
+          if (changed) dispatch?.(tr);
+          return changed;
         },
       unsetTextAlign:
         () =>
-        ({ commands }: { commands: { resetAttributes: (t: string, a: string) => boolean } }) => {
-          const a = commands.resetAttributes("paragraph", "textAlign");
-          const b = commands.resetAttributes("heading", "textAlign");
-          return a || b;
+        ({ state, dispatch }: any) => {
+          const { from, to } = state.selection;
+          let changed = false;
+          const tr = state.tr;
+          state.doc.nodesBetween(from, to, (node: any, pos: number) => {
+            if (
+              (node.type.name === "paragraph" || node.type.name === "heading") &&
+              node.attrs.textAlign != null
+            ) {
+              const attrs = { ...node.attrs };
+              delete attrs.textAlign;
+              tr.setNodeMarkup(pos, undefined, attrs);
+              changed = true;
+            }
+          });
+          if (changed) dispatch?.(tr);
+          return changed;
         },
     } as unknown as Partial<Record<string, unknown>>;
   },
