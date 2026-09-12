@@ -466,34 +466,41 @@ class DocStore:
             )
         return docs
 
-    def all(self, kb_id: str | None = None, user_id: str | None = None) -> list[dict[str, Any]]:
+    def all(
+        self, kb_id: str | None = None, user_id: str | None = None, with_chunks: bool = True
+    ) -> list[dict[str, Any]]:
         """返回用户可见的文档（知识库级可见性）。
 
         - kb_id 提供：用户对该 kb 有权限则返回该 kb 下全部文档，否则空。
         - kb_id 为空、user_id 提供：返回可访问知识库下的全部文档 + 自有且未归属 kb 的文档。
         - user_id 为空：返回全部（内部/未登录场景）。
+        - with_chunks=False：跳过 chunks/向量，用于搜索、统计等只读标题/正文的场景。
         """
         if self._backend == "db":
             if kb_id is not None:
                 if user_id is not None and self.kb_permission(kb_id, user_id) is None:
                     return []
-                return db.all_documents(kb_id=kb_id)
+                return db.all_documents(kb_id=kb_id, with_chunks=with_chunks)
             if user_id is not None:
-                return db.all_documents_for_user(user_id, self._accessible_kb_ids(user_id))
-            return db.all_documents()
+                return db.all_documents_for_user(
+                    user_id, self._accessible_kb_ids(user_id), with_chunks=with_chunks
+                )
+            return db.all_documents(with_chunks=with_chunks)
         docs = [d for d in self._docs if not d.get("deleted_at")]
         if kb_id is not None:
             if user_id is not None and self.kb_permission(kb_id, user_id) is None:
                 return []
-            return [d for d in docs if d.get("kb_id") == kb_id]
-        if user_id is not None:
+            docs = [d for d in docs if d.get("kb_id") == kb_id]
+        elif user_id is not None:
             kb_ids = self._accessible_kb_ids(user_id)
-            return [
+            docs = [
                 d
                 for d in docs
                 if (d.get("kb_id") in kb_ids) or (d.get("user_id") == user_id and not d.get("kb_id"))
             ]
-        return list(docs)
+        if not with_chunks:
+            return [{k: v for k, v in d.items() if k != "chunks"} for d in docs]
+        return docs
 
     def get(self, doc_id: str, user_id: str | None = None) -> dict[str, Any] | None:
         if self._backend == "db":

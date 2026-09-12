@@ -318,7 +318,7 @@ def _require_kb_write(kb_id: str, user: dict) -> None:
 
 def _dedupe_title(store, title: str, user_id: str | None = None) -> str:
     """若 title 已存在则自动追加「(2)」「(3)」…后缀，直到不重名（按 user 范围去重）"""
-    existing = {d["title"] for d in store.all(user_id=user_id)}
+    existing = {d["title"] for d in store.all(user_id=user_id, with_chunks=False)}
     if title not in existing:
         return title
     i = 2
@@ -771,7 +771,7 @@ def search_documents(
     ql = query.lower()
     kws = [k for k in ql.split() if k]
     results: list[dict] = []
-    for d in store.all(kb_id, current_user["id"]):
+    for d in store.all(kb_id, current_user["id"], with_chunks=False):
         if type and d.get("type", "doc") != type:
             continue
         if tag and tag not in (d.get("tags") or []):
@@ -820,7 +820,7 @@ def list_documents(
     tag: str | None = None,
     current_user: dict = Depends(get_current_user),
 ):
-    docs = store.all(kb_id, current_user["id"])
+    docs = store.all(kb_id, current_user["id"], with_chunks=False)
     if tag:
         docs = [d for d in docs if tag in (d.get("tags") or [])]
     fav_ids = set(store.list_favorites(current_user["id"]))
@@ -1631,7 +1631,7 @@ def get_stats(current_user: dict = Depends(get_current_user)):
     from collections import defaultdict
     import datetime
 
-    docs = store.all(user_id=current_user["id"])
+    docs = store.all(user_id=current_user["id"], with_chunks=False)
     kbs = store.list_kbs(current_user["id"])
     favorites = store.list_favorites(current_user["id"])
     recent = store.list_recent(limit=200, user_id=current_user["id"])
@@ -1731,7 +1731,7 @@ def export_documents(req: ExportRequest, current_user: dict = Depends(get_curren
         kb = store.get_kb(req.kb_id, current_user["id"])
         if kb is None:
             raise HTTPException(status_code=404, detail="知识库不存在")
-        docs = store.all(kb_id=req.kb_id, user_id=current_user["id"])
+        docs = store.all(kb_id=req.kb_id, user_id=current_user["id"], with_chunks=False)
         folders = store.list_folders(req.kb_id, current_user["id"])
         if not docs:
             raise HTTPException(status_code=404, detail="知识库内无文档")
@@ -1739,7 +1739,7 @@ def export_documents(req: ExportRequest, current_user: dict = Depends(get_curren
             kb.get("name") or "知识库", docs, folders
         )
     else:
-        docs = store.all(user_id=current_user["id"])
+        docs = store.all(user_id=current_user["id"], with_chunks=False)
         if req.doc_ids:
             idset = set(req.doc_ids)
             docs = [d for d in docs if d["id"] in idset]

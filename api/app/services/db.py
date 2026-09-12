@@ -372,11 +372,12 @@ def add_document(doc: dict[str, Any]) -> dict[str, Any]:
 
 
 def all_documents(
-    kb_id: str | None = None, user_id: str | None = None
+    kb_id: str | None = None, user_id: str | None = None, with_chunks: bool = True
 ) -> list[dict[str, Any]]:
-    """返回全部文档（含 chunks 与向量），结构与 JSON 存储保持一致。
+    """返回全部文档（默认含 chunks 与向量），结构与 JSON 存储保持一致。
 
-    kb_id / user_id 提供时按对应维度过滤。
+    kb_id / user_id 提供时按对应维度过滤。with_chunks=False 时跳过 chunks/向量加载，
+    用于搜索、统计等只读标题/正文的场景，避免反序列化向量带来的开销。
     """
     conn = _connect()
     with conn.cursor() as cur:
@@ -394,13 +395,14 @@ def all_documents(
         sql += " ORDER BY pinned DESC, COALESCE(sort_order, created_at) DESC"
         cur.execute(sql, params)
         docs = [_doc_from_row(r) for r in cur.fetchall()]
-        for doc in docs:
-            doc["chunks"] = _load_chunks(cur, doc["id"])
+        if with_chunks:
+            for doc in docs:
+                doc["chunks"] = _load_chunks(cur, doc["id"])
     return docs
 
 
 def all_documents_for_user(
-    user_id: str, kb_ids: set[str] | None
+    user_id: str, kb_ids: set[str] | None, with_chunks: bool = True
 ) -> list[dict[str, Any]]:
     """返回用户可见的文档：可访问知识库（kb_id 集合）下的所有文档 + 其自有且未归属 kb 的文档。"""
     conn = _connect()
@@ -421,8 +423,9 @@ def all_documents_for_user(
             params = [user_id]
         cur.execute(sql, params)
         docs = [_doc_from_row(r) for r in cur.fetchall()]
-        for doc in docs:
-            doc["chunks"] = _load_chunks(cur, doc["id"])
+        if with_chunks:
+            for doc in docs:
+                doc["chunks"] = _load_chunks(cur, doc["id"])
     return docs
 
 
