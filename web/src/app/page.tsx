@@ -51,6 +51,7 @@ import {
   recordRecent,
   getStats,
   getUnreadCount,
+  subscribeSSE,
   searchDocuments,
   getMe,
   logout,
@@ -291,6 +292,15 @@ export default function Home() {
     refreshStats();
     refreshUnread();
   }, [user, refreshKbs, refreshRecent, refreshFavorites, refreshStats, refreshUnread]);
+
+  // 实时推送：订阅通知事件，收到新通知时实时刷新未读数
+  useEffect(() => {
+    if (!user) return;
+    const sub = subscribeSSE("/events/notifications", (event) => {
+      if (event.type === "notification") refreshUnread();
+    });
+    return () => sub.close();
+  }, [user, refreshUnread]);
 
   // 知识库加载完成后，尝试恢复上次打开的知识库
   useEffect(() => {

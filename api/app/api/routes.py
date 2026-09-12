@@ -1,6 +1,7 @@
 """API 路由"""
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import os
@@ -13,7 +14,7 @@ import zipfile
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -22,6 +23,38 @@ from app.services import media, parser, qa, llm, web_search, exporter, auth, set
 from app.services.store import store
 
 router = APIRouter(prefix="/api/v1")
+
+# ---------- SSE 实时推送：订阅者管理 ----------
+# 单进程内存订阅表：user_id / doc_id -> {(asyncio.Queue, event_loop)}
+# 同步端点运行在线程池，推送时用 loop.call_soon_threadsafe 安全跨线程入队。
+_notify_subscribers: dict[str, set[tuple[asyncio.Queue, asyncio.AbstractEventLoop]]] = {}
+_doc_subscribers: dict[str, set[tuple[asyncio.Queue, asyncio.AbstractEventLoop]]] = {}
+_subs_lock = threading.Lock()
+
+
+def _safe_put(q: asyncio.Queue, event: dict) -> None:
+    try:
+        q.put_nowait(event)
+    except asyncio.QueueFull:
+        pass
+
+
+def publish_notification(user_id: str, event: dict) -> None:
+    """向某用户的 SSE 订阅者推送事件（非阻塞，跨线程安全）。"""
+    for q, loop in list(_notify_subscribers.get(user_id, ())):
+        try:
+            loop.call_soon_threadsafe(_safe_put, q, event)
+        except RuntimeError:
+            pass
+
+
+def publish_comment(doc_id: str, event: dict) -> None:
+    """向某文档的 SSE 订阅者推送事件。"""
+    for q, loop in list(_doc_subscribers.get(doc_id, ())):
+        try:
+            loop.call_soon_threadsafe(_safe_put, q, event)
+        except RuntimeError:
+            pass
 
 # 上传文件落盘临时目录（避免整读进内存）
 TMP_DIR = DATA_DIR / "tmp"
@@ -1343,6 +1376,7 @@ def add_share(
         kb_id,
         f"将知识库「{kb_name}」共享给了你（{perm_label}）",
     )
+    publish_notification(target["id"], {"type": "notification", "kb_id": kb_id})
     _audit(current_user, "share", "kb", kb_id, f"将知识库「{kb_name}」共享给 {target['username']}（{perm_label}）")
     return {
         "user_id": target["id"],
@@ -1410,16 +1444,65 @@ def list_recent(limit: int = 20, current_user: dict = Depends(get_current_user))
 
 @router.get("/stats")
 def get_stats(current_user: dict = Depends(get_current_user)):
-    """首页仪表盘统计：文档数 / 知识库数 / 收藏数 / 最近浏览数。"""
+    """首页仪表盘统计：文档数 / 知识库数 / 收藏数 / 最近浏览数 + 趋势与分布。"""
+    from collections import defaultdict
+    import datetime
+
     docs = store.all(user_id=current_user["id"])
     kbs = store.list_kbs(current_user["id"])
     favorites = store.list_favorites(current_user["id"])
     recent = store.list_recent(limit=200, user_id=current_user["id"])
+
+    # 文档创建趋势（最近 14 天，按天聚合）
+    today = datetime.date.today()
+    trend_buckets: dict[int, int] = defaultdict(int)
+    for d in docs:
+        ts = d.get("created_at")
+        if not ts:
+            continue
+        try:
+            days_ago = (today - datetime.date.fromtimestamp(ts)).days
+        except (ValueError, OSError, OverflowError):
+            continue
+        if 0 <= days_ago < 14:
+            trend_buckets[days_ago] += 1
+    doc_trend = [
+        {
+            "date": (today - datetime.timedelta(days=i)).strftime("%m-%d"),
+            "count": trend_buckets.get(i, 0),
+        }
+        for i in range(13, -1, -1)
+    ]
+
+    # 按知识库分布（top 8）
+    kb_names = {kb["id"]: kb["name"] for kb in kbs}
+    kb_counts: dict[str | None, int] = defaultdict(int)
+    for d in docs:
+        kb_counts[d.get("kb_id")] += 1
+    docs_by_kb = [
+        {"name": kb_names.get(kid, "未分类"), "count": c}
+        for kid, c in sorted(kb_counts.items(), key=lambda kv: -kv[1])[:8]
+    ]
+
+    # 热门标签（top 12）
+    tag_counts: dict[str, int] = defaultdict(int)
+    for d in docs:
+        for t in d.get("tags") or []:
+            if t:
+                tag_counts[t] += 1
+    top_tags = [
+        {"name": t, "count": c}
+        for t, c in sorted(tag_counts.items(), key=lambda kv: -kv[1])[:12]
+    ]
+
     return {
         "total_docs": len(docs),
         "total_kbs": len(kbs),
         "total_favorites": len(favorites),
         "recent_count": len(recent),
+        "doc_trend": doc_trend,
+        "docs_by_kb": docs_by_kb,
+        "top_tags": top_tags,
     }
 
 
@@ -1911,10 +1994,17 @@ def add_document_comment(
     for mid in mentions:
         store.add_notification(mid, "mention", current_user["id"], doc_id, kb_id, "在评论中提到了你")
     # 通知：评论被回复
-    if parent_id:
-        parent = store.get_comment(parent_id)
-        if parent and parent.get("user_id") != current_user["id"]:
-            store.add_notification(parent["user_id"], "reply", current_user["id"], doc_id, kb_id, "回复了你的评论")
+    parent = store.get_comment(parent_id) if parent_id else None
+    if parent and parent.get("user_id") != current_user["id"]:
+        store.add_notification(parent["user_id"], "reply", current_user["id"], doc_id, kb_id, "回复了你的评论")
+
+    # SSE 实时推送：评论事件给该文档的订阅者
+    publish_comment(doc_id, {"type": "comment", "doc_id": doc_id, "comment_id": c["id"]})
+    # SSE 实时推送：通知事件给被 @ / 被回复的用户
+    for mid in mentions:
+        publish_notification(mid, {"type": "notification", "doc_id": doc_id})
+    if parent and parent.get("user_id") != current_user["id"]:
+        publish_notification(parent["user_id"], {"type": "notification", "doc_id": doc_id})
 
     _audit(current_user, "comment", "doc", doc_id, f"评论文档「{(doc or {}).get('title', doc_id)}」")
     return {
@@ -1948,6 +2038,77 @@ def delete_document_comment(comment_id: str, current_user: dict = Depends(get_cu
 
 
 # ---------- 通知中心 ----------
+
+@router.get("/events/notifications")
+async def notifications_stream(request: Request, current_user: dict = Depends(get_current_user)):
+    """SSE 事件流：实时推送当前用户的新通知。"""
+    q: asyncio.Queue = asyncio.Queue(maxsize=100)
+    uid = current_user["id"]
+    loop = asyncio.get_running_loop()
+    with _subs_lock:
+        _notify_subscribers.setdefault(uid, set()).add((q, loop))
+
+    async def gen():
+        yield f"data: {json.dumps({'type': 'connected'}, ensure_ascii=False)}\n\n"
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(q.get(), timeout=15.0)
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        finally:
+            with _subs_lock:
+                s = _notify_subscribers.get(uid)
+                if s:
+                    s.discard((q, loop))
+                    if not s:
+                        _notify_subscribers.pop(uid, None)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+
+@router.get("/events/comments/{doc_id}")
+async def comments_stream(doc_id: str, request: Request, current_user: dict = Depends(get_current_user)):
+    """SSE 事件流：实时推送某文档的新评论。"""
+    if store.get(doc_id, current_user["id"]) is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    q: asyncio.Queue = asyncio.Queue(maxsize=100)
+    loop = asyncio.get_running_loop()
+    with _subs_lock:
+        _doc_subscribers.setdefault(doc_id, set()).add((q, loop))
+
+    async def gen():
+        yield f"data: {json.dumps({'type': 'connected'}, ensure_ascii=False)}\n\n"
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(q.get(), timeout=15.0)
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        finally:
+            with _subs_lock:
+                s = _doc_subscribers.get(doc_id)
+                if s:
+                    s.discard((q, loop))
+                    if not s:
+                        _doc_subscribers.pop(doc_id, None)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
 
 @router.get("/notifications")
 def list_notifications(limit: int = 50, current_user: dict = Depends(get_current_user)):

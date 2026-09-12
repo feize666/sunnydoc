@@ -31,6 +31,95 @@ function formatTime(ts: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${time}`;
 }
 
+/* —— 数据看板图表（纯 SVG / CSS，不引第三方图表库） —— */
+
+function TrendChart({ data }: { data: { date: string; count: number }[] }) {
+  if (!data || data.length < 2) return null;
+  const w = 560;
+  const h = 150;
+  const padX = 8;
+  const padY = 22;
+  const max = Math.max(1, ...data.map((d) => d.count));
+  const stepX = (w - padX * 2) / (data.length - 1);
+  const pts = data.map((d, i) => ({
+    x: padX + i * stepX,
+    y: h - padY - (d.count / max) * (h - padY * 2),
+    ...d,
+  }));
+  const line = pts.map((p, i) => `${i ? "L" : "M"}${p.x},${p.y}`).join(" ");
+  const area = `${line} L${pts[pts.length - 1].x},${h - padY} L${pts[0].x},${h - padY} Z`;
+  const labelEvery = Math.max(1, Math.ceil(data.length / 7));
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" role="img" aria-label="文档创建趋势">
+      {[0.25, 0.5, 0.75, 1].map((r) => {
+        const y = h - padY - (h - padY * 2) * r;
+        return (
+          <line key={r} x1={padX} x2={w - padX} y1={y} y2={y} stroke="var(--line)" strokeDasharray="3 3" />
+        );
+      })}
+      <path d={area} fill="var(--accent)" fillOpacity="0.12" />
+      <path d={line} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      {pts.map((p, i) => (
+        <g key={i}>
+          <circle cx={p.x} cy={p.y} r="3" fill="var(--background)" stroke="var(--accent)" strokeWidth="2" />
+          {i % labelEvery === 0 && (
+            <text x={p.x} y={h - 5} textAnchor="middle" fontSize="10" fill="var(--faint)">
+              {p.date}
+            </text>
+          )}
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function KbBarChart({ data }: { data: { name: string; count: number }[] }) {
+  const max = Math.max(1, ...data.map((d) => d.count));
+  return (
+    <div className="flex flex-col gap-2">
+      {data.map((d, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="w-24 shrink-0 truncate text-right text-[12px] text-muted" title={d.name}>
+            {d.name}
+          </span>
+          <div className="h-4 flex-1 overflow-hidden rounded bg-surface-2">
+            <div
+              className="h-full rounded"
+              style={{
+                width: `${(d.count / max) * 100}%`,
+                background: "var(--accent)",
+                opacity: 0.35 + 0.65 * (d.count / max),
+              }}
+            />
+          </div>
+          <span className="w-8 shrink-0 text-right text-[12px] text-faint">{d.count}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TagCloud({ data }: { data: { name: string; count: number }[] }) {
+  const max = Math.max(1, ...data.map((d) => d.count));
+  return (
+    <div className="flex flex-wrap gap-2">
+      {data.map((d, i) => {
+        const size = 12 + Math.round((d.count / max) * 8);
+        return (
+          <span
+            key={i}
+            className="inline-flex items-center rounded-full bg-accent-soft px-3 py-1 font-medium text-accent"
+            style={{ fontSize: size }}
+          >
+            #{d.name}
+            <span className="ml-1 text-[10px] opacity-55">{d.count}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export function HomeView({
   kbs,
   recent,
@@ -156,6 +245,31 @@ export function HomeView({
               ))}
             </section>
           )}
+
+          {/* 数据看板图表 */}
+          {stats &&
+            (stats.doc_trend?.length || stats.docs_by_kb?.length || stats.top_tags?.length) && (
+              <section className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-5">
+                {stats.doc_trend && stats.doc_trend.length > 0 && (
+                  <div className="rounded-xl border border-line bg-background p-4 shadow-sm lg:col-span-3">
+                    <h3 className="mb-3 text-sm font-semibold text-text">文档创建趋势（近 14 天）</h3>
+                    <TrendChart data={stats.doc_trend} />
+                  </div>
+                )}
+                {stats.docs_by_kb && stats.docs_by_kb.length > 0 && (
+                  <div className="rounded-xl border border-line bg-background p-4 shadow-sm lg:col-span-2">
+                    <h3 className="mb-3 text-sm font-semibold text-text">知识库分布</h3>
+                    <KbBarChart data={stats.docs_by_kb} />
+                  </div>
+                )}
+                {stats.top_tags && stats.top_tags.length > 0 && (
+                  <div className="rounded-xl border border-line bg-background p-4 shadow-sm lg:col-span-5">
+                    <h3 className="mb-3 text-sm font-semibold text-text">热门标签</h3>
+                    <TagCloud data={stats.top_tags} />
+                  </div>
+                )}
+              </section>
+            )}
 
           {/* 知识库 */}
           <section>

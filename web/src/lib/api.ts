@@ -689,6 +689,9 @@ export interface Stats {
   total_kbs: number;
   total_favorites: number;
   recent_count: number;
+  doc_trend?: { date: string; count: number }[];
+  docs_by_kb?: { name: string; count: number }[];
+  top_tags?: { name: string; count: number }[];
 }
 
 export async function getStats(): Promise<Stats> {
@@ -1062,5 +1065,73 @@ export async function upsertCustomProvider(cp: Partial<CustomProvider>): Promise
 
 export async function deleteCustomProvider(id: string): Promise<{ ok: boolean }> {
   return request(`/settings/ai/custom-providers/${id}`, { method: "DELETE" });
+}
+
+/**
+ * 建立 SSE 订阅（用 fetch + ReadableStream，支持 Authorization header）。
+ * onEvent 收到解析后的 JSON 事件；断线自动重连（3s）。返回 { close } 用于取消。
+ */
+export function subscribeSSE(
+  path: string,
+  onEvent: (event: Record<string, unknown>) => void,
+  onError?: () => void,
+): { close: () => void } {
+  const controller = new AbortController();
+  let closed = false;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const scheduleReconnect = () => {
+    if (closed) return;
+    reconnectTimer = setTimeout(run, 3000);
+  };
+
+  const run = async () => {
+    if (closed) return;
+    try {
+      const res = await fetch(`${BASE}${path}`, {
+        headers: { ...authHeaders(), Accept: "text/event-stream" },
+        signal: controller.signal,
+      });
+      if (!res.ok || !res.body) {
+        onError?.();
+        scheduleReconnect();
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx: number;
+        while ((idx = buffer.indexOf("\n\n")) !== -1) {
+          const chunk = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          const dataLine = chunk.split("\n").find((l) => l.startsWith("data: "));
+          if (!dataLine) continue;
+          try {
+            onEvent(JSON.parse(dataLine.slice(6)));
+          } catch {
+            /* 忽略解析失败 */
+          }
+        }
+      }
+      // 服务器断开流 → 自动重连
+      scheduleReconnect();
+    } catch {
+      if (!closed) scheduleReconnect();
+    }
+  };
+
+  run();
+
+  return {
+    close: () => {
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      controller.abort();
+    },
+  };
 }
 

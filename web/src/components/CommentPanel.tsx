@@ -6,6 +6,7 @@ import {
   addComment,
   deleteComment,
   searchUsers,
+  subscribeSSE,
   type DocComment,
   type UserBrief,
 } from "@/lib/api";
@@ -85,11 +86,13 @@ export function CommentPanel({
     if (open && docId) load();
   }, [open, docId, load]);
 
-  // 评论实时刷新：面板打开时每 15 秒静默拉取最新评论
+  // 评论实时推送：面板打开时订阅该文档的评论事件（SSE，替代轮询）
   useEffect(() => {
     if (!open || !docId) return;
-    const timer = setInterval(() => load(true), 15000);
-    return () => clearInterval(timer);
+    const sub = subscribeSSE(`/events/comments/${docId}`, (event) => {
+      if (event.type === "comment") load(true);
+    });
+    return () => sub.close();
   }, [open, docId, load]);
 
   useEffect(() => {
