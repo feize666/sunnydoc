@@ -230,12 +230,14 @@ function ToolBtn({
   shortcut,
   onClick,
   active,
+  disabled,
   children,
 }: {
   title: string;
   shortcut?: string;
   onClick: () => void;
   active?: boolean;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -244,8 +246,9 @@ function ToolBtn({
         type="button"
         onMouseDown={(e) => e.preventDefault()}
         onClick={onClick}
-        className={`flex h-9 min-w-[34px] shrink-0 items-center justify-center rounded-md px-2 text-muted transition-colors ${
-          active ? "bg-active text-accent" : "hover:bg-hover hover:text-text"
+        disabled={disabled}
+        className={`flex h-9 min-w-[34px] shrink-0 items-center justify-center rounded-md px-2 transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
+          active ? "bg-active text-accent" : "text-muted hover:bg-hover hover:text-text"
         }`}
       >
         {children}
@@ -272,6 +275,9 @@ export function RichEditor({
   // 链接弹窗
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
+  // 图片弹窗
+  const [imageOpen, setImageOpen] = useState(false);
+  const [imageUrl, setImageUrl] = useState("");
   // 查找替换
   const [findOpen, setFindOpen] = useState(false);
   const [findText, setFindText] = useState("");
@@ -400,10 +406,16 @@ export function RichEditor({
   };
 
   const setImage = () => {
-    const url = window.prompt("输入图片地址", "https://");
-    if (url && url.trim()) {
-      editor.chain().focus().setImage({ src: url.trim() }).run();
+    setImageUrl("");
+    setImageOpen(true);
+  };
+
+  const applyImage = () => {
+    const url = imageUrl.trim();
+    if (url) {
+      editor.chain().focus().setImage({ src: url }).run();
     }
+    setImageOpen(false);
   };
 
   const insertTable = () => {
@@ -484,6 +496,51 @@ export function RichEditor({
     const t = findTable();
     if (!t) return;
     editor.chain().focus().deleteRange({ from: t.pos, to: t.pos + t.node.nodeSize }).run();
+  };
+
+  const deleteTableRow = () => {
+    const { $from } = editor.state.selection;
+    for (let d = $from.depth; d >= 0; d--) {
+      const node = $from.node(d);
+      if (node.type.name === "tableRow") {
+        const pos = $from.before(d);
+        editor.chain().focus().deleteRange({ from: pos, to: pos + node.nodeSize }).run();
+        return;
+      }
+    }
+  };
+
+  const deleteTableCol = () => {
+    const { $from } = editor.state.selection;
+    for (let d = $from.depth; d >= 0; d--) {
+      const cell = $from.node(d);
+      if (cell.type.name === "tableCell" || cell.type.name === "tableHeader") {
+        const cellIndex = $from.index(d - 1);
+        const tableDepth = d - 2;
+        const tableNode = $from.node(tableDepth);
+        const tablePos = $from.before(tableDepth);
+        const tr = editor.state.tr;
+        const deletions: { from: number; to: number }[] = [];
+        let rowPos = tablePos + 1;
+        tableNode.forEach((child, offset) => {
+          if (child.type.name === "tableRow") {
+            const rowStart = rowPos;
+            let cellPos = rowStart + 1;
+            child.forEach((c, cOffset) => {
+              if (cOffset === cellIndex) {
+                deletions.push({ from: cellPos, to: cellPos + c.nodeSize });
+              }
+              cellPos += c.nodeSize;
+            });
+            void offset;
+          }
+          rowPos += child.nodeSize;
+        });
+        deletions.reverse().forEach(({ from, to }) => tr.delete(from, to));
+        editor.view.dispatch(tr);
+        return;
+      }
+    }
   };
 
   // 设置当前代码块语言
@@ -582,7 +639,7 @@ export function RichEditor({
   return (
     <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
       {/* 格式工具栏 */}
-      <div className="flex items-center gap-0.5 border-b border-line px-2 py-1.5">
+      <div className="flex items-center gap-0.5 overflow-x-auto border-b border-line px-2 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {/* 标题下拉 */}
         <Tooltip content="段落格式">
           <select
@@ -652,6 +709,39 @@ export function RichEditor({
                   title={c}
                 />
               ))}
+              {/* 自定义颜色 */}
+              <label
+                className="relative grid h-5 w-5 cursor-pointer place-items-center overflow-hidden rounded-full border border-dashed border-line"
+                title="自定义颜色"
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-muted">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                <input
+                  type="color"
+                  onChange={(e) => {
+                    editor.chain().focus().setMark("color", { color: e.target.value }).run();
+                    setColorOpen(false);
+                  }}
+                  className="absolute inset-0 cursor-pointer opacity-0"
+                />
+              </label>
+              {/* 取消颜色 */}
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  editor.chain().focus().unsetMark("color").run();
+                  setColorOpen(false);
+                }}
+                className="ml-0.5 grid h-5 place-items-center rounded px-1 text-[11px] text-muted hover:text-text"
+                title="清除颜色"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
             </div>
           )}
         </div>
@@ -746,9 +836,40 @@ export function RichEditor({
             </div>
           )}
         </div>
-        <ToolBtn title="图片" onClick={setImage}>
-          <ImageIcon size={17} />
-        </ToolBtn>
+        <div className="relative shrink-0">
+          <ToolBtn title="图片" onClick={setImage} active={imageOpen}>
+            <ImageIcon size={17} />
+          </ToolBtn>
+          {imageOpen && (
+            <div className="absolute left-0 top-full z-30 mt-1 w-72 rounded-lg border border-line bg-surface p-3 shadow-lg">
+              <div className="mb-1 text-[12px] font-medium text-text">图片地址</div>
+              <input
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") applyImage(); if (e.key === "Escape") setImageOpen(false); }}
+                placeholder="https://…（也可直接粘贴截图，⌘V）"
+                autoFocus
+                className="mb-2 h-8 w-full rounded-md border border-line bg-background px-2 text-[13px] text-text outline-none focus:border-accent"
+              />
+              <div className="flex justify-end gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setImageOpen(false)}
+                  className="h-7 rounded-md px-2 text-[12px] text-muted hover:bg-hover"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={applyImage}
+                  className="h-7 rounded-md bg-accent px-3 text-[12px] font-medium text-white hover:opacity-90"
+                >
+                  插入
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
         <ToolBtn title="表格" onClick={insertTable}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="1" />
@@ -794,6 +915,16 @@ export function RichEditor({
                 <path d="M9 3h6M9 21h6M12 3v18" />
               </svg>
             </ToolBtn>
+            <ToolBtn title="删除行" onClick={deleteTableRow}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M5 12h14" />
+              </svg>
+            </ToolBtn>
+            <ToolBtn title="删除列" onClick={deleteTableCol}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M12 5v14" />
+              </svg>
+            </ToolBtn>
             <ToolBtn title="删除表格" onClick={deleteTable}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="5" width="18" height="16" rx="1" />
@@ -805,13 +936,13 @@ export function RichEditor({
 
         <ToolDivider />
 
-        <ToolBtn title="撤销" shortcut="⌘Z" onClick={() => editor.chain().focus().undo().run()} active={false}>
+        <ToolBtn title="撤销" shortcut="⌘Z" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 7v6h6" />
             <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
           </svg>
         </ToolBtn>
-        <ToolBtn title="重做" shortcut="⌘⇧Z" onClick={() => editor.chain().focus().redo().run()} active={false}>
+        <ToolBtn title="重做" shortcut="⌘⇧Z" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 7v6h-6" />
             <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" />
