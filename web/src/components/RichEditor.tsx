@@ -66,6 +66,25 @@ const Color = Mark.create({
   },
 });
 
+const BackgroundColor = Mark.create({
+  name: "backgroundColor",
+  addAttributes() {
+    return {
+      color: {
+        default: null,
+        parseHTML: (el) => (el as HTMLElement).style.backgroundColor || null,
+        renderHTML: (attrs) => (attrs.color ? { style: `background-color: ${attrs.color}` } : {}),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: "span", getAttrs: (el) => ((el as HTMLElement).style.backgroundColor ? {} : false) }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["span", mergeAttributes(HTMLAttributes), 0];
+  },
+});
+
 /* ---------- 表格（自写，GFM 序列化由 tiptap-markdown 支持） ---------- */
 
 const TableCell = Node.create({
@@ -231,6 +250,7 @@ function ToolBtn({
   onClick,
   active,
   disabled,
+  tone,
   children,
 }: {
   title: string;
@@ -238,6 +258,7 @@ function ToolBtn({
   onClick: () => void;
   active?: boolean;
   disabled?: boolean;
+  tone?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -248,7 +269,11 @@ function ToolBtn({
         onClick={onClick}
         disabled={disabled}
         className={`flex h-9 min-w-[34px] shrink-0 items-center justify-center rounded-md px-2 transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
-          active ? "bg-active text-accent" : "text-muted hover:bg-hover hover:text-text"
+          active
+            ? "bg-active text-accent"
+            : tone
+              ? `${tone} hover:bg-hover`
+              : "text-muted hover:bg-hover hover:text-text"
         }`}
       >
         {children}
@@ -272,6 +297,8 @@ export function RichEditor({
   placeholder?: string;
 }) {
   const [colorOpen, setColorOpen] = useState(false);
+  // 背景色（填充）
+  const [bgColorOpen, setBgColorOpen] = useState(false);
   // 链接弹窗
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
@@ -292,6 +319,7 @@ export function RichEditor({
       Underline,
       Highlight,
       Color,
+      BackgroundColor,
       Table,
       TableRow,
       TableCell,
@@ -314,6 +342,70 @@ export function RichEditor({
     content: value,
     immediatelyRender: false,
     editorProps: {
+      handleKeyDown: (view, event) => {
+        if (!editor) return false;
+        const mod = event.metaKey || event.ctrlKey;
+        if (!mod) return false;
+        const key = event.key;
+        // ⌘1-6 标题
+        if (key >= "1" && key <= "6" && !event.shiftKey && !event.altKey) {
+          editor.chain().focus().toggleHeading({ level: Number(key) as 1 | 2 | 3 | 4 }).run();
+          return true;
+        }
+        // ⌘0 正文
+        if (key === "0" && !event.shiftKey && !event.altKey) {
+          editor.chain().focus().setParagraph().run();
+          return true;
+        }
+        // ⌘⇧K 代码块（Typora）
+        if (key === "K" && event.shiftKey) {
+          editor.chain().focus().toggleCodeBlock().run();
+          return true;
+        }
+        // ⌘T 表格（Typora）
+        if (key.toLowerCase() === "t" && !event.shiftKey && !event.altKey) {
+          const rows = 3;
+          const cols = 3;
+          const headerCells = Array.from({ length: cols }, () => ({ type: "tableHeader", content: [{ type: "paragraph" }] }));
+          const bodyRows = Array.from({ length: rows - 1 }, () => ({
+            type: "tableRow",
+            content: Array.from({ length: cols }, () => ({ type: "tableCell", content: [{ type: "paragraph" }] })),
+          }));
+          editor
+            .chain()
+            .focus()
+            .insertContent({ type: "table", content: [{ type: "tableRow", content: headerCells }, ...bodyRows] })
+            .run();
+          return true;
+        }
+        // ⌘⇧I 图片
+        if (key === "I" && event.shiftKey) {
+          setImageUrl("");
+          setImageOpen(true);
+          return true;
+        }
+        // ⌘⇧L 无序列表（Typora）
+        if (key === "L" && event.shiftKey) {
+          editor.chain().focus().toggleBulletList().run();
+          return true;
+        }
+        // ⌘⇧U 有序列表
+        if (key === "U" && event.shiftKey) {
+          editor.chain().focus().toggleOrderedList().run();
+          return true;
+        }
+        // ⌘] 缩进
+        if (key === "]") {
+          editor.chain().focus().sinkListItem("listItem").run();
+          return true;
+        }
+        // ⌘[ 反缩进
+        if (key === "[") {
+          editor.chain().focus().liftListItem("listItem").run();
+          return true;
+        }
+        return false;
+      },
       handlePaste: (view, event) => {
         const items = event.clipboardData?.items;
         if (!items) return false;
@@ -635,6 +727,7 @@ export function RichEditor({
   };
 
   const currentColor = (COLORS.find((c) => editor.isActive("color", { color: c })) ?? "");
+  const currentBgColor = (COLORS.find((c) => editor.isActive("backgroundColor", { color: c })) ?? "");
 
   return (
     <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
@@ -670,7 +763,7 @@ export function RichEditor({
         <ToolBtn title="删除线" shortcut="⌘⇧X" onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive("strike")}>
           <span className="text-[16px] leading-none line-through">S</span>
         </ToolBtn>
-        <ToolBtn title="行内代码" shortcut="⌘E" onClick={() => editor.chain().focus().toggleCode().run()} active={editor.isActive("code")}>
+        <ToolBtn title="行内代码" shortcut="⌘E" tone="text-accent" onClick={() => editor.chain().focus().toggleCode().run()} active={editor.isActive("code")}>
           <CodeIcon size={16} />
         </ToolBtn>
 
@@ -745,7 +838,74 @@ export function RichEditor({
             </div>
           )}
         </div>
-        <ToolBtn title="高亮" onClick={() => editor.chain().focus().toggleMark("highlight").run()} active={editor.isActive("highlight")}>
+        {/* 背景色（填充） */}
+        <div className="relative shrink-0">
+          <Tooltip content="背景色（填充）">
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setBgColorOpen((v) => !v)}
+              className={`flex h-9 min-w-[34px] items-center justify-center rounded-md px-2 transition-colors ${
+                editor.isActive("backgroundColor") ? "text-accent" : "text-muted hover:bg-hover hover:text-text"
+              }`}
+            >
+              <span className="text-[16px] leading-none">
+                A
+                <span className="ml-0.5 inline-block h-[14px] w-[16px] rounded-sm border border-line align-middle" style={{ background: currentBgColor || "transparent" }} />
+              </span>
+            </button>
+          </Tooltip>
+          {bgColorOpen && (
+            <div className="menu-panel absolute left-0 top-full z-30 mt-1 flex items-center gap-1 p-1.5" onMouseLeave={() => setBgColorOpen(false)}>
+              {COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    editor.chain().focus().setMark("backgroundColor", { color: c }).run();
+                    setBgColorOpen(false);
+                  }}
+                  className={`h-5 w-5 rounded-sm border border-line ${editor.isActive("backgroundColor", { color: c }) ? "ring-2 ring-accent ring-offset-1" : ""}`}
+                  style={{ background: c }}
+                  title={c}
+                />
+              ))}
+              <label
+                className="relative grid h-5 w-5 cursor-pointer place-items-center overflow-hidden rounded-sm border border-dashed border-line"
+                title="自定义背景色"
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-muted">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                <input
+                  type="color"
+                  onChange={(e) => {
+                    editor.chain().focus().setMark("backgroundColor", { color: e.target.value }).run();
+                    setBgColorOpen(false);
+                  }}
+                  className="absolute inset-0 cursor-pointer opacity-0"
+                />
+              </label>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  editor.chain().focus().unsetMark("backgroundColor").run();
+                  setBgColorOpen(false);
+                }}
+                className="ml-0.5 grid h-5 place-items-center rounded px-1 text-[11px] text-muted hover:text-text"
+                title="清除背景色"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
+        </div>
+        <ToolBtn title="高亮" tone="text-warning" onClick={() => editor.chain().focus().toggleMark("highlight").run()} active={editor.isActive("highlight")}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 11l-3.5 3.5a1.5 1.5 0 0 0 2 2L11 13" />
             <path d="M13 15l3.5-3.5a1.5 1.5 0 0 0-2-2L11 13" />
@@ -764,10 +924,10 @@ export function RichEditor({
 
         <ToolDivider />
 
-        <ToolBtn title="引用" shortcut="⌘⇧B" onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive("blockquote")}>
+        <ToolBtn title="引用" shortcut="⌘⇧B" tone="text-warning" onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive("blockquote")}>
           <QuoteIcon size={17} />
         </ToolBtn>
-        <ToolBtn title="代码块" shortcut="⌥⌘C" onClick={() => editor.chain().focus().toggleCodeBlock().run()} active={editor.isActive("codeBlock")}>
+        <ToolBtn title="代码块" shortcut="⌥⌘C" tone="text-accent" onClick={() => editor.chain().focus().toggleCodeBlock().run()} active={editor.isActive("codeBlock")}>
           <CodeBlockIcon size={17} />
         </ToolBtn>
         {/* 代码块语言选择（仅光标在代码块内时显示） */}
@@ -794,7 +954,7 @@ export function RichEditor({
         <ToolDivider />
 
         <div className="relative shrink-0">
-          <ToolBtn title="链接" shortcut="⌘K" onClick={setLink} active={editor.isActive("link")}>
+          <ToolBtn title="链接" shortcut="⌘K" tone="text-accent" onClick={setLink} active={editor.isActive("link")}>
             <LinkIcon size={17} />
           </ToolBtn>
           {linkOpen && (
@@ -837,7 +997,7 @@ export function RichEditor({
           )}
         </div>
         <div className="relative shrink-0">
-          <ToolBtn title="图片" onClick={setImage} active={imageOpen}>
+          <ToolBtn title="图片" tone="text-success" onClick={setImage} active={imageOpen}>
             <ImageIcon size={17} />
           </ToolBtn>
           {imageOpen && (
@@ -870,13 +1030,13 @@ export function RichEditor({
             </div>
           )}
         </div>
-        <ToolBtn title="表格" onClick={insertTable}>
+        <ToolBtn title="表格" tone="text-accent" onClick={insertTable}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="1" />
             <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
           </svg>
         </ToolBtn>
-        <ToolBtn title="任务列表" onClick={() => editor.chain().focus().toggleTaskList().run()} active={editor.isActive("taskList")}>
+        <ToolBtn title="任务列表" tone="text-success" onClick={() => editor.chain().focus().toggleTaskList().run()} active={editor.isActive("taskList")}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="5" width="14" height="14" rx="2" />
             <path d="M6 12l3 3 5-6" />
@@ -936,13 +1096,13 @@ export function RichEditor({
 
         <ToolDivider />
 
-        <ToolBtn title="撤销" shortcut="⌘Z" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}>
+        <ToolBtn title="撤销" shortcut="⌘Z" onClick={() => editor.chain().focus().undo().run()}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 7v6h6" />
             <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
           </svg>
         </ToolBtn>
-        <ToolBtn title="重做" shortcut="⌘⇧Z" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()}>
+        <ToolBtn title="重做" shortcut="⌘⇧Z" onClick={() => editor.chain().focus().redo().run()}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 7v6h-6" />
             <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" />
