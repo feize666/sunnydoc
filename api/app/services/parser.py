@@ -179,15 +179,19 @@ def parse_zip(data: bytes) -> list[dict]:
             name = _decode_zip_filename(info)
             ext = ext_of(name)
             raw = zf.read(info)
-            if ext in TEXT_EXTS:
-                text = raw.decode("utf-8", errors="replace")
-                results.append({"name": name, "ext": ext, "text": text})
-            elif ext == ".pdf":
-                results.append({"name": name, "ext": ext, "text": parse_pdf(raw)})
-            elif ext == ".docx":
-                results.append({"name": name, "ext": ext, "text": parse_docx(raw)})
-            elif ext == ".xlsx":
-                results.append({"name": name, "ext": ext, "text": parse_xlsx(raw)})
+            try:
+                if ext in TEXT_EXTS:
+                    text = raw.decode("utf-8", errors="replace")
+                    results.append({"name": name, "ext": ext, "text": text})
+                elif ext == ".pdf":
+                    results.append({"name": name, "ext": ext, "text": parse_pdf(raw)})
+                elif ext == ".docx":
+                    results.append({"name": name, "ext": ext, "text": parse_docx(raw)})
+                elif ext == ".xlsx":
+                    results.append({"name": name, "ext": ext, "text": parse_xlsx(raw)})
+            except Exception:  # noqa: BLE001
+                # 单个文件解析失败（如损坏的 PDF）不影响整个 zip
+                continue
     return results
 
 

@@ -426,12 +426,18 @@ def _iter_parse_zip(data: bytes, progress_cb):
             if ext in TEXT_EXTS:
                 text = raw.decode("utf-8", errors="replace")
                 parsed.append({"name": norm, "ext": ext, "text": text})
-            elif ext == ".pdf":
-                parsed.append({"name": norm, "ext": ext, "text": parser.parse_pdf(raw)})
-            elif ext == ".docx":
-                parsed.append({"name": norm, "ext": ext, "text": parser.parse_docx(raw)})
-            elif ext == ".xlsx":
-                parsed.append({"name": norm, "ext": ext, "text": parser.parse_xlsx(raw)})
+            elif ext in {".pdf", ".docx", ".xlsx"}:
+                # 单个文件解析失败（如损坏的 PDF）不影响整个 zip 导入
+                try:
+                    if ext == ".pdf":
+                        text = parser.parse_pdf(raw)
+                    elif ext == ".docx":
+                        text = parser.parse_docx(raw)
+                    else:
+                        text = parser.parse_xlsx(raw)
+                    parsed.append({"name": norm, "ext": ext, "text": text})
+                except Exception:  # noqa: BLE001
+                    pass
             elif ext in parser.MEDIA_EXTS:
                 zip_path = norm.lstrip("/")
                 media_files.append(
@@ -1334,7 +1340,7 @@ async def upload_chat_attachment(
     elif kind == "zip":
         try:
             parsed = parser.parse_zip(data)
-        except (zipfile.BadZipFile, OSError):
+        except Exception:  # noqa: BLE001
             parsed = []
         text = "\n\n".join(f"### {p['name']}\n{p['text']}" for p in parsed if p.get("text"))
     else:
