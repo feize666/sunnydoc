@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { importDocumentAsync, getImportTask } from "@/lib/api";
+import { importDocumentAsync, getImportTask, importFromUrl } from "@/lib/api";
 import { CloseIcon } from "./icons";
 
 type Phase = "idle" | "uploading" | "parsing" | "done" | "failed";
@@ -31,6 +31,8 @@ export function ImportDialog({
   const [current, setCurrent] = useState("");
   const [result, setResult] = useState<ImportResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [urlInput, setUrlInput] = useState("");
+  const [importingUrl, setImportingUrl] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<number | null>(null);
 
@@ -99,6 +101,24 @@ export function ImportDialog({
     },
     [onImported, stopPolling, kbId],
   );
+
+  const handleUrlImport = useCallback(async () => {
+    const url = urlInput.trim();
+    if (!url || importingUrl) return;
+    setImportingUrl(true);
+    setErrorMsg(null);
+    try {
+      const r = await importFromUrl(url, kbId);
+      setPhase("done");
+      setResult({ count: 1, media: 0, titles: [r.title] });
+      onImported();
+      setUrlInput("");
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : "导入失败");
+    } finally {
+      setImportingUrl(false);
+    }
+  }, [urlInput, importingUrl, kbId, onImported]);
 
   if (!open) return null;
 
@@ -173,6 +193,40 @@ export function ImportDialog({
               className="hidden"
               onChange={(e) => e.target.files && handleFiles(e.target.files)}
             />
+
+            <div className="mt-3">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                    </svg>
+                  </span>
+                  <input
+                    value={urlInput}
+                    onChange={(e) => setUrlInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleUrlImport();
+                    }}
+                    placeholder="或粘贴网页链接导入（http/https）"
+                    className="h-9 w-full rounded-lg border border-line bg-background pl-9 pr-2 text-[13px] text-text outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
+                  />
+                </div>
+                <button
+                  onClick={handleUrlImport}
+                  disabled={importingUrl || !urlInput.trim()}
+                  className="btn btn-secondary h-9 shrink-0 disabled:opacity-50"
+                >
+                  {importingUrl ? "导入中…" : "导入"}
+                </button>
+              </div>
+              {errorMsg && (
+                <div className="mt-2 rounded-md bg-danger-soft px-3 py-1.5 text-xs text-danger">
+                  {errorMsg}
+                </div>
+              )}
+            </div>
           </div>
         )}
 

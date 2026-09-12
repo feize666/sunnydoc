@@ -293,6 +293,17 @@ export async function getImportTask(taskId: string): Promise<ImportTaskStatus> {
   return request(`/documents/import/${taskId}`);
 }
 
+export async function importFromUrl(
+  url: string,
+  kbId?: string | null,
+): Promise<{ id: string; title: string }> {
+  return request("/import/url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, kb_id: kbId ?? undefined }),
+  });
+}
+
 export type ExportFormat = "md" | "docx" | "pdf" | "html" | "json" | "zip";
 
 export async function exportDocuments(

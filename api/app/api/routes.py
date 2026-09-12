@@ -190,6 +190,11 @@ class ExportRequest(BaseModel):
     kb_id: str | None = None
 
 
+class ImportUrlRequest(BaseModel):
+    url: str
+    kb_id: str | None = None
+
+
 class RegisterRequest(BaseModel):
     username: str
     password: str
@@ -1044,6 +1049,69 @@ async def import_documents(
     thread.start()
 
     return {"task_id": task_id, "status": "queued"}
+
+
+@router.post("/import/url")
+def import_from_url(req: ImportUrlRequest, current_user: dict = Depends(get_current_user)):
+    """从网页 URL 导入：抓取正文 → 提取标题与 Markdown 正文 → 入库。"""
+    import httpx
+
+    url = req.url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="URL 不能为空")
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="仅支持 http/https 链接")
+    if req.kb_id:
+        _require_kb_write(req.kb_id, current_user)
+
+    try:
+        resp = httpx.get(
+            url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
+                    " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+                )
+            },
+            follow_redirects=True,
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=400, detail=f"抓取失败：{e}") from e
+
+    content = resp.content
+    head = content[:2000].lower()
+    is_html = "html" in (resp.headers.get("content-type") or "").lower() or (
+        b"<html" in head or b"<!doctype" in head
+    )
+
+    if is_html:
+        title, md = parser.html_to_markdown(resp.text, url)
+        if not md:
+            raise HTTPException(status_code=400, detail="未能从网页提取到正文内容")
+        title = title or url.rstrip("/").split("/")[-1] or "网页导入"
+        ext = ".md"
+    else:
+        # 非 HTML：按文件解析（如直接指向 .md/.txt/.pdf/.docx）
+        filename = url.rstrip("/").split("/")[-1] or "import"
+        parsed = parser.parse_file(filename, content)
+        if not parsed:
+            raise HTTPException(status_code=400, detail="不支持的网页内容类型")
+        md = parsed[0]["text"]
+        title = filename.rsplit(".", 1)[0] if "." in filename else filename
+        ext = parsed[0]["ext"]
+
+    title = _dedupe_title(store, title, current_user["id"])
+    doc = store.add(
+        title=title,
+        text=md,
+        source=url,
+        ext=ext,
+        kb_id=req.kb_id,
+        user_id=current_user["id"],
+    )
+    return {"id": doc["id"], "title": doc["title"], "source": url}
 
 
 @router.get("/documents/import/{task_id}")

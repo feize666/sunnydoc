@@ -259,3 +259,31 @@ def parse_file(filename: str, data: bytes) -> list[dict]:
     if ext == ".xlsx":
         return [{"name": filename, "ext": ext, "text": parse_xlsx(data)}]
     return []
+
+
+def html_to_markdown(html: str, base_url: str = "") -> tuple[str, str]:
+    """网页 HTML → (标题, Markdown 正文)。
+
+    用 BeautifulSoup 清洗（去 script/style/nav/footer 等噪音，优先取
+    article/main 正文），再用 html2text 转 Markdown。返回 (title, markdown)。
+    """
+    import bs4
+    import html2text as _h2t
+
+    soup = bs4.BeautifulSoup(html, "html.parser")
+    title = (soup.title.get_text(strip=True) if soup.title else "") or ""
+
+    # 移除噪音标签
+    for tag in soup(["script", "style", "noscript", "iframe", "nav", "header", "footer", "aside", "form", "button"]):
+        tag.decompose()
+
+    # 正文：优先 article / main，否则 body
+    body = soup.find("article") or soup.find("main") or soup.body or soup
+
+    h = _h2t.HTML2Text()
+    h.ignore_links = False
+    h.ignore_images = True  # 网页图片链接通常不稳定，忽略
+    h.body_width = 0  # 不折行，保持原样
+    h.unicode_snob = True
+    md = h.handle(str(body)).strip()
+    return title, md
