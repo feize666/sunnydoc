@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { createShare, revokeShare } from "@/lib/api";
 import { CloseIcon, CheckIcon } from "./icons";
+import { PasswordInput } from "./PasswordInput";
 
 export function ShareDocDialog({
   open,
@@ -149,10 +150,9 @@ export function ShareDocDialog({
                 <label className="mb-1 block text-[13px] text-muted">
                   访问密码（可选，留空则无需密码）
                 </label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={setPassword}
                   placeholder="设置访问密码"
                   className="w-full rounded-lg border border-line bg-background px-3 py-2 text-[13px] text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
                 />

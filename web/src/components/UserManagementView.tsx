@@ -12,6 +12,7 @@ import {
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CloseIcon, PlusIcon } from "./icons";
 import { AuditLogView } from "./AuditLogView";
+import { PasswordInput } from "./PasswordInput";
 
 function formatTime(ts?: number): string {
   if (!ts) return "-";
@@ -346,10 +347,9 @@ function UserFormDialog({
                 为用户「{targetUser?.nickname ?? targetUser?.username}」重置密码
               </div>
               <label className="mb-1 block text-xs text-muted">新密码</label>
-              <input
-                type="password"
+              <PasswordInput
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={setPassword}
                 placeholder="至少 6 位"
                 className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
               />
@@ -366,10 +366,9 @@ function UserFormDialog({
                     className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
                   />
                   <label className="mb-1 mt-3 block text-xs text-muted">初始密码</label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={setPassword}
                     placeholder="至少 6 位"
                     className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
                   />

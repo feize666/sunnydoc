@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { getSharedDoc, type SharedDoc } from "@/lib/api";
 import { renderMarkdown } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
+import { PasswordInput } from "./PasswordInput";
 
 /** 公开分享的只读文档视图（无需登录，可带密码保护）。 */
 export function ShareView({ token }: { token: string }) {
@@ -63,10 +64,9 @@ export function ShareView({ token }: { token: string }) {
           <div className="mt-1 text-sm text-faint">请输入访问密码</div>
         </div>
         <div className="flex items-center gap-2">
-          <input
-            type="password"
+          <PasswordInput
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={setPassword}
             onKeyDown={(e) => {
               if (e.key === "Enter") load(password);
             }}

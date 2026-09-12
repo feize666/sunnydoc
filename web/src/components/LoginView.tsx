@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { login, setToken, type User } from "@/lib/api";
+import { PasswordInput } from "./PasswordInput";
 
 export function LoginView({ onAuthed }: { onAuthed: (user: User) => void }) {
   const [username, setUsername] = useState("");
@@ -56,10 +57,9 @@ export function LoginView({ onAuthed }: { onAuthed: (user: User) => void }) {
             />
 
             <label className="mb-1 mt-3 block text-xs text-muted">密码</label>
-            <input
-              type="password"
+            <PasswordInput
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={setPassword}
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleSubmit();
               }}

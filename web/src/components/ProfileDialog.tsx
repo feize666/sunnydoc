@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { updateMe, changePassword, setToken, type User } from "@/lib/api";
 import { CloseIcon } from "./icons";
+import { PasswordInput } from "./PasswordInput";
 
 export function ProfileDialog({
   open,
@@ -166,17 +167,15 @@ export function ProfileDialog({
           <div className="mt-5 border-t border-line pt-4">
             <div className="mb-2 text-sm font-semibold text-text">修改密码</div>
             <label className="mb-1 block text-xs text-muted">旧密码</label>
-            <input
-              type="password"
+            <PasswordInput
               value={oldPassword}
-              onChange={(e) => setOldPassword(e.target.value)}
+              onChange={setOldPassword}
               className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
             />
             <label className="mb-1 mt-3 block text-xs text-muted">新密码</label>
-            <input
-              type="password"
+            <PasswordInput
               value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
+              onChange={setNewPassword}
               placeholder="至少 6 位"
               className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
             />
