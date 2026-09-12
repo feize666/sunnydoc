@@ -41,10 +41,108 @@ const mdSafe = new MarkdownIt({
   breaks: false,
 });
 
-// 标题锚点（生成 id）+ GitHub 风格任务列表
+// 标题锚点（生成 id）+ GitHub 风格任务列表 + 语雀语法兼容
 for (const instance of [md, mdSafe]) {
   instance.use(anchor, { level: [1, 2, 3, 4, 5, 6] });
   instance.use(taskLists);
+  instance.use(yuqueCompat);
+}
+
+// —— 语雀 markdown 兼容 ——
+// 提示块：:::type [标题] ... :::
+// 折叠块：#+BEGIN_NOTE ... #+END_NOTE
+function yuqueCompat(md: MarkdownItInstance) {
+  const OPEN_RE = /^:::(\w+)(?:\s+(.*))?$/;
+  const CLOSE_RE = /^:::$/;
+
+  // 读取指定行的原始文本（markdown-it StateBlock 无 getLine 方法）
+  function lineText(state: any, line: number): string {
+    const start = state.bMarks[line] + state.tShift[line];
+    const max = state.eMarks[line];
+    return state.src.slice(start, max);
+  }
+
+  function callout(
+    state: any,
+    startLine: number,
+    endLine: number,
+    silent: boolean,
+  ): boolean {
+    const m = OPEN_RE.exec(lineText(state, startLine).trim());
+    if (!m) return false;
+
+    let nextLine = startLine + 1;
+    while (nextLine < endLine && !CLOSE_RE.test(lineText(state, nextLine).trim())) {
+      nextLine++;
+    }
+    if (nextLine >= endLine) return false;
+
+    if (silent) return true;
+
+    const type = m[1].toLowerCase();
+    const title = (m[2] || "").trim();
+
+    let token = state.push("yuque_callout_open", "div", 1);
+    token.attrSet("class", `callout callout-${type}`);
+
+    if (title) {
+      token = state.push("yuque_callout_title", "div", 0);
+      token.attrSet("class", "callout-title");
+      token.content = title;
+    }
+
+    state.md.block.tokenize(state, startLine + 1, nextLine);
+
+    token = state.push("yuque_callout_close", "div", -1);
+    state.line = nextLine + 1;
+    return true;
+  }
+
+  function note(
+    state: any,
+    startLine: number,
+    endLine: number,
+    silent: boolean,
+  ): boolean {
+    if (!/^#\+BEGIN_NOTE$/.test(lineText(state, startLine).trim())) return false;
+
+    let nextLine = startLine + 1;
+    while (nextLine < endLine && !/^#\+END_NOTE$/.test(lineText(state, nextLine).trim())) {
+      nextLine++;
+    }
+    if (nextLine >= endLine) return false;
+
+    if (silent) return true;
+
+    let token = state.push("yuque_note_open", "details", 1);
+    token = state.push("yuque_note_summary", "summary", 1);
+    token.content = "展开";
+    token = state.push("yuque_note_summary_close", "summary", -1);
+
+    state.md.block.tokenize(state, startLine + 1, nextLine);
+
+    token = state.push("yuque_note_close", "details", -1);
+    state.line = nextLine + 1;
+    return true;
+  }
+
+  md.block.ruler.before("blockquote", "yuque_callout", callout, {
+    alt: ["paragraph", "reference", "blockquote", "list"],
+  });
+  md.block.ruler.before("blockquote", "yuque_note", note, {
+    alt: ["paragraph", "reference", "blockquote", "list"],
+  });
+
+  md.renderer.rules.yuque_callout_open = (tokens, idx) =>
+    `<div class="${tokens[idx].attrGet("class")}">\n`;
+  md.renderer.rules.yuque_callout_title = (tokens, idx) =>
+    `<div class="callout-title">${md.utils.escapeHtml(tokens[idx].content)}</div>\n`;
+  md.renderer.rules.yuque_callout_close = () => `</div>\n`;
+  md.renderer.rules.yuque_note_open = () => `<details class="callout callout-note">\n`;
+  md.renderer.rules.yuque_note_summary = (tokens, idx) =>
+    `<summary>${md.utils.escapeHtml(tokens[idx].content)}</summary>\n`;
+  md.renderer.rules.yuque_note_summary_close = () => ``;
+  md.renderer.rules.yuque_note_close = () => `</details>\n`;
 }
 
 const PURIFY_CONFIG: Config = {
@@ -64,8 +162,8 @@ const PURIFY_CONFIG: Config = {
     "form",
     "base",
   ],
-  // 搜索命中高亮用 <mark>，加入白名单
-  ADD_TAGS: ["mark"],
+  // 搜索命中高亮用 <mark>，语雀折叠块用 <details>/<summary>，加入白名单
+  ADD_TAGS: ["mark", "details", "summary"],
 };
 
 function escapeHtml(s: string): string {

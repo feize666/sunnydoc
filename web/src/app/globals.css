@@ -728,3 +728,50 @@ mark.search-hit {
   font-size: inherit;
   font-family: inherit;
 }
+
+/* 语雀兼容：提示块（callout）与折叠块（note） */
+.callout {
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 12px 0;
+  border-left: 4px solid;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.callout > *:last-child {
+  margin-bottom: 0;
+}
+.callout-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.callout-info {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.callout-success {
+  background: var(--success-soft);
+  border-color: var(--success);
+}
+.callout-warning {
+  background: var(--warning-soft);
+  border-color: var(--warning);
+}
+.callout-danger {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+.callout-tips {
+  background: var(--warning-soft);
+  border-color: var(--warning);
+}
+.callout-note {
+  background: var(--surface-2);
+  border-color: var(--line-strong);
+}
+.callout-note > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--muted);
+  user-select: none;
+}

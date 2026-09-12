@@ -417,6 +417,12 @@ def _iter_parse_zip(data: bytes, progress_cb):
                 progress_cb(idx, total, name)
                 continue
 
+            # 跳过语雀等平台的元数据文件（_sidebar.json 等）与隐藏文件（.DS_Store 等）
+            basename = norm.rsplit("/", 1)[-1]
+            if basename.startswith("_") or basename.startswith("."):
+                progress_cb(idx, total, name)
+                continue
+
             if ext in TEXT_EXTS:
                 text = raw.decode("utf-8", errors="replace")
                 parsed.append({"name": norm, "ext": ext, "text": text})
