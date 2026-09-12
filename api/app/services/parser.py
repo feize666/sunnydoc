@@ -118,6 +118,24 @@ def _ocr_png(png: bytes) -> str:
             pass
 
 
+def parse_image(data: bytes) -> str:
+    """图片 OCR：用 PIL 统一转 PNG 后调用 tesseract 识别文字。"""
+    if not _ocr_available():
+        return ""
+    try:
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(data))
+        # 统一转 RGB（处理 RGBA/P/CMYK/LA 等模式，PNG 才兼容）
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return _ocr_png(buf.getvalue()).strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def parse_docx(data: bytes) -> str:
     """用 python-docx 提取 Word 文本"""
     from docx import Document

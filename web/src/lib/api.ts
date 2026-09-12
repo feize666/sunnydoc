@@ -728,11 +728,12 @@ export async function chatStream(
   history: ChatMessage[],
   enableWeb: boolean,
   onEvent: (e: StreamEvent) => void,
+  attachments?: string[],
 ): Promise<void> {
   const res = await fetch(`${BASE}/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify({ query, top_k: topK, history, enable_web: enableWeb }),
+    body: JSON.stringify({ query, top_k: topK, history, enable_web: enableWeb, attachments: attachments ?? [] }),
   });
 
   if (!res.ok || !res.body) {
@@ -768,6 +769,50 @@ export async function chatStream(
 }
 
 // —— 认证 / 用户 ——
+
+export interface ChatAttachment {
+  id: string;
+  filename: string;
+  kind: "image" | "doc" | "zip";
+  size: number;
+  text_preview?: string;
+  preview_url?: string | null;
+  vision?: boolean;
+}
+
+/** 上传对话附件（图片/文档/压缩包），后端解析提取文字。 */
+export async function uploadChatAttachment(file: File): Promise<ChatAttachment> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(`${BASE}/chat/attachments`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: fd,
+  });
+  if (!res.ok) {
+    let detail = `上传失败（${res.status}）`;
+    try {
+      const body = await res.json();
+      if (body.detail) detail = body.detail;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+/** 把对话附件导入指定知识库（复用异步导入任务）。 */
+export async function importChatAttachment(
+  id: string,
+  kbId: string | null,
+): Promise<{ task_id: string; status: string }> {
+  return request(`/chat/attachments/${id}/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kb_id: kbId }),
+  });
+}
 
 export interface User {
   id: string;

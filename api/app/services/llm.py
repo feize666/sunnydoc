@@ -42,6 +42,20 @@ def available() -> bool:
     return bool(_cfg().get("llm_api_key"))
 
 
+# 视觉（图片理解）能力判断：按模型名关键词粗略识别
+_VISION_KEYWORDS = (
+    "vision", "-vl", "gpt-4o", "gpt-4.1", "gpt-4.5", "gpt-5", "o1", "o3", "o4",
+    "gemini", "claude", "glm-4v", "glm-4.1v", "glm-4.5v", "qwen2-vl",
+    "qwen2.5-vl", "qwen3-vl", "doubao", "hunyuan-vision", "minimax",
+)
+
+
+def supports_vision() -> bool:
+    """判断当前配置的模型是否支持视觉（图片）输入。"""
+    m = (_cfg().get("llm_model") or "").lower()
+    return any(k in m for k in _VISION_KEYWORDS)
+
+
 def _url() -> str:
     base = (_cfg().get("llm_base_url") or "").rstrip("/")
     if not base:
@@ -64,10 +78,14 @@ def _model_or_err() -> str:
 
 
 def _build_messages(
-    query: str, contexts: list[str], history: list[dict[str, str]]
-) -> list[dict[str, str]]:
-    """构建 messages：有上下文走 RAG 模式，无上下文走普通对话模式"""
-    messages: list[dict[str, str]] = []
+    query: str,
+    contexts: list[str],
+    history: list[dict[str, str]],
+    images: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """构建 messages：有上下文走 RAG 模式，无上下文走普通对话模式；images 提供时走多模态。"""
+    images = images or []
+    messages: list[dict[str, Any]] = []
 
     if contexts:
         context_text = "\n\n---\n\n".join(
@@ -75,13 +93,19 @@ def _build_messages(
         )
         messages.append({"role": "system", "content": RAG_SYSTEM_PROMPT})
         messages.extend(history)
-        messages.append(
-            {"role": "user", "content": f"文档片段：\n{context_text}\n\n问题：{query}"}
-        )
+        user_text = f"文档片段：\n{context_text}\n\n问题：{query}"
     else:
         messages.append({"role": "system", "content": CHAT_SYSTEM_PROMPT})
         messages.extend(history)
-        messages.append({"role": "user", "content": query})
+        user_text = query
+
+    if images:
+        content: list[dict[str, Any]] = [{"type": "text", "text": user_text}]
+        for img in images:
+            content.append({"type": "image_url", "image_url": {"url": img}})
+        messages.append({"role": "user", "content": content})
+    else:
+        messages.append({"role": "user", "content": user_text})
 
     return messages
 
@@ -239,6 +263,7 @@ def generate_stream(
     query: str,
     contexts: list[str],
     history: list[dict[str, str]] | None = None,
+    images: list[str] | None = None,
 ) -> Iterator[str]:
     """流式生成，逐段 yield 文本增量；失败时抛 LLMError。"""
     if not available():
@@ -253,7 +278,7 @@ def generate_stream(
             headers=_auth_header(),
             json={
                 "model": _model_or_err(),
-                "messages": _build_messages(query, contexts, history),
+                "messages": _build_messages(query, contexts, history, images),
                 "temperature": 0.3,
                 "max_tokens": 800,
                 "stream": True,

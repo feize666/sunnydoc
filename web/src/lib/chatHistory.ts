@@ -1,5 +1,14 @@
 import type { Citation, WebSource } from "./api";
 
+export interface MessageAttachment {
+  id: string;
+  filename: string;
+  kind: "image" | "doc" | "zip";
+  size: number;
+  preview_url?: string | null;
+  vision?: boolean;
+}
+
 export interface Message {
   role: "user" | "ai";
   content: string;
@@ -8,6 +17,8 @@ export interface Message {
   error?: boolean;
   /** 是否展示「本地未命中，是否联网搜索」的智能提示卡片 */
   suggestWeb?: boolean;
+  /** 用户消息携带的附件 */
+  attachments?: MessageAttachment[];
 }
 
 export interface ChatSession {

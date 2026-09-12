@@ -341,3 +341,21 @@ export function OutdentIcon(p: IconProps) {
     </svg>
   );
 }
+
+export function PaperclipIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+    </svg>
+  );
+}
+
+export function ImportIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M12 3v12" />
+      <path d="m8 11 4 4 4-4" />
+      <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+    </svg>
+  );
+}

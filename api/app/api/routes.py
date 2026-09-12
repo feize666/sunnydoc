@@ -56,6 +56,30 @@ def publish_comment(doc_id: str, event: dict) -> None:
         except RuntimeError:
             pass
 
+# ---------- AI 对话附件（会话内临时） ----------
+# attachment_id -> {filename, ext, kind, size, text, tmp_path, preview_url, user_id, created_at}
+_attachments: dict[str, dict] = {}
+_attachments_lock = threading.Lock()
+_ATTACHMENT_TTL = 24 * 3600  # 24 小时过期自动清理
+_ATTACHMENT_TEXT_MAX = 20000  # 附件文本注入上限（字符）
+
+
+def _get_attachment(attachment_id: str, user_id: str) -> dict | None:
+    """取附件（校验归属），顺带清理过期附件及其临时文件。"""
+    with _attachments_lock:
+        now = time.time()
+        stale = [k for k, v in _attachments.items() if now - v["created_at"] > _ATTACHMENT_TTL]
+        for k in stale:
+            try:
+                os.unlink(_attachments[k]["tmp_path"])
+            except OSError:
+                pass
+            _attachments.pop(k, None)
+        att = _attachments.get(attachment_id)
+        if not att or att["user_id"] != user_id:
+            return None
+        return att
+
 # 上传文件落盘临时目录（避免整读进内存）
 TMP_DIR = DATA_DIR / "tmp"
 TMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -113,6 +137,7 @@ class ChatRequest(BaseModel):
     top_k: int = DEFAULT_TOP_K
     history: list[dict[str, str]] | None = None
     enable_web: bool = True
+    attachments: list[str] | None = None  # 附件 id 列表（AI 对话上传的附件）
 
 
 class DeleteRequest(BaseModel):
@@ -1069,6 +1094,26 @@ def chat_stream(req: ChatRequest, current_user: dict = Depends(get_current_user)
         for h in hits
     ]
 
+    # 读取附件：提取文字（文档/zip/图片 OCR）与图片（vision）
+    attach_texts: list[str] = []
+    attach_images: list[str] = []
+    for aid in req.attachments or []:
+        att = _get_attachment(aid, current_user["id"])
+        if att is None:
+            continue
+        if att.get("text"):
+            attach_texts.append(f"[附件：{att['filename']}]\n{att['text']}")
+        if att["kind"] == "image" and llm.supports_vision():
+            try:
+                import base64
+
+                img_bytes = open(att["tmp_path"], "rb").read()
+                mime = media.content_type(att["ext"])
+                attach_images.append(f"data:{mime};base64,{base64.b64encode(img_bytes).decode()}")
+            except OSError:
+                pass
+    attachment_context = "\n\n".join(attach_texts)
+
     def _fallback_answer() -> str:
         """LLM 不可用或失败时，基于知识库命中片段给出降级回答。"""
         if not hits:
@@ -1090,12 +1135,14 @@ def chat_stream(req: ChatRequest, current_user: dict = Depends(get_current_user)
         yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
 
         # 2. 生成回答
-        if hits:
-            # 知识库命中 → RAG
+        if hits or attachment_context or attach_images:
+            # 知识库命中 或 带附件 → RAG/附件模式（附件文字拼到上下文，图片走 vision）
             contexts = [h["text"] for h in hits]
+            if attachment_context:
+                contexts = [attachment_context] + contexts
             try:
                 got = False
-                for piece in llm.generate_stream(req.query, contexts, history):
+                for piece in llm.generate_stream(req.query, contexts, history, attach_images or None):
                     got = True
                     yield f"data: {json.dumps({'type': 'delta', 'content': piece}, ensure_ascii=False)}\n\n"
                 if not got:
@@ -1137,6 +1184,134 @@ def chat_stream(req: ChatRequest, current_user: dict = Depends(get_current_user)
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+class ImportAttachmentRequest(BaseModel):
+    kb_id: str | None = None
+
+
+@router.post("/chat/attachments")
+async def upload_chat_attachment(
+    file: UploadFile = File(...), current_user: dict = Depends(get_current_user)
+):
+    """上传对话附件（图片/文档/压缩包），解析提取文字，返回附件元数据。
+
+    附件存于临时目录（会话内临时，24h 过期）；图片额外生成可访问预览 URL，
+    并 OCR 提取文字；文档/zip 复用 parser 提取文字。
+    """
+    filename = file.filename or "untitled"
+    ext = parser.ext_of(filename)
+
+    if ext in parser.IMAGE_EXTS:
+        kind = "image"
+    elif ext == ".zip":
+        kind = "zip"
+    elif ext in TEXT_EXTS or ext in {".pdf", ".docx", ".xlsx"}:
+        kind = "doc"
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="仅支持图片（png/jpg/gif/webp）、文档（md/txt/pdf/docx/xlsx/csv/json）、压缩包（zip）",
+        )
+
+    fd, tmp_path = tempfile.mkstemp(dir=str(TMP_DIR), suffix=ext)
+    try:
+        with os.fdopen(fd, "wb") as out:
+            shutil.copyfileobj(file.file, out)
+    except Exception:  # noqa: BLE001
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise HTTPException(status_code=400, detail="文件接收失败")
+
+    size = os.path.getsize(tmp_path)
+    if size == 0:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise HTTPException(status_code=400, detail="文件为空")
+
+    try:
+        data = open(tmp_path, "rb").read()
+    except OSError:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise HTTPException(status_code=400, detail="文件读取失败")
+
+    text = ""
+    preview_url = None
+    if kind == "image":
+        text = parser.parse_image(data)
+        name = f"{uuid.uuid4().hex}{ext}"
+        shutil.copyfile(tmp_path, UPLOAD_DIR / name)
+        preview_url = f"/uploads/{name}"
+    elif kind == "zip":
+        try:
+            parsed = parser.parse_zip(data)
+        except (zipfile.BadZipFile, OSError):
+            parsed = []
+        text = "\n\n".join(f"### {p['name']}\n{p['text']}" for p in parsed if p.get("text"))
+    else:
+        parsed = parser.parse_file(filename, data)
+        text = "\n\n".join(p.get("text", "") for p in parsed)
+
+    text = (text or "").strip()[:_ATTACHMENT_TEXT_MAX]
+
+    attachment_id = uuid.uuid4().hex
+    with _attachments_lock:
+        _attachments[attachment_id] = {
+            "id": attachment_id,
+            "filename": filename,
+            "ext": ext,
+            "kind": kind,
+            "size": size,
+            "text": text,
+            "tmp_path": tmp_path,
+            "preview_url": preview_url,
+            "user_id": current_user["id"],
+            "created_at": time.time(),
+        }
+
+    return {
+        "id": attachment_id,
+        "filename": filename,
+        "kind": kind,
+        "size": size,
+        "text_preview": text[:200],
+        "preview_url": preview_url,
+        "vision": kind == "image" and llm.supports_vision(),
+    }
+
+
+@router.post("/chat/attachments/{attachment_id}/import")
+def import_chat_attachment(
+    attachment_id: str,
+    req: ImportAttachmentRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """把已上传的对话附件导入知识库（复用异步导入任务）。"""
+    att = _get_attachment(attachment_id, current_user["id"])
+    if att is None:
+        raise HTTPException(status_code=404, detail="附件不存在或已过期")
+    if req.kb_id:
+        _require_kb_write(req.kb_id, current_user)
+
+    task_id = uuid.uuid4().hex
+    _set_task(task_id, status="queued")
+    thread = threading.Thread(
+        target=_run_import_task,
+        args=(task_id, att["tmp_path"], att["filename"], req.kb_id, current_user["id"]),
+        daemon=True,
+    )
+    thread.start()
+    # 附件临时文件已移交导入任务（任务结束会删除），从附件表移除
+    with _attachments_lock:
+        _attachments.pop(attachment_id, None)
+    return {"task_id": task_id, "status": "queued"}
 
 
 @router.put("/documents/{doc_id}")

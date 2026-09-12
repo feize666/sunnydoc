@@ -15,13 +15,16 @@ import {
   TrashIcon,
   PlusIcon,
   HistoryIcon,
+  PaperclipIcon,
+  ImportIcon,
+  CloseIcon,
 } from "./icons";
 import { renderMarkdown } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useResizable } from "@/hooks/useResizable";
-import { chatStream, type Citation, type ChatMessage, type WebSource } from "@/lib/api";
+import { chatStream, uploadChatAttachment, importChatAttachment, type Citation, type ChatMessage, type WebSource, type ChatAttachment, type Kb } from "@/lib/api";
 import {
   createSession,
   deriveTitle,
@@ -32,6 +35,7 @@ import {
   uid,
   type ChatSession,
   type Message,
+  type MessageAttachment,
 } from "@/lib/chatHistory";
 
 const initialMessages: Message[] = [
@@ -48,6 +52,36 @@ function formatTime(ts: number): string {
   const time = d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
   if (d.toDateString() === now.toDateString()) return time;
   return `${d.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })} ${time}`;
+}
+
+function formatSize(bytes: number): string {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function attachmentEmoji(kind: string): string {
+  if (kind === "image") return "🖼";
+  if (kind === "zip") return "📦";
+  return "📄";
+}
+
+/** 单条附件展示（含图片缩略图/文件图标 + 文件名 + 大小） */
+function AttachmentBadge({ att, preview }: { att: { filename: string; kind: string; size: number; preview_url?: string | null }; preview?: boolean }) {
+  return (
+    <span className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-white/20 px-2 py-1">
+      {att.kind === "image" && preview && att.preview_url ? (
+        <img src={att.preview_url} alt={att.filename} className="h-8 w-8 shrink-0 rounded object-cover" />
+      ) : (
+        <span className="text-[14px] leading-none">{attachmentEmoji(att.kind)}</span>
+      )}
+      <span className="min-w-0">
+        <span className="block max-w-[200px] truncate text-[12px] font-medium">{att.filename}</span>
+        <span className="block text-[10px] opacity-70">{formatSize(att.size)}</span>
+      </span>
+    </span>
+  );
 }
 
 /** AI 回答正文：随流式内容增量异步渲染 markdown。 */
@@ -86,11 +120,13 @@ export function AiPanel({
   open,
   onClose,
   onOpenCitation,
+  kbs,
 }: {
   theme: "light" | "dark";
   open: boolean;
   onClose: () => void;
   onOpenCitation?: (docId: string, snippet: string) => void;
+  kbs?: Kb[];
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
@@ -107,6 +143,14 @@ export function AiPanel({
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+
+  // 附件相关
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [importTarget, setImportTarget] = useState<{ atts: ChatAttachment[]; kbs: Kb[] } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const chatRef = useRef<HTMLDivElement>(null);
   const initedRef = useRef(false);
@@ -322,15 +366,42 @@ export function AiPanel({
   const ask = async (questionOverride?: string, forceWeb?: boolean) => {
     const q = (questionOverride ?? input).trim();
     if (!q || loading) return;
+
+    // AI 指令导入：消息含「导入」意图且有待发送附件 → 打开导入对话框（而非问答）
+    if (
+      !questionOverride &&
+      attachments.length > 0 &&
+      /导入|入库|收进/.test(q) &&
+      /附件|文件|这个|这些|文档|图片|压缩包|它们|它|全部/.test(q)
+    ) {
+      setInput("");
+      openImportAll();
+      return;
+    }
+
     if (!questionOverride) setInput("");
     setLoading(true);
     const webEnabled = forceWeb ?? enableWeb;
 
-    // 先加用户消息，再加空的 AI 占位消息
-    setMessages((m) => [...m, { role: "user", content: q }, { role: "ai", content: "" }]);
+    // 本次发送携带的附件（元数据 + id）
+    const sendAtts: MessageAttachment[] = attachments.map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      kind: a.kind,
+      size: a.size,
+      preview_url: a.preview_url,
+      vision: a.vision,
+    }));
+    const sendIds = sendAtts.map((a) => a.id);
+
+    // 先加用户消息（带附件），再加空的 AI 占位消息
+    setMessages((m) => [...m, { role: "user", content: q, attachments: sendAtts }, { role: "ai", content: "" }]);
     const aiIndex = messages.length + 1; // user 在 index=len，ai 在 len+1
 
     const history = buildHistory(messages);
+
+    // 发送后清空待发送附件
+    setAttachments([]);
 
     const updateAi = (updater: (msg: Message) => Message) => {
       setMessages((m) => m.map((msg, i) => (i === aiIndex ? updater(msg) : msg)));
@@ -359,7 +430,7 @@ export function AiPanel({
         } else if (e.type === "error") {
           gotError = { status: e.status ?? 0, detail: e.detail ?? "" };
         }
-      });
+      }, sendIds);
     } catch (e) {
       gotError = {
         status: 0,
@@ -406,6 +477,58 @@ export function AiPanel({
     });
     // 直接以指定问题重发（强制开启联网，绕过 enableWeb 闭包旧值）
     setTimeout(() => ask(question, true), 0);
+  };
+
+  // 选择文件并上传为对话附件
+  const handlePickFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0 || loading) return;
+    setUploading(true);
+    const next = [...attachments];
+    for (const file of Array.from(files)) {
+      try {
+        next.push(await uploadChatAttachment(file));
+      } catch (e) {
+        alert(`附件「${file.name}」上传失败：${e instanceof Error ? e.message : "未知错误"}`);
+      }
+    }
+    setAttachments(next);
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const removeAttachment = (id: string) => {
+    setAttachments((a) => a.filter((x) => x.id !== id));
+  };
+
+  // 打开导入对话框（单个附件按钮）
+  const openImport = (att: ChatAttachment) => {
+    setImportTarget({ atts: [att], kbs: kbs ?? [] });
+  };
+
+  // 打开导入对话框（AI 指令：导入全部待发送附件）
+  const openImportAll = () => {
+    if (attachments.length === 0) return;
+    setImportTarget({ atts: [...attachments], kbs: kbs ?? [] });
+  };
+
+  // 执行导入
+  const doImport = async (kbId: string | null) => {
+    if (!importTarget || importTarget.atts.length === 0) return;
+    const names = importTarget.atts.map((a) => a.filename).join("、");
+    setImporting(true);
+    setImportResult(null);
+    try {
+      for (const att of importTarget.atts) {
+        await importChatAttachment(att.id, kbId);
+      }
+      setImportResult(`附件「${names}」已提交导入${kbId ? "到目标知识库" : ""}，后台解析入库中。`);
+      setAttachments((a) => a.filter((x) => !importTarget.atts.some((t) => t.id === x.id)));
+    } catch (e) {
+      setImportResult(`导入失败：${e instanceof Error ? e.message : "未知错误"}`);
+    } finally {
+      setImporting(false);
+      setImportTarget(null);
+    }
   };
 
   const sortedSessions = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -613,7 +736,16 @@ export function AiPanel({
               }
             >
               {msg.role === "user" ? (
-                msg.content
+                <div className="flex flex-col gap-1.5">
+                  <span>{msg.content}</span>
+                  {Array.isArray(msg.attachments) && msg.attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {msg.attachments.map((att) => (
+                        <AttachmentBadge key={att.id} att={att} preview />
+                      ))}
+                    </div>
+                  )}
+                </div>
               ) : msg.suggestWeb ? (
                 <div className="flex flex-col gap-2.5">
                   <p className="text-text">
@@ -698,29 +830,88 @@ export function AiPanel({
         )}
       </div>
 
-      <div className="flex gap-2 border-t border-line p-2.5">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              ask();
-            }
-          }}
-          rows={1}
-          placeholder="向知识库提问…（Enter 发送）"
-          className="max-h-[120px] flex-1 resize-none rounded-lg border border-line bg-background px-3 py-2 text-[14px] outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
-        />
-        <Tooltip content="发送" className="shrink-0">
-          <button
-            onClick={() => ask()}
-            disabled={loading}
-            className="btn-accent grid h-[38px] w-[38px] place-items-center rounded-lg text-white disabled:opacity-50"
-          >
-            <SendIcon size={16} />
-          </button>
-        </Tooltip>
+      <div className="border-t border-line p-2.5">
+        {/* 待发送附件 chip 列表 */}
+        {attachments.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {attachments.map((att) => (
+              <span
+                key={att.id}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-background px-2 py-1"
+              >
+                {att.kind === "image" && att.preview_url ? (
+                  <img src={att.preview_url} className="h-7 w-7 rounded object-cover" alt={att.filename} />
+                ) : (
+                  <span className="text-[14px] leading-none">{attachmentEmoji(att.kind)}</span>
+                )}
+                <span className="max-w-[140px] truncate text-[12px] text-text">{att.filename}</span>
+                <Tooltip content="导入到知识库">
+                  <button
+                    onClick={() => openImport(att)}
+                    disabled={importing}
+                    className="grid h-5 w-5 place-items-center rounded text-faint transition-colors hover:text-accent disabled:opacity-40"
+                  >
+                    <ImportIcon size={13} />
+                  </button>
+                </Tooltip>
+                <Tooltip content="移除附件">
+                  <button
+                    onClick={() => removeAttachment(att.id)}
+                    className="grid h-5 w-5 place-items-center rounded text-faint transition-colors hover:text-danger"
+                  >
+                    <CloseIcon size={13} />
+                  </button>
+                </Tooltip>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <Tooltip content="上传附件（图片/文档/压缩包）" className="shrink-0">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading || uploading}
+              className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg border border-line bg-background text-muted transition-colors hover:bg-hover hover:text-text disabled:opacity-50"
+            >
+              {uploading ? (
+                <span className="animate-pulse text-[12px] leading-none">…</span>
+              ) : (
+                <PaperclipIcon size={16} />
+              )}
+            </button>
+          </Tooltip>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            onChange={(e) => handlePickFiles(e.target.files)}
+            className="hidden"
+            accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.md,.markdown,.txt,.text,.json,.csv,.tsv,.pdf,.docx,.xlsx,.zip"
+          />
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                ask();
+              }
+            }}
+            rows={1}
+            placeholder="向知识库提问，或上传附件后提问 / 说「导入」…（Enter 发送）"
+            className="max-h-[120px] flex-1 resize-none rounded-lg border border-line bg-background px-3 py-2 text-[14px] outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
+          />
+          <Tooltip content="发送" className="shrink-0">
+            <button
+              onClick={() => ask()}
+              disabled={loading}
+              className="btn-accent grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg text-white disabled:opacity-50"
+            >
+              <SendIcon size={16} />
+            </button>
+          </Tooltip>
+        </div>
       </div>
 
       <ConfirmDialog
@@ -742,6 +933,77 @@ export function AiPanel({
         onConfirm={doClearChat}
         onCancel={() => setConfirmClear(false)}
       />
+
+      {/* 导入到知识库对话框 */}
+      {importTarget && (
+        <>
+          <div className="fixed inset-0 z-[60] bg-black/30" onClick={() => !importing && setImportTarget(null)} />
+          <div className="fixed left-1/2 top-1/2 z-[61] w-[420px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-xl border border-line bg-background shadow-xl">
+            <div className="flex items-center justify-between border-b border-line px-4 py-3">
+              <span className="text-[14px] font-semibold text-text">导入到知识库</span>
+              <button
+                onClick={() => !importing && setImportTarget(null)}
+                className="grid h-6 w-6 place-items-center rounded text-faint hover:bg-hover hover:text-text"
+              >
+                <CloseIcon size={14} />
+              </button>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto px-4 py-3">
+              <div className="mb-2 text-[12px] text-muted">将导入以下附件：</div>
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                {importTarget.atts.map((att) => (
+                  <span
+                    key={att.id}
+                    className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[12px] text-text"
+                  >
+                    <span>{attachmentEmoji(att.kind)}</span>
+                    {att.filename}
+                  </span>
+                ))}
+              </div>
+              <div className="mb-1.5 text-[12px] text-muted">选择目标知识库：</div>
+              <div className="space-y-1">
+                <button
+                  onClick={() => doImport(null)}
+                  disabled={importing}
+                  className="flex w-full items-center gap-2 rounded-lg border border-line px-3 py-2 text-left text-[13px] text-text transition-colors hover:bg-hover disabled:opacity-50"
+                >
+                  默认（不指定知识库）
+                </button>
+                {(importTarget.kbs || [])
+                  .filter((k) => k.permission !== "read")
+                  .map((kb) => (
+                    <button
+                      key={kb.id}
+                      onClick={() => doImport(kb.id)}
+                      disabled={importing}
+                      className="flex w-full items-center gap-2 rounded-lg border border-line px-3 py-2 text-left text-[13px] text-text transition-colors hover:bg-hover disabled:opacity-50"
+                    >
+                      <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-accent-soft text-[12px] font-semibold text-accent">
+                        {(kb.name || "知").slice(0, 1)}
+                      </span>
+                      <span className="truncate">{kb.name}</span>
+                    </button>
+                  ))}
+              </div>
+              {importResult && (
+                <div className="mt-3 rounded-md border border-accent/30 bg-accent-soft px-3 py-2 text-[12px] text-text">
+                  {importResult}
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-line px-4 py-2.5">
+              <button
+                onClick={() => !importing && setImportTarget(null)}
+                disabled={importing}
+                className="btn btn-secondary btn-sm"
+              >
+                {importResult ? "完成" : "取消"}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </aside>
   );
 }

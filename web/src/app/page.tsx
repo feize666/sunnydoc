@@ -1159,7 +1159,7 @@ export default function Home() {
         isAdmin={user?.role === "admin"}
       />
 
-      <AiPanel theme={theme} open={aiOpen} onClose={() => setAiOpen(false)} onOpenCitation={handleOpenCitation} />
+      <AiPanel theme={theme} open={aiOpen} onClose={() => setAiOpen(false)} onOpenCitation={handleOpenCitation} kbs={kbs} />
 
       <CommentPanel
         docId={activeKey}
