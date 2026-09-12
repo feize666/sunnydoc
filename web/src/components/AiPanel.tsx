@@ -934,7 +934,6 @@ export function AiPanel({
               }
             }}
             rows={1}
-            placeholder="向知识库提问，或上传附件后提问 / 说「导入」…（Enter 发送）"
             className="max-h-[120px] flex-1 resize-none rounded-lg border border-line bg-background px-3 py-2 text-[14px] outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
           />
           <Tooltip content="发送" className="shrink-0">
