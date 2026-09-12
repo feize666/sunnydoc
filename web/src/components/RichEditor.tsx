@@ -500,6 +500,10 @@ export function RichEditor({
 
   // 全局快捷键：⌘F / Ctrl+F 打开查找替换
   useEffect(() => {
+    (window as any).__sunnydocEditor = editor;
+  }, [editor]);
+
+  useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
         e.preventDefault();
