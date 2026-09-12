@@ -15,7 +15,8 @@ def _cfg() -> dict:
 
 
 def available() -> bool:
-    return bool(_cfg().get("embedding_api_key"))
+    c = _cfg()
+    return bool(c.get("embedding_api_key") and c.get("embedding_base_url") and c.get("embedding_model"))
 
 
 def embed(texts: list[str]) -> list[list[float]] | None:

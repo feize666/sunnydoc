@@ -59,6 +59,15 @@ def _ai_from_settings() -> dict | None:
         return None
 
 
+# 这些字段为空时保留环境变量默认值（配了 key 就应有默认 endpoint/model），不允许被显式清空
+_NON_EMPTYABLE_AI_FIELDS = {
+    "embedding_base_url",
+    "embedding_model",
+    "rerank_base_url",
+    "rerank_model",
+}
+
+
 def ai_config() -> dict:
     """合并环境变量默认值与运行时设置，返回完整 AI 配置。"""
     cfg = {
@@ -75,9 +84,11 @@ def ai_config() -> dict:
     saved = _ai_from_settings()
     if isinstance(saved, dict):
         for k, v in saved.items():
-            if k in cfg and v not in (None, ""):
+            if k not in cfg:
+                continue
+            if v not in (None, ""):
                 cfg[k] = v
-            elif k in cfg and v in (None, ""):
-                # 允许显式清空
+            elif k not in _NON_EMPTYABLE_AI_FIELDS:
+                # 允许显式清空（如 api_key）
                 cfg[k] = ""
     return cfg
