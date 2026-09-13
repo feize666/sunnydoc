@@ -13,9 +13,17 @@ interface MindNode {
   collapsed?: boolean;
   icon?: string; // 节点图标 id（见 ICONS）
   note?: string; // 节点备注（Markdown 文本，纯文本展示）
+  x?: number; // 自由分布布局：世界坐标 x（仅 free 模式使用，旧数据无此字段兜底 0）
+  y?: number; // 自由分布布局：世界坐标 y
 }
 
-type LayoutMode = "logic" | "org" | "timeline" | "fishbone" | "tree";
+// 主题链接：两个节点之间的关联（from -> to），与 nodes 并列序列化
+interface LinkPair {
+  from: string;
+  to: string;
+}
+
+type LayoutMode = "logic" | "org" | "timeline" | "fishbone" | "tree" | "free";
 
 const NODE_H = 40;
 const GAP = 90; // 父子节点间距
@@ -29,6 +37,21 @@ function parseMind(value: string): MindNode[] {
   try {
     const p = JSON.parse(value);
     if (p && Array.isArray(p.nodes)) return p.nodes as MindNode[];
+  } catch {
+    /* fallthrough */
+  }
+  return [];
+}
+
+// 解析顶层 links（旧数据无此字段兜底空数组）
+function parseLinks(value: string): LinkPair[] {
+  try {
+    const p = JSON.parse(value);
+    if (p && Array.isArray(p.links)) {
+      return (p.links as LinkPair[]).filter(
+        (l) => l && typeof l.from === "string" && typeof l.to === "string" && l.from !== l.to,
+      );
+    }
   } catch {
     /* fallthrough */
   }
@@ -253,6 +276,14 @@ function layoutTree(nodes: MindNode[]): Record<string, LayoutItem> {
 
 // 树形布局（logic 从左到右 / org 从上到下），只对传入的可见节点布局
 function layout(nodes: MindNode[], mode: LayoutMode): Record<string, LayoutItem> {
+  if (mode === "free") {
+    // 自由分布：节点位置直接用存储的 x/y（兜底 0），不按树形自动布局
+    const pos: Record<string, LayoutItem> = {};
+    for (const n of nodes) {
+      pos[n.id] = { x: n.x ?? 0, y: n.y ?? 0, w: nodeWidth(n.text, n.icon), h: NODE_H };
+    }
+    return pos;
+  }
   if (mode === "timeline") return layoutTimeline(nodes);
   if (mode === "fishbone") return layoutFishbone(nodes);
   if (mode === "tree") return layoutTree(nodes);
@@ -465,6 +496,7 @@ export function MindMapEditor({
     const p = parseMind(value);
     return p.length ? p : [{ id: genId(), text: "中心主题", parent: null }];
   });
+  const [links, setLinks] = useState<LinkPair[]>(() => parseLinks(value));
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("logic");
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
@@ -472,7 +504,16 @@ export function MindMapEditor({
   const [view, setView] = useState<{ x: number; y: number; k: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasDragRef = useRef<{ startX: number; startY: number; vx: number; vy: number } | null>(null);
-  const nodeDragRef = useRef<{ id: string; startX: number; startY: number } | null>(null);
+  const nodeDragRef = useRef<{
+    id: string;
+    startX: number;
+    startY: number;
+    // 自由分布拖拽用：拖拽开始时节点的世界坐标与容器内的屏幕中心点
+    worldX?: number;
+    worldY?: number;
+    nodeScreenX?: number;
+    nodeScreenY?: number;
+  } | null>(null);
   const [dragNode, setDragNode] = useState<{ id: string; x: number; y: number } | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
   const [aiText, setAiText] = useState("");
@@ -485,22 +526,33 @@ export function MindMapEditor({
   const [noteDraft, setNoteDraft] = useState("");
   const [exporting, setExporting] = useState(false);
 
-  // —— 撤销/重做 ——
-  const [past, setPast] = useState<MindNode[][]>([]);
-  const [future, setFuture] = useState<MindNode[][]>([]);
+  // 大纲模式：true 时画布区域改为渲染 HTML 缩进列表（与 SVG 共享同一份 nodes）
+  const [outline, setOutline] = useState(false);
+  // 关联模式：记录「起点」节点 id；点击另一节点建立 link，再次点击按钮或点空白取消
+  const [linkingFrom, setLinkingFrom] = useState<string | null>(null);
+
+  // —— 撤销/重做（同时记录 nodes 与 links）——
+  type Snapshot = { nodes: MindNode[]; links: LinkPair[] };
+  const [past, setPast] = useState<Snapshot[]>([]);
+  const [future, setFuture] = useState<Snapshot[]>([]);
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
+  const linksRef = useRef(links);
+  linksRef.current = links;
 
   const pushHistory = useCallback(() => {
-    setPast((p) => [...p.slice(-(MAX_HISTORY - 1)), nodesRef.current]);
+    setPast((p) => [...p.slice(-(MAX_HISTORY - 1)), { nodes: nodesRef.current, links: linksRef.current }]);
     setFuture([]);
   }, []);
 
+  // commit：统一入口。next 为新的 nodes；nextLinks 可选，省略则沿用当前 links
   const commit = useCallback(
-    (next: MindNode[]) => {
+    (next: MindNode[], nextLinks?: LinkPair[]) => {
       pushHistory();
       setNodes(next);
-      onChange(JSON.stringify({ nodes: next }));
+      const ls = nextLinks ?? linksRef.current;
+      if (nextLinks !== undefined) setLinks(nextLinks);
+      onChange(JSON.stringify({ nodes: next, links: ls }));
     },
     [onChange, pushHistory],
   );
@@ -509,10 +561,12 @@ export function MindMapEditor({
     setPast((p) => {
       if (p.length === 0) return p;
       const prev = p[p.length - 1];
-      setFuture((f) => [...f, nodesRef.current]);
-      setNodes(prev);
-      onChange(JSON.stringify({ nodes: prev }));
+      setFuture((f) => [...f, { nodes: nodesRef.current, links: linksRef.current }]);
+      setNodes(prev.nodes);
+      setLinks(prev.links);
+      onChange(JSON.stringify({ nodes: prev.nodes, links: prev.links }));
       setSelected(null);
+      setLinkingFrom(null);
       return p.slice(0, -1);
     });
   }, [onChange]);
@@ -521,10 +575,12 @@ export function MindMapEditor({
     setFuture((f) => {
       if (f.length === 0) return f;
       const next = f[f.length - 1];
-      setPast((p) => [...p.slice(-(MAX_HISTORY - 1)), nodesRef.current]);
-      setNodes(next);
-      onChange(JSON.stringify({ nodes: next }));
+      setPast((p) => [...p.slice(-(MAX_HISTORY - 1)), { nodes: nodesRef.current, links: linksRef.current }]);
+      setNodes(next.nodes);
+      setLinks(next.links);
+      onChange(JSON.stringify({ nodes: next.nodes, links: next.links }));
       setSelected(null);
+      setLinkingFrom(null);
       return f.slice(0, -1);
     });
   }, [onChange]);
@@ -663,20 +719,21 @@ export function MindMapEditor({
 
   const toggleCollapse = (id: string) => {
     // 视图态，不记录历史
-    setNodes(nodes.map((n) => (n.id === id ? { ...n, collapsed: !n.collapsed } : n)));
-    onChange(JSON.stringify({ nodes: nodes.map((n) => (n.id === id ? { ...n, collapsed: !n.collapsed } : n)) }));
+    const next = nodes.map((n) => (n.id === id ? { ...n, collapsed: !n.collapsed } : n));
+    setNodes(next);
+    onChange(JSON.stringify({ nodes: next, links }));
   };
 
   const collapseAll = () => {
     const next = nodes.map((n) => (hasChildren(n.id) ? { ...n, collapsed: true } : n));
     setNodes(next);
-    onChange(JSON.stringify({ nodes: next }));
+    onChange(JSON.stringify({ nodes: next, links }));
   };
 
   const expandAll = () => {
     const next = nodes.map((n) => (n.collapsed ? { ...n, collapsed: false } : n));
     setNodes(next);
-    onChange(JSON.stringify({ nodes: next }));
+    onChange(JSON.stringify({ nodes: next, links }));
   };
 
   // —— 拖拽重排：判断 target 是否为 node 的子孙 ——
@@ -699,6 +756,24 @@ export function MindMapEditor({
     if (isDescendant(id, newParent)) return; // 避免环
     commit(nodes.map((n) => (n.id === id ? { ...n, parent: newParent } : n)));
     setSelected(id);
+  };
+
+  // 建立/取消主题链接（关联模式）：from -> to，去重；已存在则删除（toggle）
+  const addLink = (from: string, to: string) => {
+    if (from === to) {
+      setLinkingFrom(null);
+      return;
+    }
+    const exists = links.some((l) => l.from === from && l.to === to);
+    const next = exists ? links.filter((l) => !(l.from === from && l.to === to)) : [...links, { from, to }];
+    commit(nodes, next); // 走 commit 记录历史（可撤销）
+    setLinkingFrom(null);
+  };
+
+  // 清除所有关联（走 commit 记录历史）
+  const clearLinks = () => {
+    if (links.length === 0) return;
+    commit(nodes, []);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -745,7 +820,21 @@ export function MindMapEditor({
     const nodeEl = t.closest(".mind-node") as HTMLElement | null;
     if (nodeEl && nodeEl.dataset.id) {
       setNoteTarget(null);
-      nodeDragRef.current = { id: nodeEl.dataset.id, startX: e.clientX, startY: e.clientY };
+      const id = nodeEl.dataset.id;
+      const nd: NonNullable<typeof nodeDragRef.current> = { id, startX: e.clientX, startY: e.clientY };
+      // 自由分布：记录拖拽起点处的世界坐标与屏幕中心点，用于换算落点
+      if (layoutMode === "free") {
+        const node = mapNode(id);
+        const pp = pos[id];
+        if (node && pp) {
+          const w = nodeWidth(node.text, node.icon);
+          nd.worldX = pp.x;
+          nd.worldY = pp.y;
+          nd.nodeScreenX = (pp.x + w / 2) * v.k + v.x;
+          nd.nodeScreenY = (pp.y + NODE_H / 2) * v.k + v.y;
+        }
+      }
+      nodeDragRef.current = nd;
     } else {
       setNoteTarget(null);
       canvasDragRef.current = { startX: e.clientX, startY: e.clientY, vx: v.x, vy: v.y };
@@ -763,32 +852,61 @@ export function MindMapEditor({
     } else if (nodeDragRef.current) {
       const dx = e.clientX - nodeDragRef.current.startX;
       const dy = e.clientY - nodeDragRef.current.startY;
+      const nd = nodeDragRef.current;
+      const freeAnchor = layoutMode === "free" && nd.nodeScreenX !== undefined && nd.nodeScreenY !== undefined
+        ? { x: nd.nodeScreenX, y: nd.nodeScreenY }
+        : null;
       if (!dragNode && Math.hypot(dx, dy) > 5) {
         const rect = containerRef.current?.getBoundingClientRect();
-        setDragNode({
-          id: nodeDragRef.current.id,
-          x: e.clientX - (rect?.left ?? 0),
-          y: e.clientY - (rect?.top ?? 0),
-        });
+        if (freeAnchor) {
+          // 自由分布：ghost 跟随节点中心点，保持抓取偏移
+          setDragNode({
+            id: nd.id,
+            x: freeAnchor.x + dx,
+            y: freeAnchor.y + dy,
+          });
+        } else {
+          setDragNode({
+            id: nd.id,
+            x: e.clientX - (rect?.left ?? 0),
+            y: e.clientY - (rect?.top ?? 0),
+          });
+        }
       }
       if (dragNode) {
         const rect = containerRef.current?.getBoundingClientRect();
-        setDragNode({
-          ...dragNode,
-          x: e.clientX - (rect?.left ?? 0),
-          y: e.clientY - (rect?.top ?? 0),
-        });
+        if (freeAnchor) {
+          setDragNode({ ...dragNode, x: freeAnchor.x + dx, y: freeAnchor.y + dy });
+        } else {
+          setDragNode({
+            ...dragNode,
+            x: e.clientX - (rect?.left ?? 0),
+            y: e.clientY - (rect?.top ?? 0),
+          });
+        }
       }
     }
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
     if (dragNode) {
-      const targetEl = document.elementFromPoint(e.clientX, e.clientY);
-      const targetNodeEl = targetEl?.closest(".mind-node") as HTMLElement | null;
-      const targetId = targetNodeEl?.dataset.id;
-      if (targetId && targetId !== dragNode.id) {
-        moveNode(dragNode.id, targetId);
+      const nd = nodeDragRef.current;
+      if (layoutMode === "free" && nd && nd.worldX !== undefined && nd.worldY !== undefined) {
+        // 自由分布：把节点落点换算为世界坐标并持久化（走 commit 记历史）
+        const worldDX = (e.clientX - nd.startX) / v.k;
+        const worldDY = (e.clientY - nd.startY) / v.k;
+        const nx = nd.worldX + worldDX;
+        const ny = nd.worldY + worldDY;
+        commit(
+          nodes.map((n) => (n.id === nd.id ? { ...n, x: nx, y: ny } : n)),
+        );
+      } else {
+        const targetEl = document.elementFromPoint(e.clientX, e.clientY);
+        const targetNodeEl = targetEl?.closest(".mind-node") as HTMLElement | null;
+        const targetId = targetNodeEl?.dataset.id;
+        if (targetId && targetId !== dragNode.id) {
+          moveNode(dragNode.id, targetId);
+        }
       }
       setDragNode(null);
       nodeDragRef.current = null;
@@ -815,7 +933,7 @@ export function MindMapEditor({
         parent: n.parent ? String(n.parent) : null,
       }));
       if (arr.length === 0) return;
-      commit(arr);
+      commit(arr, []); // AI 覆盖全部节点，清空旧关联
       setSelected(null);
       setView(null);
       setAiOpen(false);
@@ -871,6 +989,97 @@ export function MindMapEditor({
   };
 
   const isRoot = (id: string) => !mapNode(id)?.parent;
+
+  // 切换到自由分布：首次进入时为没有 x/y 的节点用当前（旧模式）自动布局坐标初始化
+  const applyFreeLayout = () => {
+    setLayoutMode("free");
+    setView(null);
+    const seed = layout(visibleNodes, layoutMode); // layoutMode 此处仍为旧模式
+    commit(
+      nodes.map((n) =>
+        n.x === undefined || n.y === undefined
+          ? { ...n, x: seed[n.id]?.x ?? 0, y: seed[n.id]?.y ?? 0 }
+          : n,
+      ),
+    );
+  };
+
+  // 大纲模式：渲染 HTML 缩进树（与 SVG 共享 nodes 数据，切换不丢数据）
+  const renderOutline = () => {
+    const map = new Map(nodes.map((n) => [n.id, n]));
+    const kids: Record<string, MindNode[]> = {};
+    for (const n of nodes) {
+      const key = n.parent && map.has(n.parent) ? n.parent : "__root__";
+      (kids[key] = kids[key] || []).push(n);
+    }
+    const roots = nodes.filter((n) => !n.parent || !map.has(n.parent));
+    const renderItem = (n: MindNode, depth: number): React.ReactElement => {
+      const isLinkSrc = linkingFrom === n.id;
+      return (
+        <div key={n.id}>
+          <div
+            className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors ${
+              selected === n.id ? "bg-accent-soft text-accent" : "hover:bg-hover text-text"
+            } ${isLinkSrc ? "ring-2 ring-accent" : ""}`}
+            style={{ paddingLeft: 8 + depth * 20, cursor: linkingFrom ? "crosshair" : "pointer" }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (linkingFrom) {
+                if (linkingFrom === n.id) setLinkingFrom(null);
+                else addLink(linkingFrom, n.id);
+                return;
+              }
+              setSelected(n.id);
+            }}
+            onDoubleClick={() => startEdit(n.id, n.text)}
+            title={linkingFrom ? "点击以建立/取消关联" : "双击编辑文字"}
+          >
+            {n.icon && (
+              <Glyph
+                iconId={n.icon}
+                size={ICON_SIZE}
+                color={isRoot(n.id) ? "var(--accent)" : levelColor(n.id)}
+              />
+            )}
+            {editing === n.id ? (
+              <input
+                autoFocus
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                onBlur={finishEdit}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    finishEdit();
+                  } else if (e.key === "Escape") {
+                    setEditing(null);
+                  }
+                }}
+                className="h-7 w-full rounded-md border border-accent bg-background px-2 text-[13px] text-text outline-none"
+              />
+            ) : (
+              <span className="truncate">{n.text}</span>
+            )}
+            {n.note && !editing && (
+              <span className="text-faint" title="有备注">
+                📝
+              </span>
+            )}
+          </div>
+          {(kids[n.id] || []).map((c) => renderItem(c, depth + 1))}
+        </div>
+      );
+    };
+    return (
+      <div className="h-full w-full overflow-auto px-2 py-2">
+        {roots.length === 0 ? (
+          <div className="px-2 py-4 text-[13px] text-faint">暂无节点</div>
+        ) : (
+          roots.map((r) => renderItem(r, 0))
+        )}
+      </div>
+    );
+  };
 
   const toolBtn = (active: boolean) =>
     `flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] transition-colors ${
@@ -1008,6 +1217,9 @@ export function MindMapEditor({
         <button onClick={() => { setLayoutMode("tree"); setView(null); }} className={toolBtn(layoutMode === "tree")} title="树形图（向下分类树）">
           树形图
         </button>
+        <button onClick={applyFreeLayout} className={toolBtn(layoutMode === "free")} title="自由分布：可自由拖拽定位节点，不自动重排">
+          自由分布
+        </button>
 
         <span className="mx-1 h-4 w-px bg-line" />
 
@@ -1019,6 +1231,25 @@ export function MindMapEditor({
         <button onClick={collapseAll} className={toolBtn(false)} title="折叠全部节点">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 9h16M4 15h16M12 4v16" /></svg>
           折叠
+        </button>
+
+        <span className="mx-1 h-4 w-px bg-line" />
+
+        {/* 关联主题（主题链接） */}
+        <button
+          onClick={() => {
+            if (linkingFrom) setLinkingFrom(null);
+            else if (selected) setLinkingFrom(selected);
+          }}
+          disabled={!selected}
+          className={toolBtn(linkingFrom !== null)}
+          title={linkingFrom ? "关联模式：点击另一节点建立/取消关联，再次点击或点空白取消" : "关联主题：先选中起点节点，再点此进入关联模式"}
+        >
+          <Glyph iconId="link" size={14} />
+          {linkingFrom ? "关联中…" : "关联"}
+        </button>
+        <button onClick={clearLinks} disabled={links.length === 0} className={toolBtn(false)} title="清除所有关联">
+          清除关联
         </button>
 
         <span className="mx-1 h-4 w-px bg-line" />
@@ -1064,13 +1295,18 @@ export function MindMapEditor({
           Tab 子主题 · Enter 同级 · Delete 删除 · 双击编辑 · 拖拽重排
         </span>
 
+        <button onClick={() => setOutline((o) => !o)} className={toolBtn(outline)} title="切换大纲 / 导图视图">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>
+          {outline ? "导图" : "大纲"}
+        </button>
+
         <button onClick={exportPng} disabled={exporting} className="rounded-md px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover disabled:opacity-50" title="导出 PNG 图片">
           {exporting ? "导出中…" : "导出 PNG"}
         </button>
         <button onClick={() => setAiOpen(true)} className="rounded-md bg-accent px-2.5 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90">
           ✨ AI 生成
         </button>
-        <button onClick={() => commit([{ id: genId(), text: "中心主题", parent: null }])} className="rounded-md px-2 py-1.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text">
+        <button onClick={() => commit([{ id: genId(), text: "中心主题", parent: null }], [])} className="rounded-md px-2 py-1.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text">
           重置
         </button>
       </div>
@@ -1102,14 +1338,21 @@ export function MindMapEditor({
         ref={containerRef}
         tabIndex={0}
         onKeyDown={onKeyDown}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onWheel={onWheel}
+        onPointerDown={outline ? undefined : onPointerDown}
+        onPointerMove={outline ? undefined : onPointerMove}
+        onPointerUp={outline ? undefined : onPointerUp}
+        onWheel={outline ? undefined : onWheel}
+        onClick={(e) => {
+          // 关联模式：点击空白处取消
+          if (linkingFrom && !(e.target as HTMLElement).closest(".mind-node")) setLinkingFrom(null);
+        }}
         className="cursor-grab overflow-hidden outline-none active:cursor-grabbing"
         style={{ touchAction: "none", height: "60vh", minHeight: 400, position: "relative" }}
       >
-        <svg width="100%" height="100%">
+        {outline ? (
+          renderOutline()
+        ) : (
+          <svg width="100%" height="100%">
           <g transform={`translate(${v.x},${v.y}) scale(${v.k})`}>
             {/* 连线（按布局区分线型） */}
             {visibleNodes.map((n) => {
@@ -1170,6 +1413,30 @@ export function MindMapEditor({
                   <line x1={0} y1={0} x2={spineEndX} y2={0} stroke="var(--line-strong)" strokeWidth={3} strokeLinecap="round" />
                 );
               })()}
+            {/* 主题链接（关联主题）：虚线连接两节点中心 */}
+            {links.map((lk) => {
+              const a = pos[lk.from];
+              const b = pos[lk.to];
+              if (!a || !b) return null; // 端点不可见（被折叠）时跳过
+              const ax = a.x + a.w / 2;
+              const ay = a.y + NODE_H / 2;
+              const bx = b.x + b.w / 2;
+              const by = b.y + NODE_H / 2;
+              return (
+                <line
+                  key={`link-${lk.from}-${lk.to}`}
+                  x1={ax}
+                  y1={ay}
+                  x2={bx}
+                  y2={by}
+                  stroke="var(--accent)"
+                  strokeWidth={1.6}
+                  strokeDasharray="6 4"
+                  opacity={0.85}
+                />
+              );
+            })}
+
             {/* 节点 */}
             {visibleNodes.map((n) => {
               const p = pos[n.id];
@@ -1184,6 +1451,11 @@ export function MindMapEditor({
                   transform={`translate(${p.x},${p.y})`}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (linkingFrom) {
+                      if (linkingFrom === n.id) setLinkingFrom(null); // 再次点击起点：取消关联模式
+                      else addLink(linkingFrom, n.id); // 点击另一节点：建立/取消关联
+                      return;
+                    }
                     setSelected(n.id);
                   }}
                   onDoubleClick={() => startEdit(n.id, n.text)}
@@ -1195,7 +1467,7 @@ export function MindMapEditor({
                     rx={isRoot(n.id) ? 20 : 8}
                     fill={isRoot(n.id) ? color : "var(--background)"}
                     stroke={color}
-                    strokeWidth={isRoot(n.id) ? 0 : sel ? 2.5 : 1.5}
+                    strokeWidth={isRoot(n.id) ? 0 : sel ? 2.5 : linkingFrom === n.id ? 3 : 1.5}
                   />
                   {/* 节点图标（位于文字左侧，文字相应右移） */}
                   {n.icon && (
@@ -1331,9 +1603,10 @@ export function MindMapEditor({
             );
           })()}
         </svg>
+        )}
 
         {/* 备注气泡：HTML 绝对定位，屏幕坐标 = 世界坐标 * k + v */}
-        {noteTarget && (() => {
+        {!outline && noteTarget && (() => {
           const np = pos[noteTarget];
           const node = mapNode(noteTarget);
           if (!np || !node) return null;

@@ -22,7 +22,7 @@ import {
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { toPng } from "html-to-image";
+import { toPng, toSvg } from "html-to-image";
 import { generateDiagram } from "@/lib/api";
 
 // —— 数据结构 ——
@@ -85,6 +85,7 @@ interface StoredNode {
   fontSize?: number;
   bold?: boolean;
   textAlign?: TextAlign;
+  parentId?: string;
 }
 interface StoredEdge {
   id: string;
@@ -117,6 +118,7 @@ function parseFlow(value: string): StoredFlow {
           fontSize: typeof n.fontSize === "number" ? n.fontSize : undefined,
           bold: typeof n.bold === "boolean" ? n.bold : undefined,
           textAlign: (n.textAlign as TextAlign) || undefined,
+          parentId: typeof n.parentId === "string" ? n.parentId : undefined,
         })),
         edges: Array.isArray(p.edges)
           ? p.edges.map((e: any, i: number) => ({
@@ -443,6 +445,7 @@ export function FlowchartEditor({
     initial.nodes.map((n) => ({
       id: n.id,
       type: "shape",
+      parentId: n.parentId,
       position: { x: n.x, y: n.y },
       data: {
         label: n.label,
@@ -477,6 +480,8 @@ export function FlowchartEditor({
   const [themeIndex, setThemeIndex] = useState(0);
   const [themeOpen, setThemeOpen] = useState(false);
   const [shapeLibOpen, setShapeLibOpen] = useState(false);
+  // 网格吸附开关
+  const [snap, setSnap] = useState(false);
 
   // —— 撤销/重做 ——
   const [past, setPast] = useState<StoredFlow[]>([]);
@@ -497,6 +502,7 @@ export function FlowchartEditor({
         return {
           id: n.id,
           label: d.label,
+          parentId: n.parentId,
           shape: d.shape,
           x: n.position.x,
           y: n.position.y,
@@ -534,6 +540,7 @@ export function FlowchartEditor({
       s.nodes.map((n) => ({
         id: n.id,
         type: "shape",
+        parentId: n.parentId,
         position: { x: n.x, y: n.y },
         data: {
           label: n.label,
@@ -635,6 +642,7 @@ export function FlowchartEditor({
         return {
           id: n.id,
           label: d.label,
+          parentId: n.parentId,
           shape: d.shape,
           x: n.position.x,
           y: n.position.y,
@@ -727,9 +735,126 @@ export function FlowchartEditor({
     if (sel.length === 0 && selEdges.length === 0) return;
     pushHistory();
     const ids = new Set(sel.map((n) => n.id));
+    // 级联删除：删除分组节点时一并删除其子节点（含多层嵌套）
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const n of nodes) {
+        if (!ids.has(n.id) && n.parentId && ids.has(n.parentId)) {
+          ids.add(n.id);
+          changed = true;
+        }
+      }
+    }
     setNodes((nds) => nds.filter((n) => !ids.has(n.id)));
     setEdges((eds) => eds.filter((e) => !ids.has(e.source) && !ids.has(e.target) && !selEdges.includes(e)));
   };
+
+  // —— 组合分组 ——
+  // 把一组节点（可含已分组的子节点）打成一个新分组：新建一个大圆角容器节点，
+  // 选中节点改为其子节点（parentId = 分组 id，坐标转为相对分组），原空分组自动清理。
+  const groupSelected = useCallback(() => {
+    const sel = nodesRef.current.filter((n) => n.selected);
+    if (sel.length < 2) return;
+    pushHistory();
+    const byId = new Map(nodesRef.current.map((n) => [n.id, n]));
+    // 解析节点在画布上的绝对坐标（沿 parentId 链向上累加）
+    const absOf = (n: Node): { x: number; y: number; w: number; h: number } => {
+      const d = n.data as unknown as FlowData;
+      let ax = n.position.x;
+      let ay = n.position.y;
+      let p = n.parentId ? byId.get(n.parentId) : undefined;
+      while (p) {
+        ax += p.position.x;
+        ay += p.position.y;
+        p = p.parentId ? byId.get(p.parentId) : undefined;
+      }
+      return { x: ax, y: ay, w: d.width ?? NODE_W, h: d.height ?? NODE_H };
+    };
+    const absList = sel.map((n) => absOf(n));
+    const minX = Math.min(...absList.map((a) => a.x));
+    const minY = Math.min(...absList.map((a) => a.y));
+    const maxX = Math.max(...absList.map((a) => a.x + a.w));
+    const maxY = Math.max(...absList.map((a) => a.y + a.h));
+    const PAD = 24;
+    const gx = minX - PAD;
+    const gy = minY - PAD;
+    const gw = maxX - minX + PAD * 2;
+    const gh = maxY - minY + PAD * 2;
+    const groupId = genId("g");
+    const selIds = new Set(sel.map((n) => n.id));
+    const oldParents = new Set(sel.map((n) => n.parentId).filter((v): v is string => !!v));
+    setNodes((nds) => {
+      const updated = nds.map((n) => {
+        if (!selIds.has(n.id)) return n;
+        const abs = absOf(n);
+        // 转为相对新分组的坐标，并挂到新分组之下
+        return { ...n, parentId: groupId, selected: false, position: { x: abs.x - gx, y: abs.y - gy } };
+      });
+      // 清理已变空的原父分组（容器/分组形状）
+      const referenced = new Set(updated.map((n) => n.parentId).filter((v): v is string => !!v));
+      const cleaned = updated.filter((n) => {
+        const d = n.data as unknown as FlowData;
+        return !(oldParents.has(n.id) && !referenced.has(n.id) && (d.shape === "group" || d.shape === "container"));
+      });
+      const groupNode: Node = {
+        id: groupId,
+        type: "shape",
+        parentId: undefined,
+        position: { x: gx, y: gy },
+        zIndex: -1,
+        selected: true,
+        data: {
+          label: "分组",
+          shape: "group",
+          fill: "rgba(99,102,241,0.08)",
+          width: gw,
+          height: gh,
+        },
+      };
+      return [groupNode, ...cleaned];
+    });
+  }, [pushHistory, setNodes]);
+
+  const ungroupSelected = useCallback(() => {
+    // 从 ref 中找「被选中有子节点」的分组节点，避免依赖渲染期靠后的 selectedNode
+    const grp = nodesRef.current.find(
+      (n) => n.selected && nodesRef.current.some((c) => c.parentId === n.id),
+    );
+    if (!grp) return;
+    pushHistory();
+    const byId = new Map(nodesRef.current.map((n) => [n.id, n]));
+    const absOf = (n: Node): { x: number; y: number } => {
+      let ax = n.position.x;
+      let ay = n.position.y;
+      let p = n.parentId ? byId.get(n.parentId) : undefined;
+      while (p) {
+        ax += p.position.x;
+        ay += p.position.y;
+        p = p.parentId ? byId.get(p.parentId) : undefined;
+      }
+      return { x: ax, y: ay };
+    };
+    const newParent = grp.parentId; // 子节点重新挂到分组的父级（顶层则为 undefined）
+    const newParentAbs = newParent ? absOf(byId.get(newParent)!) : { x: 0, y: 0 };
+    setNodes((nds) => {
+      const moved = nds
+        .filter((n) => n.parentId === grp.id)
+        .map((n) => {
+          const a = absOf(n); // 子节点绝对坐标
+          return {
+            ...n,
+            parentId: newParent,
+            selected: true,
+            position: { x: a.x - newParentAbs.x, y: a.y - newParentAbs.y },
+          };
+        });
+      const others = nds
+        .filter((n) => n.id !== grp.id && n.parentId !== grp.id)
+        .map((n) => ({ ...n, selected: false }));
+      return [...others, ...moved];
+    });
+  }, [pushHistory, setNodes]);
 
   const clearAll = () => {
     if (nodes.length === 0 && edges.length === 0) return;
@@ -749,6 +874,7 @@ export function FlowchartEditor({
         id: n.id,
         label: d.label,
         shape: d.shape,
+        parentId: n.parentId,
         x: n.position.x,
         y: n.position.y,
         fill: d.fill,
@@ -953,6 +1079,7 @@ export function FlowchartEditor({
         fontSize: d.fontSize,
         bold: d.bold,
         textAlign: d.textAlign,
+        parentId: n.parentId,
       };
     });
     const se: StoredEdge[] = edges.map((e) => {
@@ -968,37 +1095,52 @@ export function FlowchartEditor({
     });
     autoLayout(sn, se);
     pushHistory();
+    const origById = new Map(nodesRef.current.map((n) => [n.id, n]));
     setNodes(
-      sn.map((n) => ({
-        id: n.id,
-        type: "shape",
-        position: { x: n.x, y: n.y },
-        data: {
-          label: n.label,
-          shape: n.shape,
-          fill: n.fill,
-          stroke: n.stroke,
-          width: n.width,
-          height: n.height,
-          fontSize: n.fontSize,
-          bold: n.bold,
-          textAlign: n.textAlign,
-        },
-      })),
+      sn.map((n) => {
+        const orig = origById.get(n.id);
+        const isChild = !!orig?.parentId;
+        return {
+          id: n.id,
+          type: "shape",
+          parentId: n.parentId,
+          // 已是子节点（分组内）的保持相对坐标，仅顶层节点参与自动布局，分组整体随之移动
+          position: isChild ? { x: orig!.position.x, y: orig!.position.y } : { x: n.x, y: n.y },
+          data: {
+            label: n.label,
+            shape: n.shape,
+            fill: n.fill,
+            stroke: n.stroke,
+            width: n.width,
+            height: n.height,
+            fontSize: n.fontSize,
+            bold: n.bold,
+            textAlign: n.textAlign,
+          },
+        };
+      }),
     );
+  };
+
+  // —— 导出公共：计算视口范围与背景 ——
+  const computeExportMeta = () => {
+    const viewportEl = containerRef.current?.querySelector(".react-flow__viewport") as HTMLElement | null;
+    if (!viewportEl) return null;
+    const bounds = getNodesBounds(nodes);
+    const W = 1400;
+    const H = Math.max(500, Math.round((bounds.height / Math.max(bounds.width, 1)) * W));
+    const viewport = getViewportForBounds(bounds, W, H, 0.5, 2, 0.08);
+    const bg = getComputedStyle(document.body).backgroundColor || "#ffffff";
+    return { viewportEl, W, H, viewport, bg };
   };
 
   // —— 导出 PNG ——
   const exportPng = async () => {
-    const viewportEl = containerRef.current?.querySelector(".react-flow__viewport") as HTMLElement | null;
-    if (!viewportEl) return;
+    const meta = computeExportMeta();
+    if (!meta) return;
+    const { viewportEl, W, H, viewport, bg } = meta;
     setExporting(true);
     try {
-      const bounds = getNodesBounds(nodes);
-      const W = 1400;
-      const H = Math.max(500, Math.round((bounds.height / Math.max(bounds.width, 1)) * W));
-      const viewport = getViewportForBounds(bounds, W, H, 0.5, 2, 0.08);
-      const bg = getComputedStyle(document.body).backgroundColor || "#ffffff";
       const dataUrl = await toPng(viewportEl, {
         backgroundColor: bg,
         width: W,
@@ -1012,6 +1154,34 @@ export function FlowchartEditor({
       });
       const a = document.createElement("a");
       a.download = "流程图.png";
+      a.href = dataUrl;
+      a.click();
+    } catch (err) {
+      alert(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // —— 导出 SVG ——
+  const exportSvg = async () => {
+    const meta = computeExportMeta();
+    if (!meta) return;
+    const { viewportEl, W, H, viewport, bg } = meta;
+    setExporting(true);
+    try {
+      const dataUrl = await toSvg(viewportEl, {
+        backgroundColor: bg,
+        width: W,
+        height: H,
+        style: {
+          width: `${W}px`,
+          height: `${H}px`,
+          transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+        },
+      });
+      const a = document.createElement("a");
+      a.download = "流程图.svg";
       a.href = dataUrl;
       a.click();
     } catch (err) {
@@ -1110,6 +1280,7 @@ export function FlowchartEditor({
         sn.map((n) => ({
           id: n.id,
           type: "shape",
+          parentId: n.parentId,
           position: { x: n.x, y: n.y },
           data: { label: n.label, shape: n.shape, width: n.width, height: n.height, fontSize: n.fontSize, bold: n.bold, textAlign: n.textAlign },
         })),
@@ -1243,6 +1414,20 @@ export function FlowchartEditor({
             {k.label}
           </button>
         ))}
+
+        {/* 网格吸附开关 */}
+        <button
+          onClick={() => setSnap((v) => !v)}
+          className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
+            snap ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
+          }`}
+          title="网格吸附：开启后拖拽节点自动对齐网格"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+          </svg>
+          网格
+        </button>
 
         {/* 整图主题：一键换色 */}
         <span className="mx-1 h-4 w-px bg-line" />
@@ -1561,6 +1746,32 @@ export function FlowchartEditor({
           </>
         )}
 
+        {/* 组合 / 取消组合 */}
+        {selectedNodes.length >= 2 && (
+          <>
+            <span className="mx-1 h-4 w-px bg-line" />
+            <button
+              onClick={groupSelected}
+              className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover"
+              title="将选中节点组合为一个分组（整体拖动）"
+            >
+              组合
+            </button>
+          </>
+        )}
+        {selectedNode && nodes.some((n) => n.parentId === selectedNode.id) && (
+          <>
+            <span className="mx-1 h-4 w-px bg-line" />
+            <button
+              onClick={ungroupSelected}
+              className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover"
+              title="取消分组，子节点恢复为独立节点"
+            >
+              取消组合
+            </button>
+          </>
+        )}
+
         <span className="mx-1 h-4 w-px bg-line" />
         <button onClick={undo} disabled={!canUndo} className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed" title="撤销 (Ctrl+Z)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>
@@ -1586,6 +1797,14 @@ export function FlowchartEditor({
             title="导出 PNG 图片"
           >
             {exporting ? "导出中…" : "导出 PNG"}
+          </button>
+          <button
+            onClick={exportSvg}
+            disabled={exporting}
+            className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-50"
+            title="导出 SVG 矢量图"
+          >
+            导出 SVG
           </button>
           <button
             onClick={() => setAiOpen(true)}
@@ -1664,6 +1883,8 @@ export function FlowchartEditor({
           nodeTypes={nodeTypes}
           defaultEdgeOptions={defaultEdgeOptions}
           deleteKeyCode={null}
+          snapToGrid={snap}
+          snapGrid={[15, 15] as [number, number]}
           fitView
           proOptions={{ hideAttribution: true }}
         >
