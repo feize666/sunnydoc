@@ -596,6 +596,26 @@ export default function Home() {
           );
           refreshList();
           openDoc(doc.id);
+        } else if (type === "mindmap") {
+          const doc = await createDocument(
+            "未命名思维导图",
+            JSON.stringify({ nodes: [{ id: "1", text: "中心主题", parent: null }] }),
+            currentKbId,
+            parentFolderId,
+            "mindmap",
+          );
+          refreshList();
+          openDoc(doc.id);
+        } else if (type === "flowchart") {
+          const doc = await createDocument(
+            "未命名流程图",
+            JSON.stringify({ nodes: [], edges: [] }),
+            currentKbId,
+            parentFolderId,
+            "flowchart",
+          );
+          refreshList();
+          openDoc(doc.id);
         } else {
           const doc = await createDocument("未命名文档", "", currentKbId, parentFolderId);
           refreshList();
@@ -899,8 +919,6 @@ export default function Home() {
     onSelect: openDoc,
     folders,
     onImport: () => setImportOpen(true),
-    onNewDoc: () => setNewDocOpen(true),
-    onNewFolder: () => setNewFolderOpen(true),
     onExport: () => setExportOpen(true),
     onRefresh: refreshList,
     onDeleteDoc: handleDelete,

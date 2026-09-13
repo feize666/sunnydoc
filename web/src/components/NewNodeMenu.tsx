@@ -44,14 +44,16 @@ const TYPES: TypeDef[] = [
 export function NewNodeMenu({
   onSelect,
   onClose,
+  align = "right",
 }: {
   onSelect: (type: NodeType) => void;
   onClose: () => void;
+  align?: "left" | "right";
 }) {
   return (
     <>
       <div className="fixed inset-0 z-20" onClick={onClose} />
-      <div className="menu-panel absolute right-0 top-full z-30 mt-1 w-[320px] overflow-hidden rounded-xl p-1.5">
+      <div className={`menu-panel absolute ${align === "left" ? "left-0" : "right-0"} top-full z-30 mt-1 w-[320px] overflow-hidden rounded-xl p-1.5`}>
         <div className="grid grid-cols-2 gap-0.5">
           {TYPES.map((t) => (
             <button

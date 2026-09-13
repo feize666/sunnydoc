@@ -7,7 +7,7 @@ import { PlusIcon, SearchIcon, CloseIcon } from "./icons";
 import { useResizable } from "@/hooks/useResizable";
 import type { TreeNode, SortBy } from "@/data/docs";
 import type { Folder, SearchResult } from "@/lib/api";
-import type { NodeType } from "./NewNodeMenu";
+import { NewNodeMenu, type NodeType } from "./NewNodeMenu";
 
 function escapeHtml(s: string): string {
   return s
@@ -115,8 +115,6 @@ export function Sidebar({
   onToggleCollapse,
   folders,
   onImport,
-  onNewDoc,
-  onNewFolder,
   onExport,
   onRefresh,
   onDeleteDoc,
@@ -158,8 +156,6 @@ export function Sidebar({
   onToggleCollapse: () => void;
   folders: Folder[];
   onImport: () => void;
-  onNewDoc: () => void;
-  onNewFolder: () => void;
   onExport: () => void;
   onRefresh?: () => void;
   onDeleteDoc?: (key: string) => void;
@@ -297,19 +293,6 @@ export function Sidebar({
       ? "默认顺序"
       : sortOptions.find((o) => o.value === sortBy)?.label ?? "排序";
 
-  const createItems = [
-    {
-      label: "新建文档",
-      icon: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6",
-      action: () => onNewDoc(),
-    },
-    {
-      label: "新建文件夹",
-      icon: "M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z",
-      action: () => onNewFolder(),
-    },
-  ];
-
   return (
     <aside
       style={{ width: sidebarWidth }}
@@ -440,31 +423,14 @@ export function Sidebar({
             </button>
 
             {menuOpen && (
-              <div className="menu-panel absolute left-0 top-full z-50 mt-1 w-44">
-                {createItems.map((item, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      item.action();
-                      setMenuOpen(false);
-                    }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[14px] text-text hover:bg-hover"
-                  >
-                    <svg
-                      width="15"
-                      height="15"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      className="shrink-0 text-muted"
-                    >
-                      <path d={item.icon} />
-                    </svg>
-                    <span>{item.label}</span>
-                  </button>
-                ))}
-              </div>
+              <NewNodeMenu
+                align="left"
+                onSelect={(t) => {
+                  onNew?.(t, null);
+                  setMenuOpen(false);
+                }}
+                onClose={() => setMenuOpen(false)}
+              />
             )}
           </div>
 
