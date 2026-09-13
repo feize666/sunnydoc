@@ -250,7 +250,7 @@ function FileTreeNode({
                 <PlusIcon />
               </button>
               {addOpen && (
-                <NewNodeMenu onSelect={(t) => onNew(t, node.key ?? null)} onClose={() => setAddOpen(false)} />
+                <NewNodeMenu align="left" onSelect={(t) => onNew(t, node.key ?? null)} onClose={() => setAddOpen(false)} />
               )}
             </div>
           )}
@@ -356,7 +356,7 @@ function FileTreeNode({
             <PlusIcon />
           </button>
           {addOpen && (
-            <NewNodeMenu onSelect={(t) => onNew(t, node.folder_id ?? null)} onClose={() => setAddOpen(false)} />
+            <NewNodeMenu align="left" onSelect={(t) => onNew(t, node.folder_id ?? null)} onClose={() => setAddOpen(false)} />
           )}
         </div>
       )}

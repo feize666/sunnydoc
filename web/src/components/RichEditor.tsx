@@ -534,8 +534,14 @@ export function RichEditor({
       const { from, to } = editor.state.selection;
       if (from === to) return;
       const chain = editor.chain().focus();
-      for (const [name, attrs] of Object.entries(painterMarks)) {
-        chain.setMark(name, (attrs as Record<string, unknown>) || {});
+      const names = Object.keys(painterMarks);
+      if (names.length === 0) {
+        // 复制的源无格式 → 清除目标文字的所有 marks
+        chain.unsetAllMarks();
+      } else {
+        for (const [name, attrs] of Object.entries(painterMarks)) {
+          chain.setMark(name, (attrs as Record<string, unknown>) || {});
+        }
       }
       chain.run();
       setPainterMarks(null);
@@ -803,12 +809,15 @@ export function RichEditor({
       setPainterMarks(null);
       return;
     }
-    const marks = editor.state.selection.$from.marks();
+    const { $from, from, to } = editor.state.selection;
+    // 光标态优先用 storedMarks（保持键入时的格式），选区态用选区起点的 marks
+    const marks = from === to ? (editor.state.storedMarks ?? $from.marks()) : $from.marks();
     const m: Record<string, unknown> = {};
-    for (const mark of marks) {
+    for (const mark of marks ?? []) {
       m[mark.type.name] = mark.attrs as Record<string, unknown>;
     }
-    setPainterMarks(Object.keys(m).length ? m : null);
+    // 始终进入激活态（即使无格式，也允许「复制无格式」清除目标文字格式）
+    setPainterMarks(m);
   };
 
   // 清除格式：移除所有 marks，段落/标题降为正文
