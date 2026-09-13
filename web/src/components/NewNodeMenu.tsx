@@ -28,9 +28,9 @@ const TYPES: { type: NodeType; label: string; available: boolean; icon: ReactNod
   { type: "folder", label: "目录", available: true, icon: <Icon d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /> },
   { type: "board", label: "画板", available: true, icon: <Icon d="M3 3h18v18H3z|M7 16l4-4 3 2 4-5" /> },
   { type: "datasheet", label: "数据表", available: true, icon: <Icon d="M4 5h16v14H4z|M4 9h16|M9 9v10" /> },
-  { type: "mindmap", label: "思维笔记", available: false, icon: <Icon d="M12 4v16M12 8H5M12 14h7" /> },
+  { type: "mindmap", label: "思维导图", available: true, icon: <Icon d="M12 4v16M12 8H5M12 14h7" /> },
   { type: "slides", label: "幻灯片", available: false, icon: <Icon d="M3 5h18v12H3z|M3 9h18|M9 9v8" /> },
-  { type: "flowchart", label: "流程图", available: false, icon: <Icon d="M12 2l6 8-6 8-6-8z|M12 6v4M12 14v4" /> },
+  { type: "flowchart", label: "流程图", available: true, icon: <Icon d="M12 2l6 8-6 8-6-8z|M12 6v4M12 14v4" /> },
 ];
 
 /** 「+」新建多类型面板（语雀式）。 */

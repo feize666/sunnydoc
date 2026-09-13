@@ -491,6 +491,17 @@ export async function aiAssist(action: AIAssistAction, text: string): Promise<st
   return data.result;
 }
 
+export async function generateDiagram(
+  kind: "flowchart" | "mindmap",
+  text: string,
+): Promise<{ nodes: unknown[]; edges?: unknown[] }> {
+  return request("/ai/generate-diagram", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, text }),
+  });
+}
+
 export async function duplicateDocument(docId: string): Promise<{ id: string; title: string }> {
   return request(`/documents/${docId}/duplicate`, { method: "POST" });
 }

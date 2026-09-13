@@ -247,6 +247,11 @@ class AIAssistRequest(BaseModel):
     text: str
 
 
+class GenerateDiagramRequest(BaseModel):
+    kind: str  # flowchart / mindmap
+    text: str
+
+
 class AISettingsRequest(BaseModel):
     """AI 功能配置（供应商 + 自定义 base_url / key / model）。"""
 
@@ -2179,6 +2184,25 @@ def ai_assist(req: AIAssistRequest, current_user: dict = Depends(get_current_use
             raise HTTPException(status_code=503, detail="AI 服务未配置，请在系统设置中配置")
         raise HTTPException(status_code=400, detail="不支持的操作类型")
     return {"result": result}
+
+
+@router.post("/ai/generate-diagram")
+def generate_diagram(req: GenerateDiagramRequest, current_user: dict = Depends(get_current_user)):
+    """AI 生成流程图 / 思维导图结构（返回 {nodes, edges} 或 {nodes}）。"""
+    text = (req.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="描述不能为空")
+    if req.kind not in ("flowchart", "mindmap"):
+        raise HTTPException(status_code=400, detail="不支持的图表类型")
+    try:
+        result = llm.generate_flowchart(text) if req.kind == "flowchart" else llm.generate_mindmap(text)
+    except llm.LLMError as e:
+        raise HTTPException(status_code=e.status if e.status and e.status > 0 else 502, detail=e.detail)
+    if result is None:
+        if not llm.available():
+            raise HTTPException(status_code=503, detail="AI 服务未配置，请在系统设置中配置")
+        raise HTTPException(status_code=400, detail="生成失败，请重试")
+    return result
 
 
 @router.get("/documents/{doc_id}/versions")

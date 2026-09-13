@@ -11,6 +11,8 @@ import { RichEditor } from "./RichEditor";
 import { TableEditor } from "./TableEditor";
 import { BoardEditor } from "./BoardEditor";
 import { DatasheetEditor } from "./DatasheetEditor";
+import { MindMapEditor } from "./MindMapEditor";
+import { FlowchartEditor } from "./FlowchartEditor";
 import { AiAssistPopover } from "./AiAssistPopover";
 import { CopyIcon, CheckIcon, EditIcon, CodeIcon } from "./icons";
 import { useResizable } from "@/hooks/useResizable";
@@ -175,7 +177,7 @@ export function Editor({
   // 切换文档时重置为预览模式（表格/画板/数据表默认进编辑态）
   useEffect(() => {
     const t = doc?.type ?? "doc";
-    setMode(["table", "board", "datasheet"].includes(t) ? "edit" : "preview");
+    setMode(["table", "board", "datasheet", "flowchart", "mindmap"].includes(t) ? "edit" : "preview");
   }, [doc?.key, doc?.type]);
 
   // Ctrl/Cmd+S 保存
@@ -596,6 +598,10 @@ export function Editor({
                   <BoardEditor value={draft} onChange={setDraft} />
                 ) : doc.type === "datasheet" ? (
                   <DatasheetEditor value={draft} onChange={setDraft} />
+                ) : doc.type === "flowchart" ? (
+                  <FlowchartEditor value={draft} onChange={setDraft} />
+                ) : doc.type === "mindmap" ? (
+                  <MindMapEditor value={draft} onChange={setDraft} />
                 ) : (
                   <RichEditor
                     value={draft}

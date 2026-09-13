@@ -259,6 +259,82 @@ def assist(action: str, text: str) -> str | None:
         raise LLMError(-1, f"响应解析失败: {e}") from e
 
 
+def _generate_json(system: str, user: str, max_tokens: int = 2000) -> dict:
+    """调用 LLM 生成并解析 JSON 返回；失败抛 LLMError。"""
+    try:
+        resp = httpx.post(
+            _url(),
+            headers=_auth_header(),
+            json={
+                "model": _model_or_err(),
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "temperature": 0.3,
+                "max_tokens": max_tokens,
+                "stream": False,
+            },
+            timeout=90.0,
+        )
+        _check_response(resp)
+        data = resp.json()
+        content = (data["choices"][0]["message"]["content"] or "").strip()
+    except LLMError:
+        raise
+    except (httpx.HTTPError, KeyError, IndexError, json.JSONDecodeError) as e:
+        raise LLMError(-1, f"AI 生成失败: {e}") from e
+
+    # 提取 JSON（容忍 markdown 代码块包裹）
+    c = content.strip()
+    if c.startswith("```"):
+        c = c.lstrip("`")
+        if c.lower().startswith("json"):
+            c = c[4:]
+        c = c.strip()
+    s = c.find("{")
+    e = c.rfind("}")
+    if s == -1 or e == -1:
+        raise LLMError(-1, "AI 未返回有效 JSON")
+    try:
+        return json.loads(c[s : e + 1])
+    except json.JSONDecodeError as exc:
+        raise LLMError(-1, f"AI 返回的 JSON 解析失败: {exc}") from exc
+
+
+def generate_flowchart(text: str) -> dict | None:
+    """根据文字描述生成流程图结构 {nodes, edges}；未配置返回 None。"""
+    if not available():
+        return None
+    text = (text or "").strip()
+    if not text:
+        return None
+    system = (
+        "你是流程图生成助手。根据用户描述生成流程图，只输出 JSON，不要解释。"
+        'JSON 结构：{"nodes":[{"id":"n1","label":"开始","shape":"ellipse"},...],'
+        '"edges":[{"id":"e1","source":"n1","target":"n2","label":"是"},...]}。'
+        "shape 可选值：ellipse(开始/结束)、rect(处理步骤)、diamond(判断分支)、parallelogram(输入输出)、rounded(文档/数据)。"
+        "节点 id 用 n1、n2、n3…，连线 source/target 引用节点 id。"
+    )
+    return _generate_json(system, f"请根据以下描述生成一张流程图：\n\n{text[:4000]}")
+
+
+def generate_mindmap(text: str) -> dict | None:
+    """根据主题生成思维导图结构 {nodes}；未配置返回 None。"""
+    if not available():
+        return None
+    text = (text or "").strip()
+    if not text:
+        return None
+    system = (
+        "你是思维导图生成助手。根据主题生成思维导图，只输出 JSON，不要解释。"
+        'JSON 结构：{"nodes":[{"id":"1","text":"中心主题","parent":null},'
+        '{"id":"2","text":"分支","parent":"1"},...]}。'
+        "parent 指向父节点 id，根节点 parent 为 null。生成 3-5 个主分支，每个主分支可含 1-3 个子分支。"
+    )
+    return _generate_json(system, f"请为主题「{text[:200]}」生成一张思维导图。")
+
+
 def generate_stream(
     query: str,
     contexts: list[str],
