@@ -385,7 +385,7 @@ export function FlowchartEditor({
       )}
 
       {/* 画布 */}
-      <div className="flex-1" style={{ height: "60vh", minHeight: 400 }}>
+      <div style={{ height: "60vh", minHeight: 400 }}>
         <ReactFlow
           nodes={nodes}
           edges={edges}

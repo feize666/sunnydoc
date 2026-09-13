@@ -384,7 +384,7 @@ export function MindMapEditor({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onWheel={onWheel}
-        className="flex-1 cursor-grab overflow-hidden outline-none active:cursor-grabbing"
+        className="cursor-grab overflow-hidden outline-none active:cursor-grabbing"
         style={{ touchAction: "none", height: "60vh", minHeight: 400 }}
       >
         <svg width="100%" height="100%">
