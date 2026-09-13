@@ -861,6 +861,12 @@ export function RichEditor({
 
         <ToolDivider />
 
+        <ToolBtn title="格式刷" tone="text-accent" onClick={copyFormat} active={painterMarks !== null}>
+          <FormatPaintIcon size={17} />
+        </ToolBtn>
+
+        <ToolDivider />
+
         <ToolBtn title="加粗" shortcut="⌘B" onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive("bold")}>
           <span className="text-[16px] font-bold leading-none">B</span>
         </ToolBtn>
@@ -1132,6 +1138,21 @@ export function RichEditor({
             </div>
           )}
         </div>
+        <ToolBtn title="任务列表" tone="text-success" onClick={() => editor.chain().focus().toggleTaskList().run()} active={editor.isActive("taskList")}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="5" width="14" height="14" rx="2" />
+            <path d="M6 12l3 3 5-6" />
+          </svg>
+        </ToolBtn>
+        <ToolBtn title="插入表格" tone="text-accent" onClick={insertTable}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="1" />
+            <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+          </svg>
+        </ToolBtn>
+
+        <ToolDivider />
+
         {/* 对齐 */}
         <div className="relative shrink-0">
           <Tooltip content="对齐方式">
@@ -1244,12 +1265,6 @@ export function RichEditor({
                 <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().toggleStrike().run(); setMoreOpen(false); }} className={`flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] transition-colors hover:bg-hover ${editor.isActive("strike") ? "text-accent" : "text-text"}`}>
                   <span className="w-4 text-center font-semibold leading-none line-through">S</span>删除线
                 </button>
-                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().toggleTaskList().run(); setMoreOpen(false); }} className={`flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] transition-colors hover:bg-hover ${editor.isActive("taskList") ? "text-accent" : "text-text"}`}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><rect x="3" y="5" width="14" height="14" rx="2" /><path d="M6 12l3 3 5-6" /></svg>任务列表
-                </button>
-                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { insertTable(); setMoreOpen(false); }} className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] text-text transition-colors hover:bg-hover">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><rect x="3" y="3" width="18" height="18" rx="1" /><path d="M3 9h18M3 15h18M9 3v18M15 3v18" /></svg>插入表格
-                </button>
                 <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().setHorizontalRule().run(); setMoreOpen(false); }} className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] text-text transition-colors hover:bg-hover">
                   <MinusIcon size={15} />分割线
                 </button>
@@ -1265,9 +1280,6 @@ export function RichEditor({
 
                 <div className="my-1 border-t border-line" />
 
-                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { copyFormat(); setMoreOpen(false); }} className={`flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] transition-colors hover:bg-hover ${painterMarks ? "text-accent" : "text-text"}`}>
-                  <FormatPaintIcon size={15} />格式刷
-                </button>
                 <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { clearFormat(); setMoreOpen(false); }} className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] text-text transition-colors hover:bg-hover">
                   <ClearFormatIcon size={15} />清除格式
                 </button>
