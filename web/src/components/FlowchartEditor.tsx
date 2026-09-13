@@ -18,6 +18,7 @@ import {
   type Edge,
   type Connection,
   type NodeProps,
+  type EdgeMarker,
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -34,15 +35,41 @@ type ShapeKind =
   | "database"
   | "manual"
   | "delay"
-  | "preparation";
+  | "preparation"
+  | "internalStorage"
+  | "display"
+  | "terminator"
+  | "predefined"
+  | "merge"
+  | "hexagon"
+  | "card"
+  | "container"
+  | "group"
+  | "note";
 
 type EdgeKind = "default" | "straight" | "step" | "smoothstep";
+
+type TextAlign = "left" | "center" | "right";
+// 连线箭头：无 / 实心 / 空心 / 菱形
+type ArrowType = "none" | "solid" | "hollow" | "diamond";
 
 interface FlowData {
   label: string;
   shape: ShapeKind;
   fill?: string;
   stroke?: string;
+  width?: number;
+  height?: number;
+  fontSize?: number;
+  bold?: boolean;
+  textAlign?: TextAlign;
+}
+
+// 连线的箭头记录（序列化用），存于 edge.data
+interface EdgeArrowData {
+  arrowStart?: ArrowType;
+  arrowEnd?: ArrowType;
+  [key: string]: unknown;
 }
 
 interface StoredNode {
@@ -53,12 +80,19 @@ interface StoredNode {
   y: number;
   fill?: string;
   stroke?: string;
+  width?: number;
+  height?: number;
+  fontSize?: number;
+  bold?: boolean;
+  textAlign?: TextAlign;
 }
 interface StoredEdge {
   id: string;
   source: string;
   target: string;
   label?: string;
+  markerStart?: ArrowType;
+  markerEnd?: ArrowType;
 }
 interface StoredFlow {
   nodes: StoredNode[];
@@ -78,6 +112,11 @@ function parseFlow(value: string): StoredFlow {
           y: Number(n.y ?? n.position?.y ?? 0),
           fill: n.fill,
           stroke: n.stroke,
+          width: typeof n.width === "number" ? n.width : undefined,
+          height: typeof n.height === "number" ? n.height : undefined,
+          fontSize: typeof n.fontSize === "number" ? n.fontSize : undefined,
+          bold: typeof n.bold === "boolean" ? n.bold : undefined,
+          textAlign: (n.textAlign as TextAlign) || undefined,
         })),
         edges: Array.isArray(p.edges)
           ? p.edges.map((e: any, i: number) => ({
@@ -85,6 +124,9 @@ function parseFlow(value: string): StoredFlow {
               source: String(e.source),
               target: String(e.target),
               label: e.label || "",
+              // 旧数据无 marker 字段：终点默认实心箭头，起点无箭头（与历史默认一致）
+              markerStart: (e.markerStart as ArrowType) || undefined,
+              markerEnd: (e.markerEnd as ArrowType) || undefined,
             }))
           : [],
       };
@@ -95,17 +137,50 @@ function parseFlow(value: string): StoredFlow {
   return { nodes: [], edges: [] };
 }
 
-const SHAPES: { kind: ShapeKind; label: string; icon: string }[] = [
-  { kind: "ellipse", label: "起止", icon: "M8 3 A5 5 0 1 1 8 13 A5 5 0 1 1 8 3" },
-  { kind: "rect", label: "处理", icon: "M2 3h12v10H2z" },
-  { kind: "diamond", label: "判断", icon: "M8 1 15 8 8 15 1 8Z" },
-  { kind: "parallelogram", label: "输入/输出", icon: "M3 3h8l2 10H5Z" },
-  { kind: "rounded", label: "文档", icon: "M2 2h12v12H2z" },
-  { kind: "database", label: "数据库", icon: "M8 1c3 0 6 1.5 6 3.5S11 8 8 8 2 6.5 2 4.5 5 1 8 1Zm-6 3.5V12c0 2 3 3.5 6 3.5s6-1.5 6-3.5V4.5" },
-  { kind: "manual", label: "手动操作", icon: "M2 3h10l2 10H2z" },
-  { kind: "delay", label: "延迟", icon: "M6 3h7a3 3 0 0 1 0 10H6Z" },
-  { kind: "preparation", label: "准备", icon: "M3 8 8 3l5 5-5 5Z" },
+// 形状库（分类组织）。容器类/备注类默认尺寸更大，由 addNode 处理。
+const SHAPE_GROUPS: { cat: string; items: { kind: ShapeKind; label: string; icon: string }[] }[] = [
+  {
+    cat: "流程类",
+    items: [
+      { kind: "ellipse", label: "起止", icon: "M8 3 A5 5 0 1 1 8 13 A5 5 0 1 1 8 3" },
+      { kind: "rect", label: "处理", icon: "M2 4h12v8H2z" },
+      { kind: "diamond", label: "判断", icon: "M8 1 15 8 8 15 1 8Z" },
+      { kind: "rounded", label: "文档", icon: "M2 3h12v10H2z" },
+      { kind: "parallelogram", label: "输入/输出", icon: "M3 4h8l2 8H5Z" },
+      { kind: "manual", label: "手动操作", icon: "M2 4h10l2 8H2z" },
+      { kind: "preparation", label: "准备", icon: "M3 8 8 3l5 5-5 5Z" },
+      { kind: "delay", label: "延迟", icon: "M6 4h7a3 3 0 0 1 0 8H6Z" },
+      { kind: "database", label: "数据存储", icon: "M8 1c3 0 6 1.5 6 3.5S11 8 8 8 2 6.5 2 4.5 5 1 8 1Zm-6 3.5V12c0 2 3 3.5 6 3.5s6-1.5 6-3.5V4.5" },
+      { kind: "internalStorage", label: "内部存储", icon: "M2 4h12v8H2z M6 4v8" },
+      { kind: "display", label: "显示", icon: "M2 4h12v6H2z M2 10 Q8 14 14 10" },
+      { kind: "terminator", label: "终止", icon: "M5 5h6a3 3 0 0 1 0 6H5a3 3 0 0 1 0-6Z" },
+      { kind: "predefined", label: "预定义处理", icon: "M2 4h12v8H2z M5 4v8 M11 4v8" },
+      { kind: "merge", label: "合并", icon: "M2 4h12L10 12H6Z" },
+      { kind: "hexagon", label: "六边形", icon: "M5 2h6l3 6-3 6H5L2 8Z" },
+      { kind: "card", label: "卡片", icon: "M2 3h12v9H2z M9 12l3-3h-3Z" },
+    ],
+  },
+  {
+    cat: "容器类",
+    items: [
+      { kind: "container", label: "容器框", icon: "M3 3h10v10H3z" },
+      { kind: "group", label: "分组框", icon: "M4 3h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z M2 5h4v1.5H2z" },
+    ],
+  },
+  {
+    cat: "备注类",
+    items: [
+      { kind: "note", label: "注释", icon: "M2 3h9l3 3v7H2z M11 3v3h3" },
+    ],
+  },
 ];
+
+// 扁平列表：用于按 kind 查名称
+const ALL_SHAPES = SHAPE_GROUPS.flatMap((g) => g.items);
+const SHAPE_LABEL: Record<string, string> = Object.fromEntries(ALL_SHAPES.map((s) => [s.kind, s.label]));
+
+// 容器类默认尺寸（更大）
+const CONTAINER_SHAPES: ShapeKind[] = ["container", "group"];
 
 const EDGE_KINDS: { kind: EdgeKind; label: string }[] = [
   { kind: "default", label: "曲线" },
@@ -168,33 +243,147 @@ function shapePath(shape: ShapeKind, w: number, h: number): string {
       const s = 22;
       return `M ${s} 0 L ${w - s} 0 L ${w} ${h / 2} L ${w - s} ${h} L ${s} ${h} L 0 ${h / 2} Z`;
     }
+    case "internalStorage":
+      // 矩形带竖线
+      return `M 0 0 H ${w} V ${h} H 0 Z`;
+    case "display": {
+      // 底部内凹
+      const dip = Math.min(14, h * 0.4);
+      return `M 0 0 H ${w} V ${h - dip} Q ${w / 2} ${h - dip * 1.8} 0 ${h - dip} Z`;
+    }
+    case "terminator": {
+      // 圆角矩形（双边框由装饰层绘制）
+      const r = h / 2;
+      return `M ${r} 0 H ${w - r} Q ${w} 0 ${w} ${r} V ${h - r} Q ${w} ${h} ${w - r} ${h} H ${r} Q 0 ${h} 0 ${h - r} V ${r} Q 0 0 ${r} 0 Z`;
+    }
+    case "predefined":
+      return `M 0 0 H ${w} V ${h} H 0 Z`;
+    case "merge": {
+      // 梯形（上宽下窄，漏斗/合并）
+      const s = w * 0.18;
+      return `M 0 0 H ${w} L ${w - s} ${h} H ${s} Z`;
+    }
+    case "hexagon": {
+      const s = w * 0.26;
+      return `M ${s} 0 H ${w - s} L ${w} ${h / 2} L ${w - s} ${h} H ${s} L 0 ${h / 2} Z`;
+    }
+    case "card": {
+      // 圆角矩形 + 右下折角
+      const r = 12;
+      const f = 16;
+      return `M ${r} 0 H ${w - r} Q ${w} 0 ${w} ${r} V ${h - f} L ${w - f} ${h} H ${r} Q 0 ${h} 0 ${h - r} V ${r} Q 0 0 ${r} 0 Z`;
+    }
+    case "container":
+    case "group": {
+      // 大圆角矩形（虚线边框由渲染层处理）
+      const r = 18;
+      return `M ${r} 0 H ${w - r} Q ${w} 0 ${w} ${r} V ${h - r} Q ${w} ${h} ${w - r} ${h} H ${r} Q 0 ${h} 0 ${h - r} V ${r} Q 0 0 ${r} 0 Z`;
+    }
+    case "note": {
+      // 右上折角的矩形
+      const f = 16;
+      return `M 0 0 H ${w - f} L ${w} ${f} V ${h} H 0 Z`;
+    }
     default:
       return `M 0 0 H ${w} V ${h} H 0 Z`;
   }
+}
+
+// 部分形状需要的额外装饰（竖线 / 双边框 / 折角线）
+function shapeDecoration(shape: ShapeKind, w: number, h: number, stroke: string) {
+  const sw = 1.4;
+  switch (shape) {
+    case "internalStorage":
+      return <line x1={20} y1={6} x2={20} y2={h - 6} stroke={stroke} strokeWidth={sw} />;
+    case "predefined":
+      return (
+        <>
+          <line x1={9} y1={6} x2={9} y2={h - 6} stroke={stroke} strokeWidth={sw} />
+          <line x1={w - 9} y1={6} x2={w - 9} y2={h - 6} stroke={stroke} strokeWidth={sw} />
+        </>
+      );
+    case "terminator":
+      return (
+        <rect x={5} y={5} width={Math.max(0, w - 10)} height={Math.max(0, h - 10)} rx={12} fill="none" stroke={stroke} strokeWidth={1.1} />
+      );
+    case "note":
+      return <path d={`M ${w - 16} 0 L ${w - 16} 16 L ${w} 16`} fill="none" stroke={stroke} strokeWidth={sw} />;
+    case "card": {
+      const f = 16;
+      return <path d={`M ${w - f} ${h - f} L ${w - f} ${h} M ${w - f} ${h - f} L ${w} ${h - f}`} fill="none" stroke={stroke} strokeWidth={sw} />;
+    }
+    default:
+      return null;
+  }
+}
+
+// 连线箭头：把 ArrowType 转成 React Flow 的 marker（菱形用文档内的自定义 marker）
+const ARROW_OPTIONS: { type: ArrowType; label: string }[] = [
+  { type: "none", label: "无" },
+  { type: "solid", label: "实" },
+  { type: "hollow", label: "空" },
+  { type: "diamond", label: "菱" },
+];
+
+function buildMarker(type: ArrowType | undefined, color: string): EdgeMarker | string | undefined {
+  if (!type || type === "none") return undefined;
+  if (type === "solid") return { type: MarkerType.ArrowClosed, color, width: 18, height: 18 };
+  if (type === "hollow") return { type: MarkerType.Arrow, color, width: 18, height: 18 };
+  // 菱形：引用文档中定义的自定义 marker（颜色随连线，用 context-stroke 继承）
+  return "url(#rf-diamond)";
 }
 
 // 通过闭包把当前主题传入节点：未手动设色时使用主题色，手动色优先
 function createShapeNode(theme: { nodeFill: string; nodeStroke: string }) {
   return function ShapeNode({ data, selected }: NodeProps) {
     const d = data as unknown as FlowData;
-    const w = NODE_W;
-    const h = NODE_H;
+    const w = d.width ?? NODE_W;
+    const h = d.height ?? NODE_H;
     const fill = d.fill ?? (selected ? "var(--accent-soft)" : theme.nodeFill);
     const stroke = d.stroke ?? (selected ? "var(--accent)" : theme.nodeStroke);
+    const dashed = d.shape === "container" || d.shape === "group";
+
+    // 文字样式
+    const fontSize = d.fontSize ?? 13;
+    const fontWeight = d.bold ? 700 : 400;
+    const align = d.textAlign ?? "center";
+    const lineH = fontSize * 1.35;
+    const rawLines = (d.label || "").split("\n");
+    const displayLines =
+      rawLines.length > 1
+        ? rawLines
+        : [d.label.length > 11 ? d.label.slice(0, 11) + "…" : d.label];
+    const totalH = displayLines.length * lineH;
+    const startY = h / 2 - totalH / 2 + lineH / 2;
+    const tx = align === "left" ? 10 : align === "right" ? w - 10 : w / 2;
+    const anchor = align === "left" ? "start" : align === "right" ? "end" : "middle";
+
     return (
       <div style={{ width: w, height: h }} className="relative">
         <svg width={w} height={h} className="overflow-visible">
-          <path d={shapePath(d.shape, w, h)} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.5} />
+          <path
+            d={shapePath(d.shape, w, h)}
+            fill={fill}
+            stroke={stroke}
+            strokeWidth={selected ? 2 : 1.5}
+            strokeDasharray={dashed ? "8 4" : undefined}
+          />
+          {shapeDecoration(d.shape, w, h, stroke)}
           <text
-            x={w / 2}
-            y={h / 2}
-            textAnchor="middle"
+            x={tx}
+            y={startY}
+            textAnchor={anchor}
             dominantBaseline="central"
-            fontSize={13}
+            fontSize={fontSize}
+            fontWeight={fontWeight}
             fill="var(--text)"
             style={{ userSelect: "none" }}
           >
-            {d.label.length > 11 ? d.label.slice(0, 11) + "…" : d.label}
+            {displayLines.map((ln, i) => (
+              <tspan key={i} x={tx} y={startY + i * lineH}>
+                {ln}
+              </tspan>
+            ))}
           </text>
         </svg>
         <Handle type="target" position={Position.Left} style={{ background: "var(--accent)" }} />
@@ -255,7 +444,17 @@ export function FlowchartEditor({
       id: n.id,
       type: "shape",
       position: { x: n.x, y: n.y },
-      data: { label: n.label, shape: n.shape, fill: n.fill, stroke: n.stroke },
+      data: {
+        label: n.label,
+        shape: n.shape,
+        fill: n.fill,
+        stroke: n.stroke,
+        width: n.width,
+        height: n.height,
+        fontSize: n.fontSize,
+        bold: n.bold,
+        textAlign: n.textAlign,
+      },
     })),
   );
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(
@@ -264,6 +463,7 @@ export function FlowchartEditor({
       source: e.source,
       target: e.target,
       label: e.label || undefined,
+      data: { arrowStart: e.markerStart ?? "none", arrowEnd: e.markerEnd ?? "solid" },
     })),
   );
   const [edgeKind, setEdgeKind] = useState<EdgeKind>("default");
@@ -276,6 +476,7 @@ export function FlowchartEditor({
   const [exporting, setExporting] = useState(false);
   const [themeIndex, setThemeIndex] = useState(0);
   const [themeOpen, setThemeOpen] = useState(false);
+  const [shapeLibOpen, setShapeLibOpen] = useState(false);
 
   // —— 撤销/重做 ——
   const [past, setPast] = useState<StoredFlow[]>([]);
@@ -293,14 +494,32 @@ export function FlowchartEditor({
     return {
       nodes: nodesRef.current.map((n) => {
         const d = n.data as unknown as FlowData;
-        return { id: n.id, label: d.label, shape: d.shape, x: n.position.x, y: n.position.y, fill: d.fill, stroke: d.stroke };
+        return {
+          id: n.id,
+          label: d.label,
+          shape: d.shape,
+          x: n.position.x,
+          y: n.position.y,
+          fill: d.fill,
+          stroke: d.stroke,
+          width: d.width,
+          height: d.height,
+          fontSize: d.fontSize,
+          bold: d.bold,
+          textAlign: d.textAlign,
+        };
       }),
-      edges: edgesRef.current.map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        label: typeof e.label === "string" ? e.label : "",
-      })),
+      edges: edgesRef.current.map((e) => {
+        const ad = (e.data as EdgeArrowData) || {};
+        return {
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          label: typeof e.label === "string" ? e.label : "",
+          markerStart: ad.arrowStart ?? "none",
+          markerEnd: ad.arrowEnd ?? "solid",
+        };
+      }),
     };
   }, []);
 
@@ -311,8 +530,33 @@ export function FlowchartEditor({
   }, [snapshot]);
 
   const applyFlow = useCallback((s: StoredFlow) => {
-    setNodes(s.nodes.map((n) => ({ id: n.id, type: "shape", position: { x: n.x, y: n.y }, data: { label: n.label, shape: n.shape, fill: n.fill, stroke: n.stroke } })));
-    setEdges(s.edges.map((e) => ({ id: e.id, source: e.source, target: e.target, label: e.label || undefined })));
+    setNodes(
+      s.nodes.map((n) => ({
+        id: n.id,
+        type: "shape",
+        position: { x: n.x, y: n.y },
+        data: {
+          label: n.label,
+          shape: n.shape,
+          fill: n.fill,
+          stroke: n.stroke,
+          width: n.width,
+          height: n.height,
+          fontSize: n.fontSize,
+          bold: n.bold,
+          textAlign: n.textAlign,
+        },
+      })),
+    );
+    setEdges(
+      s.edges.map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        label: e.label || undefined,
+        data: { arrowStart: e.markerStart ?? "none", arrowEnd: e.markerEnd ?? "solid" },
+      })),
+    );
   }, [setNodes, setEdges]);
 
   const undo = useCallback(() => {
@@ -340,7 +584,7 @@ export function FlowchartEditor({
   const defaultEdgeOptions = useMemo(
     () => ({
       type: edgeKind,
-      markerEnd: { type: MarkerType.ArrowClosed, color: THEMES[themeIndex].edgeColor },
+      // 注意：markerEnd/markerStart 不在此设置，改由 viewEdges 依据 edge.data 箭头类型生成（含「无箭头」）
       style: { stroke: THEMES[themeIndex].edgeColor, strokeWidth: 1.5 },
       labelStyle: { fill: "var(--text)", fontSize: 12, fontWeight: 500 },
       labelBgStyle: { fill: "var(--background)", fillOpacity: 0.9 },
@@ -353,7 +597,7 @@ export function FlowchartEditor({
   // 节点类型随主题重建，使所有未手动设色节点即时换色
   const nodeTypes = useMemo(() => ({ shape: createShapeNode(THEMES[themeIndex]) }), [themeIndex]);
 
-  // 切换主题时更新已有连线颜色（保留被手动设色的连线）
+  // 切换主题时更新已有连线颜色（保留被手动设色的连线）。箭头由 viewEdges 的 decorate 统一生成。
   useEffect(() => {
     const newColor = THEMES[themeIndex].edgeColor;
     const prevColor = prevThemeColorRef.current;
@@ -361,17 +605,28 @@ export function FlowchartEditor({
       eds.map((e) => {
         const cur = e.style?.stroke;
         if (cur === undefined || cur === prevColor) {
-          return {
-            ...e,
-            style: { ...(e.style || {}), stroke: newColor },
-            markerEnd: { type: MarkerType.ArrowClosed, color: newColor },
-          };
+          return { ...e, style: { ...(e.style || {}), stroke: newColor } };
         }
         return e;
       }),
     );
     prevThemeColorRef.current = newColor;
   }, [themeIndex, setEdges]);
+
+  // 给每条连线注入起点/终点箭头（从 edge.data 读取，颜色跟随连线描边）
+  const viewEdges = useMemo(
+    () =>
+      edges.map((e) => {
+        const ad = (e.data as EdgeArrowData) || {};
+        const color = (e.style?.stroke as string) || THEMES[themeIndex].edgeColor;
+        return {
+          ...e,
+          markerEnd: buildMarker(ad.arrowEnd ?? "solid", color),
+          markerStart: buildMarker(ad.arrowStart ?? "none", color),
+        };
+      }),
+    [edges, themeIndex],
+  );
 
   const commit = useCallback(() => {
     const stored: StoredFlow = {
@@ -385,14 +640,24 @@ export function FlowchartEditor({
           y: n.position.y,
           fill: d.fill,
           stroke: d.stroke,
+          width: d.width,
+          height: d.height,
+          fontSize: d.fontSize,
+          bold: d.bold,
+          textAlign: d.textAlign,
         };
       }),
-      edges: edges.map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        label: typeof e.label === "string" ? e.label : "",
-      })),
+      edges: edges.map((e) => {
+        const ad = (e.data as EdgeArrowData) || {};
+        return {
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          label: typeof e.label === "string" ? e.label : "",
+          markerStart: ad.arrowStart ?? "none",
+          markerEnd: ad.arrowEnd ?? "solid",
+        };
+      }),
     };
     onChange(JSON.stringify(stored));
   }, [nodes, edges, onChange]);
@@ -406,7 +671,12 @@ export function FlowchartEditor({
   const onConnect = useCallback(
     (c: Connection) => {
       pushHistory();
-      setEdges((eds) => addEdge({ ...c, id: genId("e") }, eds));
+      setEdges((eds) =>
+        addEdge(
+          { ...c, id: genId("e"), data: { arrowStart: "none", arrowEnd: "solid" } },
+          eds,
+        ),
+      );
     },
     [setEdges, pushHistory],
   );
@@ -415,13 +685,18 @@ export function FlowchartEditor({
     pushHistory();
     const id = genId("n");
     const offset = (nodes.length % 5) * 40;
+    const isContainer = CONTAINER_SHAPES.includes(shape);
     setNodes((nds) => [
       ...nds,
       {
         id,
         type: "shape",
         position: { x: 80 + offset, y: 80 + offset },
-        data: { label: SHAPES.find((s) => s.kind === shape)?.label || "节点", shape },
+        data: {
+          label: SHAPE_LABEL[shape] || "节点",
+          shape,
+          ...(isContainer ? { width: 220, height: 140 } : {}),
+        },
       },
     ]);
   };
@@ -470,7 +745,20 @@ export function FlowchartEditor({
     if (sel.length === 0) return;
     clipboardRef.current = sel.map((n) => {
       const d = n.data as unknown as FlowData;
-      return { id: n.id, label: d.label, shape: d.shape, x: n.position.x, y: n.position.y, fill: d.fill, stroke: d.stroke };
+      return {
+        id: n.id,
+        label: d.label,
+        shape: d.shape,
+        x: n.position.x,
+        y: n.position.y,
+        fill: d.fill,
+        stroke: d.stroke,
+        width: d.width,
+        height: d.height,
+        fontSize: d.fontSize,
+        bold: d.bold,
+        textAlign: d.textAlign,
+      };
     });
   }, []);
 
@@ -482,14 +770,37 @@ export function FlowchartEditor({
     const newNodes: Node[] = items.map((n) => {
       const nid = genId("n");
       idMap[n.id] = nid;
-      return { id: nid, type: "shape", position: { x: n.x + 30, y: n.y + 30 }, selected: true, data: { label: n.label, shape: n.shape, fill: n.fill, stroke: n.stroke } };
+      return {
+        id: nid,
+        type: "shape",
+        position: { x: n.x + 30, y: n.y + 30 },
+        selected: true,
+        data: {
+          label: n.label,
+          shape: n.shape,
+          fill: n.fill,
+          stroke: n.stroke,
+          width: n.width,
+          height: n.height,
+          fontSize: n.fontSize,
+          bold: n.bold,
+          textAlign: n.textAlign,
+        },
+      };
     });
     // 粘贴后默认选中新节点，取消旧选中
     setNodes((nds) => [...nds.map((n) => ({ ...n, selected: false })), ...newNodes]);
     const newEdges: Edge[] = [];
     for (const e of edgesRef.current) {
       if (idMap[e.source] && idMap[e.target]) {
-        newEdges.push({ id: genId("e"), source: idMap[e.source], target: idMap[e.target], label: typeof e.label === "string" ? e.label : undefined });
+        const ad = (e.data as EdgeArrowData) || {};
+        newEdges.push({
+          id: genId("e"),
+          source: idMap[e.source],
+          target: idMap[e.target],
+          label: typeof e.label === "string" ? e.label : undefined,
+          data: { arrowStart: ad.arrowStart ?? "none", arrowEnd: ad.arrowEnd ?? "solid" },
+        });
       }
     }
     setEdges((eds) => [...eds, ...newEdges]);
@@ -511,6 +822,9 @@ export function FlowchartEditor({
   const selectedEdge = selectedEdges.length === 1 ? selectedEdges[0] : null;
   const curFill = selectedNode ? ((selectedNode.data as unknown as FlowData).fill || "") : "";
   const curStroke = selectedNode ? ((selectedNode.data as unknown as FlowData).stroke || "") : "";
+  const curFontSize = selectedNode ? ((selectedNode.data as unknown as FlowData).fontSize ?? 13) : 13;
+  const curBold = selectedNode ? !!((selectedNode.data as unknown as FlowData).bold) : false;
+  const curAlign = selectedNode ? ((selectedNode.data as unknown as FlowData).textAlign ?? "center") : "center";
 
   const setFill = (color: string) => {
     if (!selectedNode) return;
@@ -526,17 +840,79 @@ export function FlowchartEditor({
     setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, stroke: color || undefined } } : n)));
   };
 
+  // —— 节点文字样式 ——
+  const setNodeFontSize = (size: number) => {
+    if (!selectedNode) return;
+    pushHistory();
+    const id = selectedNode.id;
+    setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, fontSize: size } } : n)));
+  };
+  const setNodeBold = () => {
+    if (!selectedNode) return;
+    pushHistory();
+    const id = selectedNode.id;
+    const cur = !!((selectedNode.data as unknown as FlowData).bold);
+    setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, bold: !cur } } : n)));
+  };
+  const setNodeAlign = (align: TextAlign) => {
+    if (!selectedNode) return;
+    pushHistory();
+    const id = selectedNode.id;
+    setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, textAlign: align } } : n)));
+  };
+
+  // —— 匹配大小（对选中 ≥2 节点，以最大为基准）——
+  const matchSize = (mode: "w" | "h" | "both") => {
+    const sel = selectedNodes;
+    if (sel.length < 2) return;
+    let maxW = 0;
+    let maxH = 0;
+    for (const n of sel) {
+      const d = n.data as unknown as FlowData;
+      maxW = Math.max(maxW, d.width ?? NODE_W);
+      maxH = Math.max(maxH, d.height ?? NODE_H);
+    }
+    pushHistory();
+    const ids = new Set(sel.map((n) => n.id));
+    setNodes((nds) =>
+      nds.map((n) =>
+        ids.has(n.id)
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                width: mode === "w" || mode === "both" ? maxW : n.data.width,
+                height: mode === "h" || mode === "both" ? maxH : n.data.height,
+              },
+            }
+          : n,
+      ),
+    );
+  };
+
   // —— 连线样式 ——
   const setEdgeColor = (color: string) => {
     if (!selectedEdge) return;
     pushHistory();
     const id = selectedEdge.id;
+    // 箭头由 viewEdges 的 decorate 统一生成，这里只改颜色
     setEdges((eds) =>
-      eds.map((e) =>
-        e.id === id
-          ? { ...e, style: { ...(e.style || {}), stroke: color }, markerEnd: { type: MarkerType.ArrowClosed, color } }
-          : e,
-      ),
+      eds.map((e) => (e.id === id ? { ...e, style: { ...(e.style || {}), stroke: color } } : e)),
+    );
+  };
+
+  const setEdgeArrow = (end: "start" | "end", type: ArrowType) => {
+    if (!selectedEdge) return;
+    pushHistory();
+    const id = selectedEdge.id;
+    setEdges((eds) =>
+      eds.map((e) => {
+        if (e.id !== id) return e;
+        const ad: EdgeArrowData = { ...((e.data as EdgeArrowData) || {}) };
+        if (end === "start") ad.arrowStart = type;
+        else ad.arrowEnd = type;
+        return { ...e, data: ad };
+      }),
     );
   };
 
@@ -564,12 +940,52 @@ export function FlowchartEditor({
     if (nodes.length === 0) return;
     const sn: StoredNode[] = nodes.map((n) => {
       const d = n.data as unknown as FlowData;
-      return { id: n.id, label: d.label, shape: d.shape, x: n.position.x, y: n.position.y, fill: d.fill, stroke: d.stroke };
+      return {
+        id: n.id,
+        label: d.label,
+        shape: d.shape,
+        x: n.position.x,
+        y: n.position.y,
+        fill: d.fill,
+        stroke: d.stroke,
+        width: d.width,
+        height: d.height,
+        fontSize: d.fontSize,
+        bold: d.bold,
+        textAlign: d.textAlign,
+      };
     });
-    const se: StoredEdge[] = edges.map((e) => ({ id: e.id, source: e.source, target: e.target, label: typeof e.label === "string" ? e.label : "" }));
+    const se: StoredEdge[] = edges.map((e) => {
+      const ad = (e.data as EdgeArrowData) || {};
+      return {
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        label: typeof e.label === "string" ? e.label : "",
+        markerStart: ad.arrowStart ?? "none",
+        markerEnd: ad.arrowEnd ?? "solid",
+      };
+    });
     autoLayout(sn, se);
     pushHistory();
-    setNodes(sn.map((n) => ({ id: n.id, type: "shape", position: { x: n.x, y: n.y }, data: { label: n.label, shape: n.shape, fill: n.fill, stroke: n.stroke } })));
+    setNodes(
+      sn.map((n) => ({
+        id: n.id,
+        type: "shape",
+        position: { x: n.x, y: n.y },
+        data: {
+          label: n.label,
+          shape: n.shape,
+          fill: n.fill,
+          stroke: n.stroke,
+          width: n.width,
+          height: n.height,
+          fontSize: n.fontSize,
+          bold: n.bold,
+          textAlign: n.textAlign,
+        },
+      })),
+    );
   };
 
   // —— 导出 PNG ——
@@ -606,29 +1022,35 @@ export function FlowchartEditor({
   };
 
   // —— 多选对齐 / 分布 ——
+  const nodeSizeOf = (n: Node): { w: number; h: number } => {
+    const d = n.data as unknown as FlowData;
+    return { w: d.width ?? NODE_W, h: d.height ?? NODE_H };
+  };
   const alignNodes = (mode: "left" | "centerH" | "right" | "top" | "centerV" | "bottom") => {
     const sel = nodesRef.current.filter((n) => n.selected);
     if (sel.length < 2) return;
     pushHistory();
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const n of sel) {
+      const { w, h } = nodeSizeOf(n);
       minX = Math.min(minX, n.position.x);
-      maxX = Math.max(maxX, n.position.x + NODE_W);
+      maxX = Math.max(maxX, n.position.x + w);
       minY = Math.min(minY, n.position.y);
-      maxY = Math.max(maxY, n.position.y + NODE_H);
+      maxY = Math.max(maxY, n.position.y + h);
     }
     const ids = new Set(sel.map((n) => n.id));
     setNodes((nds) =>
       nds.map((n) => {
         if (!ids.has(n.id)) return n;
+        const { w, h } = nodeSizeOf(n);
         let x = n.position.x;
         let y = n.position.y;
         if (mode === "left") x = minX;
-        else if (mode === "right") x = maxX - NODE_W;
-        else if (mode === "centerH") x = (minX + maxX) / 2 - NODE_W / 2;
+        else if (mode === "right") x = maxX - w;
+        else if (mode === "centerH") x = (minX + maxX) / 2 - w / 2;
         else if (mode === "top") y = minY;
-        else if (mode === "bottom") y = maxY - NODE_H;
-        else if (mode === "centerV") y = (minY + maxY) / 2 - NODE_H / 2;
+        else if (mode === "bottom") y = maxY - h;
+        else if (mode === "centerV") y = (minY + maxY) / 2 - h / 2;
         return { ...n, position: { x, y } };
       }),
     );
@@ -679,11 +1101,28 @@ export function FlowchartEditor({
         source: String(e.source),
         target: String(e.target),
         label: e.label || "",
+        markerStart: "none",
+        markerEnd: "solid",
       }));
       autoLayout(sn, se);
       pushHistory();
-      setNodes(sn.map((n) => ({ id: n.id, type: "shape", position: { x: n.x, y: n.y }, data: { label: n.label, shape: n.shape } })));
-      setEdges(se.map((e) => ({ id: e.id, source: e.source, target: e.target, label: e.label || undefined })));
+      setNodes(
+        sn.map((n) => ({
+          id: n.id,
+          type: "shape",
+          position: { x: n.x, y: n.y },
+          data: { label: n.label, shape: n.shape, width: n.width, height: n.height, fontSize: n.fontSize, bold: n.bold, textAlign: n.textAlign },
+        })),
+      );
+      setEdges(
+        se.map((e) => ({
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          label: e.label || undefined,
+          data: { arrowStart: e.markerStart ?? "none", arrowEnd: e.markerEnd ?? "solid" },
+        })),
+      );
       setAiOpen(false);
       setAiText("");
     } catch (e) {
@@ -731,19 +1170,64 @@ export function FlowchartEditor({
     <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
       {/* 工具栏 */}
       <div className="relative z-20 flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
-        <span className="text-[11px] text-faint">形状</span>
-        {SHAPES.map((s) => (
+        <span className="mx-1 h-4 w-px bg-line" />
+
+        {/* 形状库：分类下拉 */}
+        <div className="relative shrink-0">
           <button
-            key={s.kind}
-            onClick={() => addNode(s.kind)}
-            className="grid h-8 w-8 place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-text"
-            title={`添加 ${s.label}`}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setShapeLibOpen((v) => !v);
+              setThemeOpen(false);
+              setFillOpen(false);
+              setStrokeOpen(false);
+            }}
+            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
+              shapeLibOpen ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"
+            }`}
+            title="选择形状"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d={s.icon} />
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <circle cx="17.5" cy="6.5" r="3.5" />
+              <path d="M6.5 14l4 7 4-7" />
+            </svg>
+            形状库
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${shapeLibOpen ? "rotate-180" : ""}`}>
+              <path d="M6 9l6 6 6-6" />
             </svg>
           </button>
-        ))}
+          {shapeLibOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShapeLibOpen(false)} />
+              <div className="menu-panel absolute left-0 top-full z-40 mt-1 max-h-[60vh] w-72 overflow-y-auto p-2">
+                {SHAPE_GROUPS.map((g) => (
+                  <div key={g.cat} className="mb-2 last:mb-0">
+                    <div className="mb-1 px-1 text-[10px] font-medium text-faint">{g.cat}</div>
+                    <div className="grid grid-cols-4 gap-1">
+                      {g.items.map((s) => (
+                        <button
+                          key={s.kind}
+                          onClick={() => {
+                            addNode(s.kind);
+                            setShapeLibOpen(false);
+                          }}
+                          className="flex flex-col items-center gap-1 rounded-md px-1 py-1.5 text-[10px] text-muted transition-colors hover:bg-hover hover:text-text"
+                          title={`添加 ${s.label}`}
+                        >
+                          <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                            <path d={s.icon} />
+                          </svg>
+                          <span className="leading-none">{s.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
 
         <span className="mx-1 h-4 w-px bg-line" />
 
@@ -769,6 +1253,7 @@ export function FlowchartEditor({
               setThemeOpen((v) => !v);
               setFillOpen(false);
               setStrokeOpen(false);
+              setShapeLibOpen(false);
             }}
             className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
             title="切换整图配色主题"
@@ -847,6 +1332,36 @@ export function FlowchartEditor({
             >
               虚线
             </button>
+            <span className="mx-1 h-4 w-px bg-line" />
+            <span className="text-[11px] text-faint">起点</span>
+            {ARROW_OPTIONS.map((o) => {
+              const cur = ((selectedEdge.data as EdgeArrowData)?.arrowStart ?? "none") === o.type;
+              return (
+                <button
+                  key={o.type}
+                  onClick={() => setEdgeArrow("start", o.type)}
+                  className={`h-6 min-w-6 rounded-md px-1 text-[11px] transition-colors ${cur ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
+                  title={`起点箭头：${o.label}`}
+                >
+                  {o.label}
+                </button>
+              );
+            })}
+            <span className="mx-1 h-4 w-px bg-line" />
+            <span className="text-[11px] text-faint">终点</span>
+            {ARROW_OPTIONS.map((o) => {
+              const cur = ((selectedEdge.data as EdgeArrowData)?.arrowEnd ?? "solid") === o.type;
+              return (
+                <button
+                  key={o.type}
+                  onClick={() => setEdgeArrow("end", o.type)}
+                  className={`h-6 min-w-6 rounded-md px-1 text-[11px] transition-colors ${cur ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
+                  title={`终点箭头：${o.label}`}
+                >
+                  {o.label}
+                </button>
+              );
+            })}
           </>
         )}
 
@@ -861,6 +1376,7 @@ export function FlowchartEditor({
                   setFillOpen((v) => !v);
                   setStrokeOpen(false);
                   setThemeOpen(false);
+                  setShapeLibOpen(false);
                 }}
                 className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
               >
@@ -907,6 +1423,7 @@ export function FlowchartEditor({
                   setStrokeOpen((v) => !v);
                   setFillOpen(false);
                   setThemeOpen(false);
+                  setShapeLibOpen(false);
                 }}
                 className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
               >
@@ -945,6 +1462,55 @@ export function FlowchartEditor({
                 </>
               )}
             </div>
+
+            {/* 文字样式 */}
+            <span className="mx-1 h-4 w-px bg-line" />
+            <span className="text-[11px] text-faint">文字</span>
+            <div className="flex items-center gap-0.5">
+              {[12, 13, 14, 16, 18, 20].map((sz) => (
+                <button
+                  key={sz}
+                  onClick={() => setNodeFontSize(sz)}
+                  className={`h-6 min-w-6 rounded-md px-1 text-[11px] transition-colors ${
+                    curFontSize === sz ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
+                  }`}
+                  title={`字号 ${sz}`}
+                >
+                  {sz}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={setNodeBold}
+              className={`grid h-6 w-6 place-items-center rounded-md text-xs font-bold transition-colors ${
+                curBold ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
+              }`}
+              title="加粗"
+            >
+              B
+            </button>
+            <div className="flex items-center gap-0.5">
+              {(
+                [
+                  ["left", "M4 6h12M4 12h8M4 18h12", "左对齐"],
+                  ["center", "M3 6h14M5 12h10M3 18h14", "居中"],
+                  ["right", "M4 6h12M8 12h8M4 18h12", "右对齐"],
+                ] as [TextAlign, string, string][]
+              ).map(([al, d, t]) => (
+                <button
+                  key={al}
+                  onClick={() => setNodeAlign(al)}
+                  className={`grid h-6 w-6 place-items-center rounded-md transition-colors ${
+                    curAlign === al ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
+                  }`}
+                  title={t}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d={d} />
+                  </svg>
+                </button>
+              ))}
+            </div>
           </>
         )}
 
@@ -974,6 +1540,17 @@ export function FlowchartEditor({
                 </svg>
               </button>
             ))}
+            <span className="mx-1 h-4 w-px bg-line" />
+            <span className="text-[11px] text-faint">匹配</span>
+            <button onClick={() => matchSize("h")} className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="等高（以最大高度为基准）">
+              等高
+            </button>
+            <button onClick={() => matchSize("w")} className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="等宽（以最大宽度为基准）">
+              等宽
+            </button>
+            <button onClick={() => matchSize("both")} className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="等高且等宽">
+              等高宽
+            </button>
             <span className="mx-1 h-4 w-px bg-line" />
             <button onClick={() => distributeNodes("h")} className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="水平等距分布">
               水平分布
@@ -1048,9 +1625,26 @@ export function FlowchartEditor({
 
       {/* 画布 */}
       <div ref={containerRef} tabIndex={0} onKeyDown={onKeyDown} className="outline-none" style={{ height: "60vh", minHeight: 400 }}>
+        {/* 自定义菱形箭头 marker（颜色用 context-stroke 跟随连线描边） */}
+        <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden>
+          <defs>
+            <marker
+              id="rf-diamond"
+              viewBox="0 0 12 12"
+              markerWidth="14"
+              markerHeight="14"
+              refX="9"
+              refY="6"
+              orient="auto-start-reverse"
+              markerUnits="userSpaceOnUse"
+            >
+              <path d="M1 6 L6 1 L11 6 L6 11 Z" fill="context-stroke" stroke="context-stroke" />
+            </marker>
+          </defs>
+        </svg>
         <ReactFlow
           nodes={nodes}
-          edges={edges}
+          edges={viewEdges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}

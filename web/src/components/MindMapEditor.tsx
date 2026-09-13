@@ -11,6 +11,8 @@ interface MindNode {
   parent: string | null;
   color?: string;
   collapsed?: boolean;
+  icon?: string; // 节点图标 id（见 ICONS）
+  note?: string; // 节点备注（Markdown 文本，纯文本展示）
 }
 
 type LayoutMode = "logic" | "org" | "timeline" | "fishbone" | "tree";
@@ -64,7 +66,7 @@ function layoutTimeline(nodes: MindNode[]): Record<string, LayoutItem> {
   }
   const roots = nodes.filter((n) => !n.parent || !map[n.parent]).map((n) => n.id);
   const pos: Record<string, LayoutItem> = {};
-  const widthOf = (id: string) => estimateWidth(map[id]?.text || "");
+  const widthOf = (id: string) => nodeWidth(map[id]?.text || "", map[id]?.icon);
   const done = new Set<string>();
 
   // 根节点垂直排列在最左
@@ -126,7 +128,7 @@ function layoutFishbone(nodes: MindNode[]): Record<string, LayoutItem> {
     if (n.parent && map[n.parent]) kids[n.parent].push(n.id);
   }
   const roots = nodes.filter((n) => !n.parent || !map[n.parent]).map((n) => n.id);
-  const widthOf = (id: string) => estimateWidth(map[id]?.text || "");
+  const widthOf = (id: string) => nodeWidth(map[id]?.text || "", map[id]?.icon);
   const pos: Record<string, LayoutItem> = {};
 
   const level1: string[] = [];
@@ -203,7 +205,7 @@ function layoutTree(nodes: MindNode[]): Record<string, LayoutItem> {
   }
   const roots = nodes.filter((n) => !n.parent || !map[n.parent]).map((n) => n.id);
   const pos: Record<string, LayoutItem> = {};
-  const widthOf = (id: string) => estimateWidth(map[id]?.text || "");
+  const widthOf = (id: string) => nodeWidth(map[id]?.text || "", map[id]?.icon);
   const TREE_VGAP = 12; // 比 org 的 V_GAP 更紧凑
 
   const spanOf = (id: string): number => {
@@ -266,7 +268,7 @@ function layout(nodes: MindNode[], mode: LayoutMode): Record<string, LayoutItem>
   const roots = nodes.filter((n) => !n.parent || !map[n.parent]).map((n) => n.id);
 
   const pos: Record<string, LayoutItem> = {};
-  const widthOf = (id: string) => estimateWidth(map[id]?.text || "");
+  const widthOf = (id: string) => nodeWidth(map[id]?.text || "", map[id]?.icon);
 
   const spanOf = (id: string): number => {
     const ks = kids[id] || [];
@@ -351,7 +353,106 @@ const THEMES: { name: string; palette: string[] }[] = [
   { name: "森林", palette: ["#16a34a", "#15803d", "#22c55e", "#4ade80", "#86efac", "#14532d", "#65a30d", "#84cc16"] },
   { name: "暖阳", palette: ["#f97316", "#ea580c", "#f59e0b", "#fbbf24", "#fcd34d", "#c2410c", "#ef4444", "#fb923c"] },
   { name: "紫罗兰", palette: ["#a855f7", "#9333ea", "#7c3aed", "#8b5cf6", "#c084fc", "#6b21a8", "#d946ef", "#e879f9"] },
+  // —— 新增主题（每套 8 色） ——
+  { name: "珊瑚", palette: ["#ff6b6b", "#fa5252", "#f06595", "#e64980", "#ff8787", "#ffa94d", "#d6336c", "#f783ac"] },
+  { name: "天青", palette: ["#22b8cf", "#15aabf", "#3bc9db", "#66d9e8", "#0c8599", "#1098ad", "#099268", "#38d9a9"] },
+  { name: "薄荷", palette: ["#51cf66", "#40c057", "#69db7c", "#a9e34b", "#94d82d", "#37b24d", "#2f9e44", "#74b816"] },
+  { name: "金色", palette: ["#fcc419", "#fab005", "#f59f00", "#f08c00", "#e67700", "#ffd43b", "#f1a208", "#d4a017"] },
+  { name: "靛蓝", palette: ["#5c7cfa", "#4c6ef5", "#748ffc", "#4263eb", "#3b5bdb", "#5f3dc4", "#6741d9", "#7048e8"] },
+  { name: "石墨", palette: ["#212529", "#343a40", "#495057", "#5c636a", "#6c757d", "#868e96", "#adb5bd", "#ced4da"] },
+  { name: "酒红", palette: ["#9c1d1d", "#c92a2a", "#e03131", "#d6336c", "#a61e4d", "#862e9c", "#b0255e", "#7d1f3c"] },
+  { name: "蓝灰", palette: ["#4263eb", "#5c7cfa", "#748ffc", "#4c6ef5", "#5b6bd6", "#6c7ae0", "#8094e8", "#3b5bdb"] },
 ];
+
+// —— 节点图标：30+ 矢量图标（单色 line icon，24x24 viewBox）——
+// 每个图标用一条 `path`（可含多段 M 子路径）绘制；数字 1-9 用 `char` 渲染文本。
+interface IconDef {
+  id: string;
+  label: string;
+  path?: string;
+  char?: string;
+}
+
+const ICONS: IconDef[] = [
+  { id: "priority", label: "优先级", path: "M6 20V10M12 20V4M18 20v-6" },
+  { id: "flag", label: "旗帜", path: "M5 21V4h11l-2 4 2 4H5" },
+  { id: "star", label: "星星", path: "M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 17l-5.2 2.7 1-5.8L3.5 9.2l5.9-.9z" },
+  { id: "progress", label: "进度", path: "M12 3a9 9 0 1 1-8.5 6.2" },
+  { id: "bulb", label: "灯泡", path: "M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z" },
+  { id: "target", label: "目标", path: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 12.5a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1z" },
+  { id: "question", label: "问号", path: "M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1 .9-1 1.7M12 17h.01" },
+  { id: "exclam", label: "感叹号", path: "M12 8v5M12 16.5h.01" },
+  { id: "check", label: "对勾", path: "M5 13l4 4L19 7" },
+  { id: "cross", label: "叉", path: "M6 6l12 12M18 6L6 18" },
+  { id: "heart", label: "爱心", path: "M12 20s-7-4.5-9.5-9C1 8 2.5 4.5 6 4.5c2 0 3.2 1.2 4 2.3.8-1.1 2-2.3 4-2.3 3.5 0 5 3.5 3.5 6.5C19 15.5 12 20 12 20z" },
+  { id: "clock", label: "时钟", path: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2" },
+  { id: "calendar", label: "日历", path: "M7 4v3M17 4v3M4 9h16M5 6h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z" },
+  { id: "link", label: "链接", path: "M9 15l6-6M10.5 6.5l1.5-1.5a4 4 0 0 1 5.7 5.7l-1.5 1.5M13.5 17.5l-1.5 1.5a4 4 0 0 1-5.7-5.7l1.5-1.5" },
+  { id: "book", label: "书籍", path: "M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zM19 19H6" },
+  { id: "gear", label: "齿轮", path: "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM19 12a7 7 0 0 0-.1-1l2-1.5-2-3.5L17 5.9a7 7 0 0 0-1.7-1L15 3h-3v2a7 7 0 0 0-1.7 1L8.3 5.9 5.3 7.5 7.3 9a7 7 0 0 0 0 4l-2 1.5 2 3.5L8.3 18a7 7 0 0 0 1.7 1L11 21h3v-2a7 7 0 0 0 1.7-1l1.8 1.1 2-3.5-2-1.5a7 7 0 0 0 0-2z" },
+  { id: "rocket", label: "火箭", path: "M12 3c3 2 5 5 5 9l-2 4H9l-2-4c0-4 2-7 5-9zM9 16l-1 5 4-2 4 2-1-5M12 7a1.5 1.5 0 1 0 0 .01" },
+  { id: "warning", label: "警示", path: "M12 4l9 16H3zM12 10v4M12 17h.01" },
+  { id: "bookmark", label: "书签", path: "M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" },
+  { id: "mail", label: "邮件", path: "M3 6h18v12H3zM3 7l9 6 9-6" },
+  { id: "pin", label: "位置", path: "M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12zM12 11a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" },
+  { id: "camera", label: "相机", path: "M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1zM12 16a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" },
+  { id: "music", label: "音乐", path: "M9 18V6l10-2v12M9 18a3 3 0 1 1-2-2.8M19 16a3 3 0 1 1-2-2.8" },
+  { id: "bolt", label: "闪电", path: "M13 3L4 14h6l-1 7 9-11h-6z" },
+  { id: "lock", label: "锁", path: "M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3" },
+  { id: "key", label: "钥匙", path: "M14 7a4 4 0 1 0-3.5 6.9L7 17v3H4v-3h3l3.1-3.1A4 4 0 0 0 14 7zM14 5.5h.01" },
+  { id: "eye", label: "眼睛", path: "M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" },
+  { id: "doc", label: "文档", path: "M6 2h8l4 4v16H6zM14 2v4h4M9 13h6M9 17h6" },
+  { id: "folder", label: "文件夹", path: "M3 6h6l2 2h10v11H3z" },
+  { id: "user", label: "用户", path: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0" },
+  { id: "search", label: "搜索", path: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-4.5-4.5" },
+  { id: "sliders", label: "设置", path: "M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5M16 4v4M7 10v4M12 16v4" },
+  { id: "n1", label: "1", char: "1" },
+  { id: "n2", label: "2", char: "2" },
+  { id: "n3", label: "3", char: "3" },
+  { id: "n4", label: "4", char: "4" },
+  { id: "n5", label: "5", char: "5" },
+  { id: "n6", label: "6", char: "6" },
+  { id: "n7", label: "7", char: "7" },
+  { id: "n8", label: "8", char: "8" },
+  { id: "n9", label: "9", char: "9" },
+];
+
+const ICON_SIZE = 16;
+const ICON_PAD = 30; // 图标(16) + 间距，作为有图标节点的额外宽度
+
+// 带图标感知的节点宽度估计（图标会占用左侧空间）
+function nodeWidth(text: string, icon?: string): number {
+  return estimateWidth(text) + (icon ? ICON_PAD : 0);
+}
+
+// 图标渲染组件：在 HTML 与 SVG（嵌套 <svg>）中通用
+function Glyph({
+  iconId,
+  size = 16,
+  color = "currentColor",
+  x = 0,
+  y = 0,
+}: {
+  iconId: string;
+  size?: number;
+  color?: string;
+  x?: number;
+  y?: number;
+}) {
+  const def = ICONS.find((i) => i.id === iconId);
+  if (!def) return null;
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" x={x} y={y} style={{ display: "block" }}>
+      {def.char ? (
+        <text x={12} y={12} textAnchor="middle" dominantBaseline="central" fontSize={15} fontWeight={700} fill={color} style={{ userSelect: "none" }}>
+          {def.char}
+        </text>
+      ) : (
+        <path d={def.path!} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      )}
+    </svg>
+  );
+}
 
 export function MindMapEditor({
   value,
@@ -378,6 +479,10 @@ export function MindMapEditor({
   const [aiBusy, setAiBusy] = useState(false);
   const [themePalette, setThemePalette] = useState<string[]>(PALETTE);
   const [themeOpen, setThemeOpen] = useState(false);
+  const [iconOpen, setIconOpen] = useState(false);
+  // 备注气泡：noteTarget 为打开备注的节点 id，noteDraft 为编辑中的草稿
+  const [noteTarget, setNoteTarget] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
   const [exporting, setExporting] = useState(false);
 
   // —— 撤销/重做 ——
@@ -520,6 +625,42 @@ export function MindMapEditor({
     commit(nodes.map((n) => (n.id === selected ? { ...n, color: color || undefined } : n)));
   };
 
+  // 设置/清除选中节点的图标（走 commit 记录历史；iconId 为空表示清除）
+  const setNodeIcon = (iconId: string) => {
+    if (!selected) return;
+    commit(
+      nodes.map((n) => {
+        if (n.id !== selected) return n;
+        if (!iconId) {
+          const c = { ...n };
+          delete c.icon;
+          return c;
+        }
+        return { ...n, icon: iconId };
+      }),
+    );
+  };
+
+  // 设置/删除节点备注（走 commit 记录历史；note 为空表示删除备注）
+  const setNodeNote = (id: string, note: string) => {
+    commit(
+      nodes.map((n) => {
+        if (n.id !== id) return n;
+        if (!note) {
+          const c = { ...n };
+          delete c.note;
+          return c;
+        }
+        return { ...n, note };
+      }),
+    );
+  };
+
+  const openNote = (id: string) => {
+    setNoteTarget(id);
+    setNoteDraft(mapNode(id)?.note || "");
+  };
+
   const toggleCollapse = (id: string) => {
     // 视图态，不记录历史
     setNodes(nodes.map((n) => (n.id === id ? { ...n, collapsed: !n.collapsed } : n)));
@@ -600,10 +741,13 @@ export function MindMapEditor({
 
   const onPointerDown = (e: React.PointerEvent) => {
     const t = e.target as HTMLElement;
+    if (t.closest(".note-bubble")) return; // 气泡内部交互不触发画布逻辑
     const nodeEl = t.closest(".mind-node") as HTMLElement | null;
     if (nodeEl && nodeEl.dataset.id) {
+      setNoteTarget(null);
       nodeDragRef.current = { id: nodeEl.dataset.id, startX: e.clientX, startY: e.clientY };
     } else {
+      setNoteTarget(null);
       canvasDragRef.current = { startX: e.clientX, startY: e.clientY, vx: v.x, vy: v.y };
     }
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -794,6 +938,49 @@ export function MindMapEditor({
 
         <span className="mx-1 h-4 w-px bg-line" />
 
+        {/* 节点图标 */}
+        <div className="relative shrink-0">
+          <button
+            onClick={() => { if (!selected) return; setIconOpen((o) => !o); }}
+            disabled={!selected}
+            className={toolBtn(false)}
+            title="设置节点图标"
+          >
+            <Glyph iconId="star" size={14} />
+            图标
+          </button>
+          {iconOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setIconOpen(false)} />
+              <div className="menu-panel absolute left-0 top-full z-40 mt-1 w-[280px] p-2">
+                <div className="mb-1 flex items-center justify-between px-0.5">
+                  <span className="text-[12px] text-faint">选择图标</span>
+                  <button
+                    onClick={() => { setNodeIcon(""); setIconOpen(false); }}
+                    className="text-[12px] text-muted hover:text-text"
+                  >
+                    清除
+                  </button>
+                </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {ICONS.map((ic) => (
+                    <button
+                      key={ic.id}
+                      title={ic.label}
+                      onClick={() => { setNodeIcon(ic.id); setIconOpen(false); }}
+                      className="grid place-items-center rounded-md p-1.5 transition-colors hover:bg-hover"
+                    >
+                      <Glyph iconId={ic.id} size={18} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <span className="mx-1 h-4 w-px bg-line" />
+
         {/* 布局切换 */}
         <button onClick={() => { setLayoutMode("logic"); setView(null); }} className={toolBtn(layoutMode === "logic")} title="逻辑图（左到右）">
           逻辑图
@@ -909,7 +1096,7 @@ export function MindMapEditor({
         onPointerUp={onPointerUp}
         onWheel={onWheel}
         className="cursor-grab overflow-hidden outline-none active:cursor-grabbing"
-        style={{ touchAction: "none", height: "60vh", minHeight: 400 }}
+        style={{ touchAction: "none", height: "60vh", minHeight: 400, position: "relative" }}
       >
         <svg width="100%" height="100%">
           <g transform={`translate(${v.x},${v.y}) scale(${v.k})`}>
@@ -999,6 +1186,16 @@ export function MindMapEditor({
                     stroke={color}
                     strokeWidth={isRoot(n.id) ? 0 : sel ? 2.5 : 1.5}
                   />
+                  {/* 节点图标（位于文字左侧，文字相应右移） */}
+                  {n.icon && (
+                    <Glyph
+                      iconId={n.icon}
+                      x={8}
+                      y={NODE_H / 2 - ICON_SIZE / 2}
+                      size={ICON_SIZE}
+                      color={isRoot(n.id) ? "#fff" : color}
+                    />
+                  )}
                   {editing === n.id ? (
                     <foreignObject x={0} y={0} width={Math.max(p.w, 120)} height={NODE_H}>
                       <input
@@ -1018,9 +1215,9 @@ export function MindMapEditor({
                     </foreignObject>
                   ) : (
                     <text
-                      x={p.w / 2}
+                      x={n.icon ? ICON_PAD : p.w / 2}
                       y={NODE_H / 2}
-                      textAnchor="middle"
+                      textAnchor={n.icon ? "start" : "middle"}
                       dominantBaseline="central"
                       fontSize={14}
                       fill={isRoot(n.id) ? "#fff" : "var(--text)"}
@@ -1028,6 +1225,20 @@ export function MindMapEditor({
                     >
                       {n.text.length > 14 ? n.text.slice(0, 14) + "…" : n.text}
                     </text>
+                  )}
+                  {/* 备注标记（右上角小圆点，点击打开备注气泡） */}
+                  {n.note && !editing && (
+                    <g
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openNote(n.id);
+                      }}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <title>备注</title>
+                      <circle cx={p.w - 8} cy={8} r={5} fill="var(--accent)" />
+                      <circle cx={p.w - 8} cy={8} r={2} fill="#fff" />
+                    </g>
                   )}
                 </g>
               );
@@ -1070,12 +1281,13 @@ export function MindMapEditor({
           {dragNode && (() => {
             const node = mapNode(dragNode.id);
             if (!node) return null;
-            const w = estimateWidth(node.text);
+            const w = nodeWidth(node.text, node.icon);
             const color = isRoot(node.id) ? "var(--accent)" : levelColor(node.id);
+            const left = dragNode.x - w / 2;
             return (
               <g pointerEvents="none" opacity={0.85}>
                 <rect
-                  x={dragNode.x - w / 2}
+                  x={left}
                   y={dragNode.y - NODE_H / 2}
                   width={w}
                   height={NODE_H}
@@ -1084,13 +1296,100 @@ export function MindMapEditor({
                   stroke="var(--accent)"
                   strokeWidth={2}
                 />
-                <text x={dragNode.x} y={dragNode.y} textAnchor="middle" dominantBaseline="central" fontSize={14} fill="var(--text)" style={{ userSelect: "none" }}>
+                {node.icon && (
+                  <Glyph
+                    iconId={node.icon}
+                    x={left + 8}
+                    y={dragNode.y - ICON_SIZE / 2}
+                    size={ICON_SIZE}
+                    color={color}
+                  />
+                )}
+                <text
+                  x={node.icon ? left + ICON_PAD : dragNode.x}
+                  y={dragNode.y}
+                  textAnchor={node.icon ? "start" : "middle"}
+                  dominantBaseline="central"
+                  fontSize={14}
+                  fill="var(--text)"
+                  style={{ userSelect: "none" }}
+                >
                   {node.text.length > 14 ? node.text.slice(0, 14) + "…" : node.text}
                 </text>
               </g>
             );
           })()}
         </svg>
+
+        {/* 备注气泡：HTML 绝对定位，屏幕坐标 = 世界坐标 * k + v */}
+        {noteTarget && (() => {
+          const np = pos[noteTarget];
+          const node = mapNode(noteTarget);
+          if (!np || !node) return null;
+          const sx = np.x * v.k + v.x;
+          const sy = np.y * v.k + v.y;
+          const cw = containerRef.current?.clientWidth ?? 800;
+          const bw = 280;
+          let bx = sx + np.w * v.k + 10;
+          if (bx + bw > cw - 8) bx = Math.max(8, sx - bw - 10);
+          return (
+            <div
+              className="note-bubble menu-panel"
+              style={{ position: "absolute", left: bx, top: sy, width: bw, zIndex: 50 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-line px-3 py-1.5">
+                <span className="text-[12px] font-medium text-text">备注</span>
+                <button
+                  onClick={() => setNoteTarget(null)}
+                  className="text-[13px] leading-none text-faint hover:text-text"
+                  title="关闭"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="px-3 py-2">
+                {node.note ? (
+                  <div
+                    className="note-preview mb-2 max-h-40 overflow-auto text-[13px] text-text"
+                    style={{ whiteSpace: "pre-wrap" }}
+                  >
+                    {node.note}
+                  </div>
+                ) : (
+                  <div className="mb-2 text-[12px] text-faint">暂无备注</div>
+                )}
+                <textarea
+                  value={noteDraft}
+                  onChange={(e) => setNoteDraft(e.target.value)}
+                  placeholder="输入备注（支持换行）…"
+                  rows={3}
+                  className="w-full resize-none rounded-md border border-line bg-surface px-2 py-1.5 text-[13px] text-text outline-none focus:border-accent"
+                />
+                <div className="mt-2 flex justify-end gap-2">
+                  <button
+                    onClick={() => {
+                      setNodeNote(noteTarget, noteDraft.trim());
+                      setNoteTarget(null);
+                    }}
+                    className="rounded-md bg-accent px-2.5 py-1 text-[12px] font-medium text-white hover:opacity-90"
+                  >
+                    保存
+                  </button>
+                  <button
+                    onClick={() => {
+                      setNodeNote(noteTarget, "");
+                      setNoteTarget(null);
+                    }}
+                    className="rounded-md px-2.5 py-1 text-[12px] text-danger hover:bg-danger-soft"
+                  >
+                    删除
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
