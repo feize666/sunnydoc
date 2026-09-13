@@ -440,7 +440,7 @@ export function FlowchartEditor({
     const newNodes: Node[] = items.map((n) => {
       const nid = genId("n");
       idMap[n.id] = nid;
-      return { id: nid, type: "shape", position: { x: n.x + 30, y: n.y + 30 }, data: { label: n.label, shape: n.shape, fill: n.fill, stroke: n.stroke } };
+      return { id: nid, type: "shape", position: { x: n.x + 30, y: n.y + 30 }, selected: true, data: { label: n.label, shape: n.shape, fill: n.fill, stroke: n.stroke } };
     });
     // 粘贴后默认选中新节点，取消旧选中
     setNodes((nds) => [...nds.map((n) => ({ ...n, selected: false })), ...newNodes]);
