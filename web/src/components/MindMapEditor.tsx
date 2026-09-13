@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useMemo } from "react";
+import { toPng } from "html-to-image";
 import { generateDiagram } from "@/lib/api";
 
 // —— 数据结构：扁平节点 + parent 引用 ——
@@ -12,7 +13,7 @@ interface MindNode {
   collapsed?: boolean;
 }
 
-type LayoutMode = "logic" | "org";
+type LayoutMode = "logic" | "org" | "timeline";
 
 const NODE_H = 40;
 const GAP = 90; // 父子节点间距
@@ -47,8 +48,71 @@ interface LayoutItem {
   h: number;
 }
 
+// 时间轴布局：根在最左，一级子节点水平排成主干，二级及以下垂直挂在各自父节点下方
+function layoutTimeline(nodes: MindNode[]): Record<string, LayoutItem> {
+  const map: Record<string, MindNode> = {};
+  const kids: Record<string, string[]> = {};
+  for (const n of nodes) {
+    map[n.id] = n;
+    kids[n.id] = kids[n.id] || [];
+  }
+  for (const n of nodes) {
+    if (n.parent && map[n.parent]) (kids[n.parent] = kids[n.parent] || []).push(n.id);
+  }
+  const roots = nodes.filter((n) => !n.parent || !map[n.parent]).map((n) => n.id);
+  const pos: Record<string, LayoutItem> = {};
+  const widthOf = (id: string) => estimateWidth(map[id]?.text || "");
+  const done = new Set<string>();
+
+  // 根节点垂直排列在最左
+  let rootY = 0;
+  for (const r of roots) {
+    pos[r] = { x: 0, y: rootY, w: widthOf(r), h: NODE_H };
+    rootY += NODE_H + V_GAP;
+    done.add(r);
+  }
+
+  // 一级节点水平排成时间轴主干（位于根节点右侧）
+  const level1: string[] = [];
+  for (const r of roots) level1.push(...(kids[r] || []));
+  const rootMaxW = roots.length ? Math.max(...roots.map((r) => widthOf(r))) : 60;
+  let tx = rootMaxW + GAP * 2;
+  for (const c of level1) {
+    const w = widthOf(c);
+    pos[c] = { x: tx, y: 0, w, h: NODE_H };
+    tx += w + GAP;
+    done.add(c);
+  }
+
+  // 二级及以下：垂直挂在父节点下方
+  const queue: string[] = [...level1];
+  while (queue.length) {
+    const pid = queue.shift()!;
+    const pp = pos[pid];
+    let yOff = NODE_H + V_GAP;
+    for (const cid of kids[pid] || []) {
+      if (done.has(cid)) continue;
+      pos[cid] = { x: pp.x, y: pp.y + yOff, w: widthOf(cid), h: NODE_H };
+      yOff += NODE_H + V_GAP;
+      done.add(cid);
+      queue.push(cid);
+    }
+  }
+
+  // 孤儿节点兜底
+  let gy = 0;
+  for (const n of nodes) {
+    if (!pos[n.id]) {
+      pos[n.id] = { x: 0, y: gy, w: widthOf(n.id), h: NODE_H };
+      gy += NODE_H + V_GAP;
+    }
+  }
+  return pos;
+}
+
 // 树形布局（logic 从左到右 / org 从上到下），只对传入的可见节点布局
 function layout(nodes: MindNode[], mode: LayoutMode): Record<string, LayoutItem> {
+  if (mode === "timeline") return layoutTimeline(nodes);
   const map: Record<string, MindNode> = {};
   const kids: Record<string, string[]> = {};
   for (const n of nodes) {
@@ -139,6 +203,15 @@ function bounds(nodes: MindNode[], pos: Record<string, LayoutItem>) {
 const PALETTE = ["#2f6bff", "#16a34a", "#f97316", "#a855f7", "#0ea5e9", "#ec4899", "#dc2626", "#78716c"];
 const MAX_HISTORY = 100;
 
+// 主题配色方案（按层级自动上色的色板）
+const THEMES: { name: string; palette: string[] }[] = [
+  { name: "默认", palette: ["#2f6bff", "#16a34a", "#f97316", "#a855f7", "#0ea5e9", "#ec4899", "#dc2626", "#78716c"] },
+  { name: "海洋", palette: ["#0ea5e9", "#0284c7", "#06b6d4", "#38bdf8", "#7dd3fc", "#0c4a6e", "#0891b2", "#22d3ee"] },
+  { name: "森林", palette: ["#16a34a", "#15803d", "#22c55e", "#4ade80", "#86efac", "#14532d", "#65a30d", "#84cc16"] },
+  { name: "暖阳", palette: ["#f97316", "#ea580c", "#f59e0b", "#fbbf24", "#fcd34d", "#c2410c", "#ef4444", "#fb923c"] },
+  { name: "紫罗兰", palette: ["#a855f7", "#9333ea", "#7c3aed", "#8b5cf6", "#c084fc", "#6b21a8", "#d946ef", "#e879f9"] },
+];
+
 export function MindMapEditor({
   value,
   onChange,
@@ -162,6 +235,9 @@ export function MindMapEditor({
   const [aiOpen, setAiOpen] = useState(false);
   const [aiText, setAiText] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
+  const [themePalette, setThemePalette] = useState<string[]>(PALETTE);
+  const [themeOpen, setThemeOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // —— 撤销/重做 ——
   const [past, setPast] = useState<MindNode[][]>([]);
@@ -466,6 +542,37 @@ export function MindMapEditor({
     }
   };
 
+  const exportPng = async () => {
+    const el = containerRef.current;
+    if (!el) return;
+    setExporting(true);
+    const prev = view;
+    const b = bounds(visibleNodes, pos);
+    const cw = el.clientWidth || 800;
+    const ch = el.clientHeight || 500;
+    const kk = Math.min(1, Math.min(cw / (b.maxX - b.minX + 80), ch / (b.maxY - b.minY + 80)));
+    const fit = {
+      x: (cw - (b.maxX - b.minX) * kk) / 2 - b.minX * kk,
+      y: (ch - (b.maxY - b.minY) * kk) / 2 - b.minY * kk,
+      k: kk,
+    };
+    setView(fit);
+    await new Promise((r) => setTimeout(r, 150));
+    try {
+      const bg = getComputedStyle(document.body).backgroundColor || "#ffffff";
+      const dataUrl = await toPng(el, { backgroundColor: bg, pixelRatio: 2 });
+      const a = document.createElement("a");
+      a.download = "思维导图.png";
+      a.href = dataUrl;
+      a.click();
+    } catch (err) {
+      alert(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
+    } finally {
+      setView(prev);
+      setExporting(false);
+    }
+  };
+
   const levelColor = (id: string): string => {
     const c = mapNode(id)?.color;
     if (c) return c;
@@ -475,7 +582,7 @@ export function MindMapEditor({
       depth++;
       cur = mapNode(cur)!.parent!;
     }
-    return PALETTE[depth % PALETTE.length];
+    return themePalette[depth % themePalette.length];
   };
 
   const isRoot = (id: string) => !mapNode(id)?.parent;
@@ -553,6 +660,9 @@ export function MindMapEditor({
         <button onClick={() => { setLayoutMode("org"); setView(null); }} className={toolBtn(layoutMode === "org")} title="组织结构图（上到下）">
           组织结构图
         </button>
+        <button onClick={() => { setLayoutMode("timeline"); setView(null); }} className={toolBtn(layoutMode === "timeline")} title="时间轴（左到右）">
+          时间轴
+        </button>
 
         <span className="mx-1 h-4 w-px bg-line" />
 
@@ -566,12 +676,52 @@ export function MindMapEditor({
           折叠
         </button>
 
+        <span className="mx-1 h-4 w-px bg-line" />
+
+        {/* 主题配色 */}
+        <div className="relative shrink-0">
+          <button onClick={() => setThemeOpen((v) => !v)} className={toolBtn(false)} title="主题配色">
+            <span className="h-3.5 w-3.5 rounded-full" style={{ background: `linear-gradient(135deg, ${themePalette[0]}, ${themePalette[2]})` }} />
+            主题
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${themeOpen ? "rotate-180" : ""}`}>
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          {themeOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setThemeOpen(false)} />
+              <div className="menu-panel absolute left-0 top-full z-40 mt-1 w-40 p-1.5">
+                {THEMES.map((t) => (
+                  <button
+                    key={t.name}
+                    onClick={() => {
+                      setThemePalette(t.palette);
+                      setThemeOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover"
+                  >
+                    <span className="flex gap-0.5">
+                      {t.palette.slice(0, 4).map((c) => (
+                        <span key={c} className="h-3 w-3 rounded-full" style={{ backgroundColor: c }} />
+                      ))}
+                    </span>
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
         <span className="mx-auto" />
 
         <span className="hidden text-[11px] text-faint lg:inline">
           Tab 子主题 · Enter 同级 · Delete 删除 · 双击编辑 · 拖拽重排
         </span>
 
+        <button onClick={exportPng} disabled={exporting} className="rounded-md px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover disabled:opacity-50" title="导出 PNG 图片">
+          {exporting ? "导出中…" : "导出 PNG"}
+        </button>
         <button onClick={() => setAiOpen(true)} className="rounded-md bg-accent px-2.5 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90">
           ✨ AI 生成
         </button>
@@ -623,20 +773,21 @@ export function MindMapEditor({
               const c = pos[n.id];
               if (!p || !c) return null;
               let d = "";
-              if (layoutMode === "logic") {
-                const sx = p.x + p.w;
-                const sy = p.y + NODE_H / 2;
-                const ex = c.x;
-                const ey = c.y + NODE_H / 2;
-                const mx = (sx + ex) / 2;
-                d = `M ${sx} ${sy} C ${mx} ${sy}, ${mx} ${ey}, ${ex} ${ey}`;
-              } else {
+              const vertical = c.y > p.y + NODE_H - 1;
+              if (vertical) {
                 const sx = p.x + p.w / 2;
                 const sy = p.y + NODE_H;
                 const ex = c.x + c.w / 2;
                 const ey = c.y;
                 const my = (sy + ey) / 2;
                 d = `M ${sx} ${sy} C ${sx} ${my}, ${ex} ${my}, ${ex} ${ey}`;
+              } else {
+                const sx = p.x + p.w;
+                const sy = p.y + NODE_H / 2;
+                const ex = c.x;
+                const ey = c.y + NODE_H / 2;
+                const mx = (sx + ex) / 2;
+                d = `M ${sx} ${sy} C ${mx} ${sy}, ${mx} ${ey}, ${ex} ${ey}`;
               }
               return <path key={`e-${n.id}`} d={d} fill="none" stroke="var(--line-strong)" strokeWidth={1.5} />;
             })}
@@ -710,8 +861,9 @@ export function MindMapEditor({
               const hasKids = hasChildren(n.id);
               if (!hasKids) return null;
               const folded = !!n.collapsed;
-              const cx = layoutMode === "logic" ? p.x + p.w + 10 : p.x + p.w / 2;
-              const cy = layoutMode === "logic" ? p.y + NODE_H / 2 : p.y + NODE_H + 10;
+              const isLogic = layoutMode === "logic";
+              const cx = isLogic ? p.x + p.w + 10 : p.x + p.w / 2;
+              const cy = isLogic ? p.y + NODE_H / 2 : p.y + NODE_H + 10;
               return (
                 <g
                   key={`fold-${n.id}`}

@@ -12,6 +12,8 @@ import {
   useNodesState,
   useEdgesState,
   addEdge,
+  getNodesBounds,
+  getViewportForBounds,
   type Node,
   type Edge,
   type Connection,
@@ -19,6 +21,7 @@ import {
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { toPng } from "html-to-image";
 import { generateDiagram } from "@/lib/api";
 
 // —— 数据结构 ——
@@ -258,6 +261,7 @@ export function FlowchartEditor({
   const [aiBusy, setAiBusy] = useState(false);
   const [fillOpen, setFillOpen] = useState(false);
   const [strokeOpen, setStrokeOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // —— 撤销/重做 ——
   const [past, setPast] = useState<StoredFlow[]>([]);
@@ -465,6 +469,8 @@ export function FlowchartEditor({
 
   const selectedNodes = nodes.filter((n) => n.selected);
   const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
+  const selectedEdges = edges.filter((e) => e.selected);
+  const selectedEdge = selectedEdges.length === 1 ? selectedEdges[0] : null;
   const curFill = selectedNode ? ((selectedNode.data as unknown as FlowData).fill || "") : "";
   const curStroke = selectedNode ? ((selectedNode.data as unknown as FlowData).stroke || "") : "";
 
@@ -480,6 +486,85 @@ export function FlowchartEditor({
     pushHistory();
     const id = selectedNode.id;
     setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, stroke: color || undefined } } : n)));
+  };
+
+  // —— 连线样式 ——
+  const setEdgeColor = (color: string) => {
+    if (!selectedEdge) return;
+    pushHistory();
+    const id = selectedEdge.id;
+    setEdges((eds) =>
+      eds.map((e) =>
+        e.id === id
+          ? { ...e, style: { ...(e.style || {}), stroke: color }, markerEnd: { type: MarkerType.ArrowClosed, color } }
+          : e,
+      ),
+    );
+  };
+
+  const setEdgeWidth = (w: number) => {
+    if (!selectedEdge) return;
+    pushHistory();
+    const id = selectedEdge.id;
+    setEdges((eds) => eds.map((e) => (e.id === id ? { ...e, style: { ...(e.style || {}), strokeWidth: w } } : e)));
+  };
+
+  const toggleEdgeDash = () => {
+    if (!selectedEdge) return;
+    pushHistory();
+    const id = selectedEdge.id;
+    const dashed = selectedEdge.style?.strokeDasharray === "6 4";
+    setEdges((eds) =>
+      eds.map((e) =>
+        e.id === id ? { ...e, style: { ...(e.style || {}), strokeDasharray: dashed ? undefined : "6 4" } } : e,
+      ),
+    );
+  };
+
+  // —— 自动布局 ——
+  const autoLayoutBtn = () => {
+    if (nodes.length === 0) return;
+    const sn: StoredNode[] = nodes.map((n) => {
+      const d = n.data as unknown as FlowData;
+      return { id: n.id, label: d.label, shape: d.shape, x: n.position.x, y: n.position.y, fill: d.fill, stroke: d.stroke };
+    });
+    const se: StoredEdge[] = edges.map((e) => ({ id: e.id, source: e.source, target: e.target, label: typeof e.label === "string" ? e.label : "" }));
+    autoLayout(sn, se);
+    pushHistory();
+    setNodes(sn.map((n) => ({ id: n.id, type: "shape", position: { x: n.x, y: n.y }, data: { label: n.label, shape: n.shape, fill: n.fill, stroke: n.stroke } })));
+  };
+
+  // —— 导出 PNG ——
+  const exportPng = async () => {
+    const viewportEl = containerRef.current?.querySelector(".react-flow__viewport") as HTMLElement | null;
+    if (!viewportEl) return;
+    setExporting(true);
+    try {
+      const bounds = getNodesBounds(nodes);
+      const W = 1400;
+      const H = Math.max(500, Math.round((bounds.height / Math.max(bounds.width, 1)) * W));
+      const viewport = getViewportForBounds(bounds, W, H, 0.5, 2, 0.08);
+      const bg = getComputedStyle(document.body).backgroundColor || "#ffffff";
+      const dataUrl = await toPng(viewportEl, {
+        backgroundColor: bg,
+        width: W,
+        height: H,
+        pixelRatio: 2,
+        style: {
+          width: `${W}px`,
+          height: `${H}px`,
+          transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+        },
+      });
+      const a = document.createElement("a");
+      a.download = "流程图.png";
+      a.href = dataUrl;
+      a.click();
+    } catch (err) {
+      alert(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
+    } finally {
+      setExporting(false);
+    }
   };
 
   // —— 多选对齐 / 分布 ——
@@ -637,6 +722,47 @@ export function FlowchartEditor({
           </button>
         ))}
 
+        {/* 选中连线时：样式编辑 */}
+        {selectedEdge && (
+          <>
+            <span className="mx-1 h-4 w-px bg-line" />
+            <span className="text-[11px] text-faint">连线样式</span>
+            {STROKE_COLORS.map((c) => (
+              <button
+                key={c}
+                onClick={() => setEdgeColor(c)}
+                className={`h-5 w-5 rounded-full border border-line transition-transform hover:scale-110 ${
+                  (selectedEdge.style?.stroke || "#78716c") === c ? "ring-2 ring-accent ring-offset-1" : ""
+                }`}
+                style={{ backgroundColor: c }}
+                title={`连线颜色 ${c}`}
+              />
+            ))}
+            <span className="mx-1 h-4 w-px bg-line" />
+            {[1, 2, 3].map((w) => (
+              <button
+                key={w}
+                onClick={() => setEdgeWidth(w)}
+                className={`flex h-6 w-6 items-center justify-center rounded-md border border-line transition-colors hover:bg-hover ${
+                  (selectedEdge.style?.strokeWidth || 1.5) === w ? "bg-accent-soft text-accent" : "text-muted"
+                }`}
+                title={`线宽 ${w}`}
+              >
+                <span style={{ height: w === 1 ? 1 : w === 2 ? 2 : 3, width: 12, backgroundColor: "currentColor" }} />
+              </button>
+            ))}
+            <button
+              onClick={toggleEdgeDash}
+              className={`rounded-md px-2 py-1 text-xs transition-colors ${
+                selectedEdge.style?.strokeDasharray ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
+              }`}
+              title="虚线"
+            >
+              虚线
+            </button>
+          </>
+        )}
+
         {selectedNode && (
           <>
             <span className="mx-1 h-4 w-px bg-line" />
@@ -782,8 +908,19 @@ export function FlowchartEditor({
         <button onClick={clearAll} className="rounded-md px-2.5 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text">
           清空
         </button>
+        <button onClick={autoLayoutBtn} className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover" title="自动整理布局">
+          自动布局
+        </button>
         <span className="ml-auto flex items-center gap-1">
           <span className="hidden text-[11px] text-faint lg:inline">双击改文字 · 拖拽连线 · Ctrl+Z 撤销</span>
+          <button
+            onClick={exportPng}
+            disabled={exporting}
+            className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-50"
+            title="导出 PNG 图片"
+          >
+            {exporting ? "导出中…" : "导出 PNG"}
+          </button>
           <button
             onClick={() => setAiOpen(true)}
             className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
