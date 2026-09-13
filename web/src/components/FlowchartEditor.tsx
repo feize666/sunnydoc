@@ -254,6 +254,8 @@ export function FlowchartEditor({
   const [aiOpen, setAiOpen] = useState(false);
   const [aiText, setAiText] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
+  const [fillOpen, setFillOpen] = useState(false);
+  const [strokeOpen, setStrokeOpen] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -359,6 +361,8 @@ export function FlowchartEditor({
 
   const selectedNodes = nodes.filter((n) => n.selected);
   const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
+  const curFill = selectedNode ? ((selectedNode.data as unknown as FlowData).fill || "") : "";
+  const curStroke = selectedNode ? ((selectedNode.data as unknown as FlowData).stroke || "") : "";
 
   const setFill = (color: string) => {
     if (!selectedNode) return;
@@ -408,7 +412,7 @@ export function FlowchartEditor({
   return (
     <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
       {/* 工具栏 */}
-      <div className="flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
+      <div className="relative z-20 flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
         <span className="text-[11px] text-faint">形状</span>
         {SHAPES.map((s) => (
           <button
@@ -441,31 +445,96 @@ export function FlowchartEditor({
         {selectedNode && (
           <>
             <span className="mx-1 h-4 w-px bg-line" />
-            <span className="text-[11px] text-faint">填充</span>
-            {FILL_COLORS.map((c) => (
+            {/* 填充下拉 */}
+            <div className="relative shrink-0">
               <button
-                key={c}
-                onClick={() => setFill(c)}
-                className="h-5 w-5 rounded border border-black/10 transition-transform hover:scale-110"
-                style={{ backgroundColor: c }}
-              />
-            ))}
-            <button onClick={() => setFill("")} className="grid h-5 w-5 place-items-center rounded border border-line text-faint hover:text-text" title="无填充">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
-            </button>
-            <span className="mx-1 h-4 w-px bg-line" />
-            <span className="text-[11px] text-faint">边框</span>
-            {STROKE_COLORS.map((c) => (
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setFillOpen((v) => !v);
+                  setStrokeOpen(false);
+                }}
+                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
+              >
+                <span className="h-3.5 w-3.5 rounded-sm border border-line" style={{ backgroundColor: curFill || "transparent" }} />
+                填充
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${fillOpen ? "rotate-180" : ""}`}>
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
+              {fillOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setFillOpen(false)} />
+                  <div className="menu-panel absolute left-0 top-full z-40 mt-1 flex items-center gap-1 p-1.5">
+                    {FILL_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => {
+                          setFill(c);
+                          setFillOpen(false);
+                        }}
+                        className={`h-6 w-6 rounded border border-line transition-transform hover:scale-110 ${curFill === c ? "ring-2 ring-accent ring-offset-1" : ""}`}
+                        style={{ backgroundColor: c }}
+                      />
+                    ))}
+                    <button
+                      onClick={() => {
+                        setFill("");
+                        setFillOpen(false);
+                      }}
+                      className="grid h-6 w-6 place-items-center rounded border border-dashed border-line text-faint hover:text-text"
+                      title="无填充"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+            {/* 边框下拉 */}
+            <div className="relative shrink-0">
               <button
-                key={c}
-                onClick={() => setStroke(c)}
-                className="h-5 w-5 rounded-full border border-black/10 transition-transform hover:scale-110"
-                style={{ backgroundColor: c }}
-              />
-            ))}
-            <button onClick={() => setStroke("")} className="grid h-5 w-5 place-items-center rounded-full border border-line text-faint hover:text-text" title="默认边框">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
-            </button>
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setStrokeOpen((v) => !v);
+                  setFillOpen(false);
+                }}
+                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
+              >
+                <span className="h-3.5 w-3.5 rounded-full border border-line" style={{ backgroundColor: curStroke || "transparent" }} />
+                边框
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${strokeOpen ? "rotate-180" : ""}`}>
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
+              {strokeOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setStrokeOpen(false)} />
+                  <div className="menu-panel absolute left-0 top-full z-40 mt-1 flex items-center gap-1 p-1.5">
+                    {STROKE_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => {
+                          setStroke(c);
+                          setStrokeOpen(false);
+                        }}
+                        className={`h-6 w-6 rounded-full border border-line transition-transform hover:scale-110 ${curStroke === c ? "ring-2 ring-accent ring-offset-1" : ""}`}
+                        style={{ backgroundColor: c }}
+                      />
+                    ))}
+                    <button
+                      onClick={() => {
+                        setStroke("");
+                        setStrokeOpen(false);
+                      }}
+                      className="grid h-6 w-6 place-items-center rounded-full border border-dashed border-line text-faint hover:text-text"
+                      title="默认边框"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </>
         )}
 
