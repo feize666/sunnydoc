@@ -9,6 +9,7 @@ interface MindNode {
   text: string;
   parent: string | null;
   color?: string;
+  collapsed?: boolean;
 }
 
 type LayoutMode = "logic" | "org";
@@ -46,7 +47,7 @@ interface LayoutItem {
   h: number;
 }
 
-// 树形布局（logic 从左到右 / org 从上到下）
+// 树形布局（logic 从左到右 / org 从上到下），只对传入的可见节点布局
 function layout(nodes: MindNode[], mode: LayoutMode): Record<string, LayoutItem> {
   const map: Record<string, MindNode> = {};
   const kids: Record<string, string[]> = {};
@@ -136,6 +137,7 @@ function bounds(nodes: MindNode[], pos: Record<string, LayoutItem>) {
 }
 
 const PALETTE = ["#2f6bff", "#16a34a", "#f97316", "#a855f7", "#0ea5e9", "#ec4899", "#dc2626", "#78716c"];
+const MAX_HISTORY = 100;
 
 export function MindMapEditor({
   value,
@@ -154,23 +156,79 @@ export function MindMapEditor({
   const [editText, setEditText] = useState("");
   const [view, setView] = useState<{ x: number; y: number; k: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ startX: number; startY: number; vx: number; vy: number } | null>(null);
+  const canvasDragRef = useRef<{ startX: number; startY: number; vx: number; vy: number } | null>(null);
+  const nodeDragRef = useRef<{ id: string; startX: number; startY: number } | null>(null);
+  const [dragNode, setDragNode] = useState<{ id: string; x: number; y: number } | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
   const [aiText, setAiText] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
 
-  const pos = useMemo(() => layout(nodes, layoutMode), [nodes, layoutMode]);
-  const bb = useMemo(() => bounds(nodes, pos), [nodes, pos]);
+  // —— 撤销/重做 ——
+  const [past, setPast] = useState<MindNode[][]>([]);
+  const [future, setFuture] = useState<MindNode[][]>([]);
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+
+  const pushHistory = useCallback(() => {
+    setPast((p) => [...p.slice(-(MAX_HISTORY - 1)), nodesRef.current]);
+    setFuture([]);
+  }, []);
 
   const commit = useCallback(
     (next: MindNode[]) => {
+      pushHistory();
       setNodes(next);
       onChange(JSON.stringify({ nodes: next }));
     },
-    [onChange],
+    [onChange, pushHistory],
   );
 
+  const undo = useCallback(() => {
+    setPast((p) => {
+      if (p.length === 0) return p;
+      const prev = p[p.length - 1];
+      setFuture((f) => [...f, nodesRef.current]);
+      setNodes(prev);
+      onChange(JSON.stringify({ nodes: prev }));
+      setSelected(null);
+      return p.slice(0, -1);
+    });
+  }, [onChange]);
+
+  const redo = useCallback(() => {
+    setFuture((f) => {
+      if (f.length === 0) return f;
+      const next = f[f.length - 1];
+      setPast((p) => [...p.slice(-(MAX_HISTORY - 1)), nodesRef.current]);
+      setNodes(next);
+      onChange(JSON.stringify({ nodes: next }));
+      setSelected(null);
+      return f.slice(0, -1);
+    });
+  }, [onChange]);
+
   const mapNode = (id: string) => nodes.find((n) => n.id === id);
+
+  // 可见节点：祖先链上没有 collapsed 的节点
+  const visibleNodes = useMemo(() => {
+    const map = new Map(nodes.map((n) => [n.id, n]));
+    const isVisible = (id: string): boolean => {
+      let parent = map.get(id)?.parent;
+      while (parent) {
+        const pn = map.get(parent);
+        if (!pn) break;
+        if (pn.collapsed) return false;
+        parent = pn.parent;
+      }
+      return true;
+    };
+    return nodes.filter((n) => isVisible(n.id));
+  }, [nodes]);
+
+  const hasChildren = (id: string): boolean => nodes.some((n) => n.parent === id);
+
+  const pos = useMemo(() => layout(visibleNodes, layoutMode), [visibleNodes, layoutMode]);
+  const bb = useMemo(() => bounds(visibleNodes, pos), [visibleNodes, pos]);
 
   const v = view ?? (() => {
     const k = Math.min(1, 760 / Math.max(bb.maxX - bb.minX + 160, 400));
@@ -185,7 +243,10 @@ export function MindMapEditor({
   const finishEdit = () => {
     if (editing) {
       const t = editText.trim();
-      commit(nodes.map((n) => (n.id === editing ? { ...n, text: t || n.text } : n)));
+      const cur = mapNode(editing);
+      if (cur && t && t !== cur.text) {
+        commit(nodes.map((n) => (n.id === editing ? { ...n, text: t } : n)));
+      }
     }
     setEditing(null);
   };
@@ -242,7 +303,58 @@ export function MindMapEditor({
     commit(nodes.map((n) => (n.id === selected ? { ...n, color: color || undefined } : n)));
   };
 
+  const toggleCollapse = (id: string) => {
+    // 视图态，不记录历史
+    setNodes(nodes.map((n) => (n.id === id ? { ...n, collapsed: !n.collapsed } : n)));
+    onChange(JSON.stringify({ nodes: nodes.map((n) => (n.id === id ? { ...n, collapsed: !n.collapsed } : n)) }));
+  };
+
+  const collapseAll = () => {
+    const next = nodes.map((n) => (hasChildren(n.id) ? { ...n, collapsed: true } : n));
+    setNodes(next);
+    onChange(JSON.stringify({ nodes: next }));
+  };
+
+  const expandAll = () => {
+    const next = nodes.map((n) => (n.collapsed ? { ...n, collapsed: false } : n));
+    setNodes(next);
+    onChange(JSON.stringify({ nodes: next }));
+  };
+
+  // —— 拖拽重排：判断 target 是否为 node 的子孙 ——
+  const isDescendant = (ancestorId: string, nodeId: string): boolean => {
+    const map = new Map(nodes.map((n) => [n.id, n]));
+    let cur: string | null = nodeId;
+    while (cur) {
+      const n = map.get(cur);
+      if (!n) return false;
+      if (n.parent === ancestorId) return true;
+      cur = n.parent;
+    }
+    return false;
+  };
+
+  const moveNode = (id: string, newParent: string) => {
+    const node = mapNode(id);
+    if (!node) return;
+    if (newParent === id || node.parent === newParent) return;
+    if (isDescendant(id, newParent)) return; // 避免环
+    commit(nodes.map((n) => (n.id === id ? { ...n, parent: newParent } : n)));
+    setSelected(id);
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key.toLowerCase() === "z" && !e.shiftKey) {
+      e.preventDefault();
+      undo();
+      return;
+    }
+    if (mod && (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))) {
+      e.preventDefault();
+      redo();
+      return;
+    }
     if (editing) {
       if (e.key === "Enter") {
         e.preventDefault();
@@ -271,21 +383,60 @@ export function MindMapEditor({
 
   const onPointerDown = (e: React.PointerEvent) => {
     const t = e.target as HTMLElement;
-    if (t.closest(".mind-node")) return;
-    dragRef.current = { startX: e.clientX, startY: e.clientY, vx: v.x, vy: v.y };
+    const nodeEl = t.closest(".mind-node") as HTMLElement | null;
+    if (nodeEl && nodeEl.dataset.id) {
+      nodeDragRef.current = { id: nodeEl.dataset.id, startX: e.clientX, startY: e.clientY };
+    } else {
+      canvasDragRef.current = { startX: e.clientX, startY: e.clientY, vx: v.x, vy: v.y };
+    }
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
+
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragRef.current) return;
-    setView({
-      ...v,
-      x: dragRef.current.vx + (e.clientX - dragRef.current.startX),
-      y: dragRef.current.vy + (e.clientY - dragRef.current.startY),
-    });
+    if (canvasDragRef.current) {
+      setView({
+        ...v,
+        x: canvasDragRef.current.vx + (e.clientX - canvasDragRef.current.startX),
+        y: canvasDragRef.current.vy + (e.clientY - canvasDragRef.current.startY),
+      });
+    } else if (nodeDragRef.current) {
+      const dx = e.clientX - nodeDragRef.current.startX;
+      const dy = e.clientY - nodeDragRef.current.startY;
+      if (!dragNode && Math.hypot(dx, dy) > 5) {
+        const rect = containerRef.current?.getBoundingClientRect();
+        setDragNode({
+          id: nodeDragRef.current.id,
+          x: e.clientX - (rect?.left ?? 0),
+          y: e.clientY - (rect?.top ?? 0),
+        });
+      }
+      if (dragNode) {
+        const rect = containerRef.current?.getBoundingClientRect();
+        setDragNode({
+          ...dragNode,
+          x: e.clientX - (rect?.left ?? 0),
+          y: e.clientY - (rect?.top ?? 0),
+        });
+      }
+    }
   };
-  const onPointerUp = () => {
-    dragRef.current = null;
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    if (dragNode) {
+      const targetEl = document.elementFromPoint(e.clientX, e.clientY);
+      const targetNodeEl = targetEl?.closest(".mind-node") as HTMLElement | null;
+      const targetId = targetNodeEl?.dataset.id;
+      if (targetId && targetId !== dragNode.id) {
+        moveNode(dragNode.id, targetId);
+      }
+      setDragNode(null);
+      nodeDragRef.current = null;
+    } else if (nodeDragRef.current) {
+      nodeDragRef.current = null;
+    }
+    canvasDragRef.current = null;
   };
+
   const onWheel = (e: React.WheelEvent) => {
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
     setView({ ...v, k: Math.max(0.2, Math.min(2.5, v.k * delta)) });
@@ -334,6 +485,9 @@ export function MindMapEditor({
       active ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"
     } disabled:opacity-40 disabled:cursor-not-allowed`;
 
+  const canUndo = past.length > 0;
+  const canRedo = future.length > 0;
+
   return (
     <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
       {/* 工具栏（参考 ProcessOn 分组） */}
@@ -354,6 +508,18 @@ export function MindMapEditor({
         <button onClick={() => selected && removeNode(selected)} disabled={!selected} className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] text-danger transition-colors hover:bg-danger-soft disabled:opacity-40 disabled:cursor-not-allowed" title="删除 (Delete)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /></svg>
           删除
+        </button>
+
+        <span className="mx-1 h-4 w-px bg-line" />
+
+        {/* 撤销/重做 */}
+        <button onClick={undo} disabled={!canUndo} className={toolBtn(false)} title="撤销 (Ctrl+Z)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>
+          撤销
+        </button>
+        <button onClick={redo} disabled={!canRedo} className={toolBtn(false)} title="重做 (Ctrl+Y)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 15-6.7L21 13" /></svg>
+          重做
         </button>
 
         <span className="mx-1 h-4 w-px bg-line" />
@@ -388,10 +554,22 @@ export function MindMapEditor({
           组织结构图
         </button>
 
+        <span className="mx-1 h-4 w-px bg-line" />
+
+        {/* 折叠 */}
+        <button onClick={expandAll} className={toolBtn(false)} title="展开全部节点">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 9h16M4 15h16M9 4v16" /></svg>
+          展开
+        </button>
+        <button onClick={collapseAll} className={toolBtn(false)} title="折叠全部节点">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 9h16M4 15h16M12 4v16" /></svg>
+          折叠
+        </button>
+
         <span className="mx-auto" />
 
         <span className="hidden text-[11px] text-faint lg:inline">
-          Tab 子主题 · Enter 同级 · Delete 删除 · 双击编辑 · 拖拽平移 · 滚轮缩放
+          Tab 子主题 · Enter 同级 · Delete 删除 · 双击编辑 · 拖拽重排
         </span>
 
         <button onClick={() => setAiOpen(true)} className="rounded-md bg-accent px-2.5 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90">
@@ -439,7 +617,7 @@ export function MindMapEditor({
         <svg width="100%" height="100%">
           <g transform={`translate(${v.x},${v.y}) scale(${v.k})`}>
             {/* 连线 */}
-            {nodes.map((n) => {
+            {visibleNodes.map((n) => {
               if (!n.parent) return null;
               const p = pos[n.parent];
               const c = pos[n.id];
@@ -463,7 +641,7 @@ export function MindMapEditor({
               return <path key={`e-${n.id}`} d={d} fill="none" stroke="var(--line-strong)" strokeWidth={1.5} />;
             })}
             {/* 节点 */}
-            {nodes.map((n) => {
+            {visibleNodes.map((n) => {
               const p = pos[n.id];
               if (!p) return null;
               const color = isRoot(n.id) ? "var(--accent)" : levelColor(n.id);
@@ -472,6 +650,7 @@ export function MindMapEditor({
                 <g
                   key={n.id}
                   className="mind-node"
+                  data-id={n.id}
                   transform={`translate(${p.x},${p.y})`}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -522,6 +701,62 @@ export function MindMapEditor({
               );
             })}
           </g>
+
+          {/* 折叠指示器（在变换组外，用世界坐标绘制，随 g 变换）—— 放到 g 内更简单，这里单独画在 g 内 */}
+          <g transform={`translate(${v.x},${v.y}) scale(${v.k})`}>
+            {visibleNodes.map((n) => {
+              const p = pos[n.id];
+              if (!p) return null;
+              const hasKids = hasChildren(n.id);
+              if (!hasKids) return null;
+              const folded = !!n.collapsed;
+              const cx = layoutMode === "logic" ? p.x + p.w + 10 : p.x + p.w / 2;
+              const cy = layoutMode === "logic" ? p.y + NODE_H / 2 : p.y + NODE_H + 10;
+              return (
+                <g
+                  key={`fold-${n.id}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleCollapse(n.id);
+                  }}
+                  style={{ cursor: "pointer" }}
+                >
+                  <circle cx={cx} cy={cy} r={9} fill="var(--background)" stroke="var(--line-strong)" strokeWidth={1.5} />
+                  <path
+                    d={folded ? `M ${cx - 3.5} ${cy} H ${cx + 3.5}` : `M ${cx - 3.5} ${cy} H ${cx + 3.5} M ${cx} ${cy - 3.5} V ${cy + 3.5}`}
+                    stroke="var(--text)"
+                    strokeWidth={1.5}
+                    strokeLinecap="round"
+                  />
+                </g>
+              );
+            })}
+          </g>
+
+          {/* 拖拽 ghost（屏幕坐标，不随缩放） */}
+          {dragNode && (() => {
+            const node = mapNode(dragNode.id);
+            if (!node) return null;
+            const w = estimateWidth(node.text);
+            const color = isRoot(node.id) ? "var(--accent)" : levelColor(node.id);
+            return (
+              <g pointerEvents="none" opacity={0.85}>
+                <rect
+                  x={dragNode.x - w / 2}
+                  y={dragNode.y - NODE_H / 2}
+                  width={w}
+                  height={NODE_H}
+                  rx={8}
+                  fill="var(--accent-soft)"
+                  stroke="var(--accent)"
+                  strokeWidth={2}
+                />
+                <text x={dragNode.x} y={dragNode.y} textAnchor="middle" dominantBaseline="central" fontSize={14} fill="var(--text)" style={{ userSelect: "none" }}>
+                  {node.text.length > 14 ? node.text.slice(0, 14) + "…" : node.text}
+                </text>
+              </g>
+            );
+          })()}
         </svg>
       </div>
     </div>

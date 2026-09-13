@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -225,6 +225,8 @@ function autoLayout(nodes: StoredNode[], edges: StoredEdge[]): void {
   });
 }
 
+const MAX_HISTORY = 100;
+
 export function FlowchartEditor({
   value,
   onChange,
@@ -256,6 +258,63 @@ export function FlowchartEditor({
   const [aiBusy, setAiBusy] = useState(false);
   const [fillOpen, setFillOpen] = useState(false);
   const [strokeOpen, setStrokeOpen] = useState(false);
+
+  // —— 撤销/重做 ——
+  const [past, setPast] = useState<StoredFlow[]>([]);
+  const [future, setFuture] = useState<StoredFlow[]>([]);
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  nodesRef.current = nodes;
+  edgesRef.current = edges;
+  const dragStartRef = useRef<StoredFlow | null>(null);
+  const clipboardRef = useRef<StoredNode[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const snapshot = useCallback((): StoredFlow => {
+    return {
+      nodes: nodesRef.current.map((n) => {
+        const d = n.data as unknown as FlowData;
+        return { id: n.id, label: d.label, shape: d.shape, x: n.position.x, y: n.position.y, fill: d.fill, stroke: d.stroke };
+      }),
+      edges: edgesRef.current.map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        label: typeof e.label === "string" ? e.label : "",
+      })),
+    };
+  }, []);
+
+  const pushHistory = useCallback(() => {
+    const s = snapshot();
+    setPast((p) => [...p.slice(-(MAX_HISTORY - 1)), s]);
+    setFuture([]);
+  }, [snapshot]);
+
+  const applyFlow = useCallback((s: StoredFlow) => {
+    setNodes(s.nodes.map((n) => ({ id: n.id, type: "shape", position: { x: n.x, y: n.y }, data: { label: n.label, shape: n.shape, fill: n.fill, stroke: n.stroke } })));
+    setEdges(s.edges.map((e) => ({ id: e.id, source: e.source, target: e.target, label: e.label || undefined })));
+  }, [setNodes, setEdges]);
+
+  const undo = useCallback(() => {
+    setPast((p) => {
+      if (p.length === 0) return p;
+      const prev = p[p.length - 1];
+      setFuture((f) => [...f, snapshot()]);
+      applyFlow(prev);
+      return p.slice(0, -1);
+    });
+  }, [snapshot, applyFlow]);
+
+  const redo = useCallback(() => {
+    setFuture((f) => {
+      if (f.length === 0) return f;
+      const next = f[f.length - 1];
+      setPast((p) => [...p.slice(-(MAX_HISTORY - 1)), snapshot()]);
+      applyFlow(next);
+      return f.slice(0, -1);
+    });
+  }, [snapshot, applyFlow]);
 
   useEffect(() => setMounted(true), []);
 
@@ -304,12 +363,14 @@ export function FlowchartEditor({
 
   const onConnect = useCallback(
     (c: Connection) => {
+      pushHistory();
       setEdges((eds) => addEdge({ ...c, id: genId("e") }, eds));
     },
-    [setEdges],
+    [setEdges, pushHistory],
   );
 
   const addNode = (shape: ShapeKind) => {
+    pushHistory();
     const id = genId("n");
     const offset = (nodes.length % 5) * 40;
     setNodes((nds) => [
@@ -329,6 +390,7 @@ export function FlowchartEditor({
     const cur = (n.data as unknown as FlowData).label;
     const next = window.prompt("节点文字", cur);
     if (next == null) return;
+    pushHistory();
     setNodes((nds) => nds.map((x) => (x.id === id ? { ...x, data: { ...x.data, label: next || cur } } : x)));
   };
 
@@ -338,26 +400,68 @@ export function FlowchartEditor({
     const cur = typeof e.label === "string" ? e.label : "";
     const next = window.prompt("连线文字", cur);
     if (next == null) return;
+    pushHistory();
     setEdges((eds) => eds.map((x) => (x.id === id ? { ...x, label: next } : x)));
   };
 
   const deleteSelected = () => {
     const sel = nodes.filter((n) => n.selected);
     const selEdges = edges.filter((e) => e.selected);
-    if (sel.length === 0 && selEdges.length === 0) {
-      alert("请先点击选中要删除的节点或连线");
-      return;
-    }
+    if (sel.length === 0 && selEdges.length === 0) return;
+    pushHistory();
     const ids = new Set(sel.map((n) => n.id));
     setNodes((nds) => nds.filter((n) => !ids.has(n.id)));
     setEdges((eds) => eds.filter((e) => !ids.has(e.source) && !ids.has(e.target) && !selEdges.includes(e)));
   };
 
   const clearAll = () => {
+    if (nodes.length === 0 && edges.length === 0) return;
     if (!window.confirm("清空整个流程图？")) return;
+    pushHistory();
     setNodes([]);
     setEdges([]);
   };
+
+  // —— 复制 / 粘贴 / 全选 ——
+  const copySelected = useCallback(() => {
+    const sel = nodesRef.current.filter((n) => n.selected);
+    if (sel.length === 0) return;
+    clipboardRef.current = sel.map((n) => {
+      const d = n.data as unknown as FlowData;
+      return { id: n.id, label: d.label, shape: d.shape, x: n.position.x, y: n.position.y, fill: d.fill, stroke: d.stroke };
+    });
+  }, []);
+
+  const pasteClipboard = useCallback(() => {
+    const items = clipboardRef.current;
+    if (items.length === 0) return;
+    pushHistory();
+    const idMap: Record<string, string> = {};
+    const newNodes: Node[] = items.map((n) => {
+      const nid = genId("n");
+      idMap[n.id] = nid;
+      return { id: nid, type: "shape", position: { x: n.x + 30, y: n.y + 30 }, data: { label: n.label, shape: n.shape, fill: n.fill, stroke: n.stroke } };
+    });
+    // 粘贴后默认选中新节点，取消旧选中
+    setNodes((nds) => [...nds.map((n) => ({ ...n, selected: false })), ...newNodes]);
+    const newEdges: Edge[] = [];
+    for (const e of edgesRef.current) {
+      if (idMap[e.source] && idMap[e.target]) {
+        newEdges.push({ id: genId("e"), source: idMap[e.source], target: idMap[e.target], label: typeof e.label === "string" ? e.label : undefined });
+      }
+    }
+    setEdges((eds) => [...eds, ...newEdges]);
+  }, [pushHistory, setNodes, setEdges]);
+
+  const duplicateSelected = useCallback(() => {
+    copySelected();
+    pasteClipboard();
+  }, [copySelected, pasteClipboard]);
+
+  const selectAll = useCallback(() => {
+    setNodes((nds) => nds.map((n) => ({ ...n, selected: true })));
+    setEdges((eds) => eds.map((e) => ({ ...e, selected: true })));
+  }, [setNodes, setEdges]);
 
   const selectedNodes = nodes.filter((n) => n.selected);
   const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
@@ -366,14 +470,72 @@ export function FlowchartEditor({
 
   const setFill = (color: string) => {
     if (!selectedNode) return;
+    pushHistory();
     const id = selectedNode.id;
     setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, fill: color || undefined } } : n)));
   };
 
   const setStroke = (color: string) => {
     if (!selectedNode) return;
+    pushHistory();
     const id = selectedNode.id;
     setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, stroke: color || undefined } } : n)));
+  };
+
+  // —— 多选对齐 / 分布 ——
+  const alignNodes = (mode: "left" | "centerH" | "right" | "top" | "centerV" | "bottom") => {
+    const sel = nodesRef.current.filter((n) => n.selected);
+    if (sel.length < 2) return;
+    pushHistory();
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const n of sel) {
+      minX = Math.min(minX, n.position.x);
+      maxX = Math.max(maxX, n.position.x + NODE_W);
+      minY = Math.min(minY, n.position.y);
+      maxY = Math.max(maxY, n.position.y + NODE_H);
+    }
+    const ids = new Set(sel.map((n) => n.id));
+    setNodes((nds) =>
+      nds.map((n) => {
+        if (!ids.has(n.id)) return n;
+        let x = n.position.x;
+        let y = n.position.y;
+        if (mode === "left") x = minX;
+        else if (mode === "right") x = maxX - NODE_W;
+        else if (mode === "centerH") x = (minX + maxX) / 2 - NODE_W / 2;
+        else if (mode === "top") y = minY;
+        else if (mode === "bottom") y = maxY - NODE_H;
+        else if (mode === "centerV") y = (minY + maxY) / 2 - NODE_H / 2;
+        return { ...n, position: { x, y } };
+      }),
+    );
+  };
+
+  const distributeNodes = (axis: "h" | "v") => {
+    const sel = nodesRef.current.filter((n) => n.selected);
+    if (sel.length < 3) return;
+    pushHistory();
+    const sorted = [...sel].sort((a, b) =>
+      axis === "h" ? a.position.x - b.position.x : a.position.y - b.position.y,
+    );
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+    const ids = new Set(sel.map((n) => n.id));
+    const total =
+      axis === "h"
+        ? last.position.x - first.position.x
+        : last.position.y - first.position.y;
+    const step = total / (sorted.length - 1);
+    const idxMap: Record<string, number> = {};
+    sorted.forEach((n, i) => (idxMap[n.id] = i));
+    setNodes((nds) =>
+      nds.map((n) => {
+        if (!ids.has(n.id)) return n;
+        const i = idxMap[n.id];
+        if (axis === "h") return { ...n, position: { x: first.position.x + step * i, y: n.position.y } };
+        return { ...n, position: { x: n.position.x, y: first.position.y + step * i } };
+      }),
+    );
   };
 
   const runAi = async () => {
@@ -396,6 +558,7 @@ export function FlowchartEditor({
         label: e.label || "",
       }));
       autoLayout(sn, se);
+      pushHistory();
       setNodes(sn.map((n) => ({ id: n.id, type: "shape", position: { x: n.x, y: n.y }, data: { label: n.label, shape: n.shape } })));
       setEdges(se.map((e) => ({ id: e.id, source: e.source, target: e.target, label: e.label || undefined })));
       setAiOpen(false);
@@ -407,7 +570,39 @@ export function FlowchartEditor({
     }
   };
 
+  // —— 键盘快捷键 ——
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if (mod && (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))) {
+        e.preventDefault();
+        redo();
+      } else if (mod && e.key.toLowerCase() === "c") {
+        copySelected();
+      } else if (mod && e.key.toLowerCase() === "v") {
+        e.preventDefault();
+        pasteClipboard();
+      } else if (mod && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        duplicateSelected();
+      } else if (mod && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        selectAll();
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        deleteSelected();
+      }
+    },
+    [undo, redo, copySelected, pasteClipboard, duplicateSelected, selectAll, deleteSelected],
+  );
+
   if (!mounted) return <div className="flex-1" />;
+
+  const canUndo = past.length > 0;
+  const canRedo = future.length > 0;
 
   return (
     <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
@@ -538,15 +733,57 @@ export function FlowchartEditor({
           </>
         )}
 
+        {/* 多选对齐/分布 */}
+        {selectedNodes.length >= 2 && (
+          <>
+            <span className="mx-1 h-4 w-px bg-line" />
+            <span className="text-[11px] text-faint">对齐</span>
+            {(
+              [
+                ["left", "M3 6h11M3 12h7M3 18h11"],
+                ["centerH", "M3 6h11M6 12h5M3 18h11"],
+                ["right", "M3 6h11M9 12h5M3 18h11"],
+                ["top", "M6 3v11M12 3v7M18 3v11"],
+                ["centerV", "M6 3v11M12 6v5M18 3v11"],
+                ["bottom", "M6 3v11M12 9v5M18 3v11"],
+              ] as [string, string][]
+            ).map(([mode, d]) => (
+              <button
+                key={mode}
+                onClick={() => alignNodes(mode as any)}
+                className="grid h-7 w-7 place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-text"
+                title={mode === "left" ? "左对齐" : mode === "centerH" ? "水平居中" : mode === "right" ? "右对齐" : mode === "top" ? "顶对齐" : mode === "centerV" ? "垂直居中" : "底对齐"}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d={d} />
+                </svg>
+              </button>
+            ))}
+            <span className="mx-1 h-4 w-px bg-line" />
+            <button onClick={() => distributeNodes("h")} className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="水平等距分布">
+              水平分布
+            </button>
+            <button onClick={() => distributeNodes("v")} className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="垂直等距分布">
+              垂直分布
+            </button>
+          </>
+        )}
+
         <span className="mx-1 h-4 w-px bg-line" />
-        <button onClick={deleteSelected} className="rounded-md px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger-soft">
-          删除选中
+        <button onClick={undo} disabled={!canUndo} className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed" title="撤销 (Ctrl+Z)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>
+        </button>
+        <button onClick={redo} disabled={!canRedo} className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed" title="重做 (Ctrl+Y)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 15-6.7L21 13" /></svg>
+        </button>
+        <button onClick={deleteSelected} className="rounded-md px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger-soft" title="删除选中 (Delete)">
+          删除
         </button>
         <button onClick={clearAll} className="rounded-md px-2.5 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text">
           清空
         </button>
         <span className="ml-auto flex items-center gap-1">
-          <span className="hidden text-[11px] text-faint lg:inline">双击节点/连线改文字</span>
+          <span className="hidden text-[11px] text-faint lg:inline">双击改文字 · 拖拽连线 · Ctrl+Z 撤销</span>
           <button
             onClick={() => setAiOpen(true)}
             className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
@@ -584,7 +821,7 @@ export function FlowchartEditor({
       )}
 
       {/* 画布 */}
-      <div style={{ height: "60vh", minHeight: 400 }}>
+      <div ref={containerRef} tabIndex={0} onKeyDown={onKeyDown} className="outline-none" style={{ height: "60vh", minHeight: 400 }}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -593,8 +830,20 @@ export function FlowchartEditor({
           onConnect={onConnect}
           onNodeDoubleClick={(_, node) => editLabel(node.id)}
           onEdgeDoubleClick={(_, edge) => editEdgeLabel(edge.id)}
+          onNodeDragStart={() => {
+            dragStartRef.current = snapshot();
+          }}
+          onNodeDragStop={() => {
+            if (dragStartRef.current) {
+              setPast((p) => [...p.slice(-(MAX_HISTORY - 1)), dragStartRef.current!]);
+              setFuture([]);
+              dragStartRef.current = null;
+            }
+          }}
+          onPaneClick={() => containerRef.current?.focus()}
           nodeTypes={nodeTypes}
           defaultEdgeOptions={defaultEdgeOptions}
+          deleteKeyCode={null}
           fitView
           proOptions={{ hideAttribution: true }}
         >
