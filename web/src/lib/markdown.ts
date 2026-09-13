@@ -41,11 +41,12 @@ const mdSafe = new MarkdownIt({
   breaks: false,
 });
 
-// 标题锚点（生成 id）+ GitHub 风格任务列表 + 语雀语法兼容
+// 标题锚点（生成 id）+ GitHub 风格任务列表 + 语雀语法兼容 + 双向链接
 for (const instance of [md, mdSafe]) {
   instance.use(anchor, { level: [1, 2, 3, 4, 5, 6] });
   instance.use(taskLists);
   instance.use(yuqueCompat);
+  instance.use(wikilink);
 }
 
 // —— 语雀 markdown 兼容 ——
@@ -145,6 +146,39 @@ function yuqueCompat(md: MarkdownItInstance) {
   md.renderer.rules.yuque_note_close = () => `</details>\n`;
 }
 
+// —— 双向链接 [[文档名]] ——
+// 渲染为 <span class="wikilink" data-wikilink="文档名">，点击跳转由外层组件事件委托处理
+function wikilink(md: MarkdownItInstance) {
+  function tokenize(state: any, silent: boolean): boolean {
+    const src = state.src;
+    const start = state.pos;
+    // 必须以 [[ 开头
+    if (src.charCodeAt(start) !== 0x5b || src.charCodeAt(start + 1) !== 0x5b) return false;
+    // 查找配对的 ]]
+    let end = -1;
+    for (let i = start + 2; i < state.posMax - 1; i++) {
+      if (src.charCodeAt(i) === 0x5d && src.charCodeAt(i + 1) === 0x5d) {
+        end = i;
+        break;
+      }
+    }
+    if (end === -1) return false;
+    const label = src.slice(start + 2, end).trim();
+    // 空内容 / 含换行 / 含 [ ] 嵌套视为非 wikilink
+    if (!label || /[\n\[\]]/.test(label)) return false;
+    if (silent) return true;
+    const token = state.push("wikilink", "span", 0);
+    token.content = label;
+    state.pos = end + 2;
+    return true;
+  }
+  md.inline.ruler.before("link", "wikilink", tokenize);
+  md.renderer.rules.wikilink = (tokens: any, idx: number) => {
+    const label = md.utils.escapeHtml(tokens[idx].content);
+    return `<span class="wikilink" data-wikilink="${label}">${label}</span>`;
+  };
+}
+
 const PURIFY_CONFIG: Config = {
   // 默认白名单已涵盖 markdown 输出（p/h1~h6/strong/em/code/pre/blockquote/
   // a/table/ul/ol/li/hr/span 等），并自动剔除 script/iframe、on* 事件属性
@@ -164,6 +198,8 @@ const PURIFY_CONFIG: Config = {
   ],
   // 搜索命中高亮用 <mark>，语雀折叠块用 <details>/<summary>，加入白名单
   ADD_TAGS: ["mark", "details", "summary"],
+  // 双向链接 <span data-wikilink>：data-wikilink 属性需放行
+  ADD_ATTR: ["data-wikilink"],
 };
 
 function escapeHtml(s: string): string {

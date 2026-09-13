@@ -507,6 +507,7 @@ export interface DocVersion {
   id: string;
   title: string;
   created_at: number;
+  text?: string;
 }
 
 export async function listDocVersions(docId: string): Promise<DocVersion[]> {
@@ -516,6 +517,30 @@ export async function listDocVersions(docId: string): Promise<DocVersion[]> {
 
 export async function rollbackDocument(docId: string, versionId: string): Promise<void> {
   await request(`/documents/${docId}/rollback/${versionId}`, { method: "POST" });
+}
+
+export interface Backlink {
+  id: string;
+  title: string;
+  kb_id: string | null;
+  folder_id: string | null;
+  source?: string | null;
+}
+
+export async function listBacklinks(docId: string): Promise<Backlink[]> {
+  const data = await request<{ backlinks: Backlink[] }>(`/documents/${docId}/backlinks`);
+  return Array.isArray(data?.backlinks) ? data.backlinks : [];
+}
+
+export async function lookupDocumentByTitle(title: string): Promise<Backlink | null> {
+  try {
+    const data = await request<Backlink>(
+      `/documents/lookup?title=${encodeURIComponent(title)}`,
+    );
+    return data && data.id ? data : null;
+  } catch {
+    return null;
+  }
 }
 
 // —— 文档评论/批注 ——

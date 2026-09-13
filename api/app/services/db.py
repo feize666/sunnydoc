@@ -580,6 +580,68 @@ def list_all_tags(user_id: str | None = None) -> list[str]:
     return sorted(all_tags)
 
 
+def search_backlinks(
+    title: str, exclude_doc_id: str, user_id: str | None = None, kb_ids: set[str] | None = None
+) -> list[dict[str, Any]]:
+    """查找正文中包含 [[title]] 双向链接的文档（反向链接）。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        conds = ["deleted_at IS NULL", "id != %s", "text LIKE %s"]
+        params: list[Any] = [exclude_doc_id, f"%[[{title}]]%"]
+        if kb_ids is not None:
+            if kb_ids:
+                placeholders = ",".join(["%s"] * len(kb_ids))
+                conds.append(f"(kb_id IN ({placeholders}) OR (user_id = %s AND kb_id IS NULL))")
+                params += list(kb_ids) + [user_id]
+            else:
+                conds.append("user_id = %s AND kb_id IS NULL")
+                params.append(user_id)
+        elif user_id is not None:
+            conds.append("user_id = %s")
+            params.append(user_id)
+        sql = (
+            "SELECT id, title, kb_id, folder_id, source FROM documents WHERE "
+            + " AND ".join(conds)
+            + " ORDER BY COALESCE(sort_order, created_at) DESC LIMIT 50"
+        )
+        cur.execute(sql, params)
+        return [
+            {"id": r[0], "title": r[1], "kb_id": r[2], "folder_id": r[3], "source": r[4]}
+            for r in cur.fetchall()
+        ]
+
+
+def lookup_document_by_title(
+    title: str, user_id: str | None = None, kb_ids: set[str] | None = None
+) -> dict[str, Any] | None:
+    """按标题精确查找文档（用户可见范围内），返回第一个匹配。用于双向链接跳转。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        conds = ["deleted_at IS NULL", "title = %s"]
+        params: list[Any] = [title]
+        if kb_ids is not None:
+            if kb_ids:
+                placeholders = ",".join(["%s"] * len(kb_ids))
+                conds.append(f"(kb_id IN ({placeholders}) OR (user_id = %s AND kb_id IS NULL))")
+                params += list(kb_ids) + [user_id]
+            else:
+                conds.append("user_id = %s AND kb_id IS NULL")
+                params.append(user_id)
+        elif user_id is not None:
+            conds.append("user_id = %s")
+            params.append(user_id)
+        sql = (
+            "SELECT id, title, kb_id, folder_id FROM documents WHERE "
+            + " AND ".join(conds)
+            + " ORDER BY pinned DESC, COALESCE(sort_order, created_at) DESC LIMIT 1"
+        )
+        cur.execute(sql, params)
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return {"id": row[0], "title": row[1], "kb_id": row[2], "folder_id": row[3]}
+
+
 def create_folder(folder: dict[str, Any]) -> dict[str, Any]:
     """写入文件夹记录。"""
     conn = _connect()

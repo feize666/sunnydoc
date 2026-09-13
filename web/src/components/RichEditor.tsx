@@ -8,7 +8,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
 import { Markdown } from "tiptap-markdown";
-import { uploadImage, aiAssist } from "@/lib/api";
+import { uploadImage, aiAssist, type AIAssistAction } from "@/lib/api";
 import { Tooltip } from "./Tooltip";
 import {
   CodeIcon,
@@ -321,6 +321,16 @@ function ToolDivider() {
   return <span className="mx-1 h-4 w-px shrink-0 bg-line" aria-hidden />;
 }
 
+// AI 写作操作项
+const AI_ACTIONS: { key: AIAssistAction; label: string }[] = [
+  { key: "polish", label: "润色" },
+  { key: "continue", label: "续写" },
+  { key: "summarize", label: "总结" },
+  { key: "explain", label: "解释" },
+  { key: "translate_zh", label: "译中文" },
+  { key: "translate_en", label: "译英文" },
+];
+
 /** 所见即所得 Markdown 编辑器（TipTap），内置工具栏。 */
 export function RichEditor({
   value,
@@ -349,6 +359,9 @@ export function RichEditor({
   const [painterMarks, setPainterMarks] = useState<Record<string, unknown> | null>(null);
   // 翻译进行中
   const [translating, setTranslating] = useState(false);
+  // AI 写作菜单 + 操作进行中
+  const [aiMenuOpen, setAiMenuOpen] = useState(false);
+  const [aiBusy, setAiBusy] = useState<string | null>(null);
 
   const editor = useEditor({
     extensions: [
@@ -821,6 +834,27 @@ export function RichEditor({
     editor.chain().focus().unsetAllMarks().clearNodes().run();
   };
 
+  // AI 写作：选中文字后执行润色/续写/总结/解释/翻译，结果原地替换
+  const runAiAssist = async (action: AIAssistAction) => {
+    const { from, to } = editor.state.selection;
+    setAiMenuOpen(false);
+    if (from === to) {
+      alert("请先选中要处理的文字");
+      return;
+    }
+    const text = editor.state.doc.textBetween(from, to, " ");
+    if (!text.trim()) return;
+    setAiBusy(action);
+    try {
+      const result = await aiAssist(action, text);
+      editor.chain().focus().insertContentAt({ from, to }, result).run();
+    } catch (e) {
+      alert(`AI 处理失败：${e instanceof Error ? e.message : "未知错误"}`);
+    } finally {
+      setAiBusy(null);
+    }
+  };
+
   const currentColor = (COLORS.find((c) => editor.isActive("color", { color: c })) ?? "");
   const currentBgColor = (COLORS.find((c) => editor.isActive("backgroundColor", { color: c })) ?? "");
 
@@ -1223,6 +1257,46 @@ export function RichEditor({
             <TranslateIcon size={17} />
           )}
         </ToolBtn>
+
+        {/* AI 写作 */}
+        <div className="relative shrink-0">
+          <Tooltip content="AI 写作">
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setAiMenuOpen((v) => !v)}
+              disabled={!!aiBusy}
+              className={`flex h-9 min-w-[34px] shrink-0 items-center justify-center rounded-md px-2 transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
+                aiMenuOpen ? "bg-active text-accent" : "text-accent hover:bg-hover"
+              }`}
+            >
+              {aiBusy ? (
+                <span className="animate-pulse text-[12px] leading-none">…</span>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
+                  <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" />
+                </svg>
+              )}
+            </button>
+          </Tooltip>
+          {aiMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setAiMenuOpen(false)} />
+              <div className="menu-panel absolute right-0 top-full z-40 mt-1 w-32">
+                {AI_ACTIONS.map((a) => (
+                  <button
+                    key={a.key}
+                    onClick={() => runAiAssist(a.key)}
+                    className="flex w-full items-center rounded-md px-3 py-2 text-[13px] text-text transition-colors hover:bg-hover"
+                  >
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
 
         <ToolDivider />
 

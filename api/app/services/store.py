@@ -714,6 +714,49 @@ class DocStore:
             user_id=user_id,
         )
 
+    def list_backlinks(self, doc_id: str, user_id: str | None = None) -> list[dict[str, Any]]:
+        """反向链接：返回正文中以 [[标题]] 引用本文档的其他文档。"""
+        doc = self.get(doc_id, user_id)
+        if doc is None:
+            return []
+        title = doc.get("title") or ""
+        if self._backend == "db":
+            kb_ids = self._accessible_kb_ids(user_id) if user_id is not None else None
+            return db.search_backlinks(title, doc_id, user_id, kb_ids)
+        results = []
+        for d in self.all(user_id=user_id, with_chunks=False):
+            if d.get("id") == doc_id:
+                continue
+            if f"[[{title}]]" in (d.get("text") or ""):
+                results.append(
+                    {
+                        "id": d["id"],
+                        "title": d["title"],
+                        "kb_id": d.get("kb_id"),
+                        "folder_id": d.get("folder_id"),
+                        "source": d.get("source"),
+                    }
+                )
+        return results
+
+    def lookup_by_title(self, title: str, user_id: str | None = None) -> dict[str, Any] | None:
+        """按标题精确查找文档（用户可见范围内），用于双向链接跳转。"""
+        title = (title or "").strip()
+        if not title:
+            return None
+        if self._backend == "db":
+            kb_ids = self._accessible_kb_ids(user_id) if user_id is not None else None
+            return db.lookup_document_by_title(title, user_id, kb_ids)
+        for d in self.all(user_id=user_id, with_chunks=False):
+            if d.get("title") == title:
+                return {
+                    "id": d["id"],
+                    "title": d["title"],
+                    "kb_id": d.get("kb_id"),
+                    "folder_id": d.get("folder_id"),
+                }
+        return None
+
     # ---------- 文件夹 ----------
 
     def list_folders(

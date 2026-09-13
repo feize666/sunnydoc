@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { setDocTags } from "@/lib/api";
+import { useState, useEffect, useMemo } from "react";
+import { setDocTags, listTags } from "@/lib/api";
 import { CloseIcon } from "./icons";
 
 export function TagsDialog({
@@ -20,24 +20,41 @@ export function TagsDialog({
   const [tags, setTags] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [suggestOpen, setSuggestOpen] = useState(false);
 
   useEffect(() => {
     if (open) {
       setTags(initialTags ?? []);
       setInput("");
+      setSuggestOpen(false);
+      listTags()
+        .then(setAllTags)
+        .catch(() => setAllTags([]));
     }
   }, [open, initialTags]);
 
+  // 输入时给出已有标签建议（排除已添加的）
+  const suggestions = useMemo(() => {
+    const kw = input.trim().toLowerCase();
+    if (!kw) return [];
+    return allTags
+      .filter((t) => t.toLowerCase().includes(kw) && !tags.includes(t))
+      .slice(0, 8);
+  }, [input, allTags, tags]);
+
   if (!open || !docId) return null;
 
-  const addTag = () => {
-    const t = input.trim().replace(/^#/, "");
+  const addTag = (raw?: string) => {
+    const t = (raw ?? input).trim().replace(/^#/, "");
     if (!t || tags.includes(t)) {
       setInput("");
+      setSuggestOpen(false);
       return;
     }
     setTags((prev) => [...prev, t]);
     setInput("");
+    setSuggestOpen(false);
   };
 
   const removeTag = (t: string) => {
@@ -89,21 +106,47 @@ export function TagsDialog({
                 </button>
               </span>
             ))}
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addTag();
-                } else if (e.key === "Backspace" && !input && tags.length > 0) {
-                  removeTag(tags[tags.length - 1]);
-                }
-              }}
-              placeholder={tags.length === 0 ? "输入标签后回车添加…" : "继续添加…"}
-              className="min-w-[80px] flex-1 bg-transparent text-[14px] text-text outline-none placeholder:text-faint"
-            />
+            <div className="relative flex min-w-[80px] flex-1 items-center">
+              <input
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  setSuggestOpen(true);
+                }}
+                onFocus={() => setSuggestOpen(true)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addTag();
+                  } else if (e.key === "Backspace" && !input && tags.length > 0) {
+                    removeTag(tags[tags.length - 1]);
+                  } else if (e.key === "Escape") {
+                    setSuggestOpen(false);
+                  }
+                }}
+                placeholder={tags.length === 0 ? "输入标签后回车添加…" : "继续添加…"}
+                className="w-full bg-transparent text-[14px] text-text outline-none placeholder:text-faint"
+              />
+            </div>
           </div>
+
+          {/* 已有标签自动补全建议 */}
+          {suggestOpen && suggestions.length > 0 && (
+            <div className="menu-panel relative z-20 mt-1 w-full">
+              <div className="px-2 py-1 text-[11px] text-faint">已有标签</div>
+              {suggestions.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => addTag(t)}
+                  className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[13px] text-text transition-colors hover:bg-hover"
+                >
+                  <span className="text-faint">#</span>
+                  {t}
+                </button>
+              ))}
+            </div>
+          )}
+
           <p className="mt-2 text-[12px] text-faint">回车添加标签，点击标签上的 × 移除</p>
 
           <button

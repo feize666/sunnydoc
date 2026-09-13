@@ -765,6 +765,18 @@ def delete_custom_provider(cp_id: str, admin: dict = Depends(require_admin)):
     return {"ok": True}
 
 
+@router.get("/documents/lookup")
+def lookup_document_by_title(title: str, current_user: dict = Depends(get_current_user)):
+    """按标题精确查找文档（双向链接 [[标题]] 跳转用）。"""
+    title = title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="标题不能为空")
+    doc = store.lookup_by_title(title, current_user["id"])
+    if doc is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    return doc
+
+
 @router.get("/search")
 def search_documents(
     q: str,
@@ -2171,16 +2183,24 @@ def ai_assist(req: AIAssistRequest, current_user: dict = Depends(get_current_use
 
 @router.get("/documents/{doc_id}/versions")
 def list_document_versions(doc_id: str, current_user: dict = Depends(get_current_user)):
-    """文档版本历史列表。"""
+    """文档版本历史列表（含版本内容，供查看/对比）。"""
     if store.get(doc_id, current_user["id"]) is None:
         raise HTTPException(status_code=404, detail="文档不存在")
     versions = store.list_versions(doc_id, current_user["id"])
     return {
         "versions": [
-            {"id": v["id"], "title": v["title"], "created_at": v["created_at"]}
+            {"id": v["id"], "title": v["title"], "created_at": v["created_at"], "text": v.get("text", "")}
             for v in versions
         ]
     }
+
+
+@router.get("/documents/{doc_id}/backlinks")
+def list_document_backlinks(doc_id: str, current_user: dict = Depends(get_current_user)):
+    """反向链接：返回正文中以 [[标题]] 引用本文档的其他文档。"""
+    if store.get(doc_id, current_user["id"]) is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    return {"backlinks": store.list_backlinks(doc_id, current_user["id"])}
 
 
 @router.post("/documents/{doc_id}/rollback/{version_id}")

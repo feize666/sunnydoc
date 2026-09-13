@@ -6,7 +6,7 @@ import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
 import { updateDocument } from "@/lib/api";
 import type { Doc } from "@/data/docs";
-import type { RecentDoc } from "@/lib/api";
+import type { RecentDoc, Backlink } from "@/lib/api";
 import { RichEditor } from "./RichEditor";
 import { TableEditor } from "./TableEditor";
 import { BoardEditor } from "./BoardEditor";
@@ -70,6 +70,8 @@ export function Editor({
   onOpenComments,
   onAnnotate,
   commentCount,
+  onOpenWikilink,
+  backlinks,
 }: {
   doc: Doc | null;
   loading?: boolean;
@@ -92,6 +94,8 @@ export function Editor({
   onOpenComments?: () => void;
   onAnnotate?: (quote: string) => void;
   commentCount?: number;
+  onOpenWikilink?: (title: string) => void;
+  backlinks?: Backlink[];
 }) {
   const [mode, setMode] = useState<Mode>("preview");
   const [draftTitle, setDraftTitle] = useState("");
@@ -519,10 +523,49 @@ export function Editor({
                 <div
                   ref={contentRef}
                   className="md-body mt-6"
-                  onClick={handleCodeBlockCopy}
+                  onClick={(e) => {
+                    handleCodeBlockCopy(e);
+                    const t = (e.target as HTMLElement).closest(".wikilink") as HTMLElement | null;
+                    if (t?.dataset.wikilink && onOpenWikilink) {
+                      onOpenWikilink(t.dataset.wikilink);
+                    }
+                  }}
                   onMouseUp={handleTextSelect}
                   dangerouslySetInnerHTML={{ __html: previewHtml }}
                 />
+              )}
+              {backlinks && backlinks.length > 0 && (
+                <div className="mt-10">
+                  <h2 className="flex items-center gap-2 text-[15px] font-semibold text-text">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                    </svg>
+                    反向链接
+                    <span className="rounded-full bg-surface-2 px-1.5 text-[11px] font-normal text-faint">
+                      {backlinks.length}
+                    </span>
+                  </h2>
+                  <ul className="mt-3 overflow-hidden rounded-lg border border-line bg-surface">
+                    {backlinks.map((b, i) => (
+                      <li key={b.id}>
+                        <button
+                          onClick={() => onOpenRecent?.(b.id, b.kb_id)}
+                          className="group flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-hover"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-faint">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <path d="M14 2v6h6" />
+                          </svg>
+                          <span className="min-w-0 flex-1 truncate text-[14px] text-text group-hover:text-accent">
+                            {b.title}
+                          </span>
+                        </button>
+                        {i < backlinks.length - 1 && <div className="border-b border-line" />}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </div>
           ) : (

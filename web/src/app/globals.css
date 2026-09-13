@@ -775,3 +775,24 @@ mark.search-hit {
   color: var(--muted);
   user-select: none;
 }
+
+/* 双向链接 [[文档名]] */
+.md-body .wikilink {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 4px;
+  padding: 0 4px;
+  cursor: pointer;
+  border-bottom: 1px dashed var(--accent);
+  transition: background 0.15s, color 0.15s;
+}
+.md-body .wikilink:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.md-body .wikilink.wikilink-broken {
+  color: var(--muted);
+  background: transparent;
+  border-bottom: 1px dashed var(--line-strong);
+  cursor: default;
+}

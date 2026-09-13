@@ -63,6 +63,8 @@ import {
   pinDocument,
   unpinDocument,
   generateSummary,
+  listBacklinks,
+  lookupDocumentByTitle,
   type DocMeta,
   type Folder,
   type Kb,
@@ -70,6 +72,7 @@ import {
   type SearchResult,
   type User,
   type Stats,
+  type Backlink,
 } from "@/lib/api";
 
 function formatTime(ts: number): string {
@@ -146,6 +149,7 @@ export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
   const [versionOpen, setVersionOpen] = useState(false);
+  const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [annotateQuote, setAnnotateQuote] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -693,6 +697,38 @@ export default function Home() {
     [openDoc],
   );
 
+  // 双向链接跳转：按标题精确查找文档并打开
+  const handleOpenWikilink = useCallback(
+    async (title: string) => {
+      const hit = await lookupDocumentByTitle(title);
+      if (hit) {
+        openRecent(hit.id, hit.kb_id ?? null);
+      } else {
+        alert(`未找到文档「${title}」，请确认标题是否正确`);
+      }
+    },
+    [openRecent],
+  );
+
+  // 加载反向链接（当前文档切换时）
+  useEffect(() => {
+    if (!activeKey) {
+      setBacklinks([]);
+      return;
+    }
+    let cancelled = false;
+    listBacklinks(activeKey)
+      .then((b) => {
+        if (!cancelled) setBacklinks(b);
+      })
+      .catch(() => {
+        if (!cancelled) setBacklinks([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeKey]);
+
   // 编辑知识库
   const handleEditKb = useCallback((kb: Kb) => {
     setEditingKb(kb);
@@ -985,6 +1021,8 @@ export default function Home() {
                     }
                   : undefined
               }
+              onOpenWikilink={handleOpenWikilink}
+              backlinks={activeKey ? backlinks : []}
             />
           </div>
 
@@ -1140,6 +1178,8 @@ export default function Home() {
       <VersionHistoryDialog
         open={versionOpen}
         docId={activeKey}
+        currentText={activeDoc?.body ?? ""}
+        theme={theme}
         onClose={() => setVersionOpen(false)}
         onRolledBack={refreshList}
       />
