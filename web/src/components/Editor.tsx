@@ -174,10 +174,17 @@ export function Editor({
     return () => clearTimeout(timer);
   }, [highlight, mode, previewHtml]);
 
-  // 切换文档时重置为预览模式（表格/画板/数据表默认进编辑态）
+  // 切换文档时重置为预览模式（表格/画板/数据表/流程图/思维导图默认进编辑态）
   useEffect(() => {
     const t = doc?.type ?? "doc";
-    setMode(["table", "board", "datasheet", "flowchart", "mindmap"].includes(t) ? "edit" : "preview");
+    const isEdit = ["table", "board", "datasheet", "flowchart", "mindmap"].includes(t);
+    setMode(isEdit ? "edit" : "preview");
+    // 直接进编辑态时，同步初始化草稿内容（否则编辑器收到空内容）
+    if (isEdit && doc) {
+      setDraftTitle(doc.title);
+      setDraft(doc.body);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc?.key, doc?.type]);
 
   // Ctrl/Cmd+S 保存
