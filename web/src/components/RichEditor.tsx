@@ -842,8 +842,8 @@ export function RichEditor({
 
   return (
     <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
-      {/* 格式工具栏（sticky 固定，向下滚动时不滚走） */}
-      <div className="sticky top-0 z-20 flex items-center gap-0.5 overflow-x-auto border-b border-line bg-background px-2 py-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {/* 格式工具栏（sticky 固定，向下滚动时不滚走；flex-wrap 换行避免横向滚动裁剪按钮） */}
+      <div className="sticky top-0 z-20 flex flex-wrap items-center gap-0.5 border-b border-line bg-background px-2 py-1.5">
         {/* 标题下拉 */}
         <Tooltip content="段落格式">
           <select
@@ -1155,7 +1155,7 @@ export function RichEditor({
           </Tooltip>
           {alignOpen && (
             <>
-              <div className="fixed inset-0 z-30" onClick={() => setAlignOpen(false)} />
+              <div className="fixed inset-0 z-10" onClick={() => setAlignOpen(false)} />
               <div className="menu-panel absolute left-0 top-full z-40 mt-1 flex gap-0.5 p-1">
                 <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { (editor.chain().focus() as any).setTextAlign("left").run(); setAlignOpen(false); }} className={`grid h-8 w-8 place-items-center rounded-md transition-colors ${editor.isActive({ textAlign: "left" }) ? "bg-active text-accent" : "text-muted hover:bg-hover hover:text-text"}`} title="左对齐">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h10M4 18h16" /></svg>
@@ -1239,7 +1239,7 @@ export function RichEditor({
           </Tooltip>
           {moreOpen && (
             <>
-              <div className="fixed inset-0 z-30" onClick={() => setMoreOpen(false)} />
+              <div className="fixed inset-0 z-10" onClick={() => setMoreOpen(false)} />
               <div className="menu-panel absolute right-0 top-full z-40 mt-1 w-40">
                 <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().toggleStrike().run(); setMoreOpen(false); }} className={`flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] transition-colors hover:bg-hover ${editor.isActive("strike") ? "text-accent" : "text-text"}`}>
                   <span className="w-4 text-center font-semibold leading-none line-through">S</span>删除线
@@ -1302,7 +1302,7 @@ export function RichEditor({
           </Tooltip>
           {aiMenuOpen && (
             <>
-              <div className="fixed inset-0 z-30" onClick={() => setAiMenuOpen(false)} />
+              <div className="fixed inset-0 z-10" onClick={() => setAiMenuOpen(false)} />
               <div className="menu-panel absolute right-0 top-full z-40 mt-1 w-32">
                 {AI_ACTIONS.map((a) => (
                   <button
