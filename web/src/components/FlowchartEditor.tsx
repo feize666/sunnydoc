@@ -22,11 +22,24 @@ import "@xyflow/react/dist/style.css";
 import { generateDiagram } from "@/lib/api";
 
 // —— 数据结构 ——
-type ShapeKind = "ellipse" | "rect" | "diamond" | "parallelogram" | "rounded";
+type ShapeKind =
+  | "ellipse"
+  | "rect"
+  | "diamond"
+  | "parallelogram"
+  | "rounded"
+  | "database"
+  | "manual"
+  | "delay"
+  | "preparation";
+
+type EdgeKind = "default" | "straight" | "step" | "smoothstep";
 
 interface FlowData {
   label: string;
   shape: ShapeKind;
+  fill?: string;
+  stroke?: string;
 }
 
 interface StoredNode {
@@ -35,6 +48,8 @@ interface StoredNode {
   shape: ShapeKind;
   x: number;
   y: number;
+  fill?: string;
+  stroke?: string;
 }
 interface StoredEdge {
   id: string;
@@ -58,6 +73,8 @@ function parseFlow(value: string): StoredFlow {
           shape: (n.shape as ShapeKind) || "rect",
           x: Number(n.x ?? n.position?.x ?? 0),
           y: Number(n.y ?? n.position?.y ?? 0),
+          fill: n.fill,
+          stroke: n.stroke,
         })),
         edges: Array.isArray(p.edges)
           ? p.edges.map((e: any, i: number) => ({
@@ -75,13 +92,27 @@ function parseFlow(value: string): StoredFlow {
   return { nodes: [], edges: [] };
 }
 
-const SHAPES: { kind: ShapeKind; label: string; icon: React.ReactNode }[] = [
-  { kind: "ellipse", label: "起止", icon: <ellipse cx="8" cy="8" rx="6" ry="4" fill="none" stroke="currentColor" strokeWidth="1.5" /> },
-  { kind: "rect", label: "处理", icon: <rect x="2" y="3" width="12" height="10" rx="1" fill="none" stroke="currentColor" strokeWidth="1.5" /> },
-  { kind: "diamond", label: "判断", icon: <path d="M8 1 15 8 8 15 1 8Z" fill="none" stroke="currentColor" strokeWidth="1.5" /> },
-  { kind: "parallelogram", label: "输入/输出", icon: <path d="M3 3h8l2 10H5Z" fill="none" stroke="currentColor" strokeWidth="1.5" /> },
-  { kind: "rounded", label: "文档", icon: <rect x="2" y="2" width="12" height="12" rx="4" fill="none" stroke="currentColor" strokeWidth="1.5" /> },
+const SHAPES: { kind: ShapeKind; label: string; icon: string }[] = [
+  { kind: "ellipse", label: "起止", icon: "M8 3 A5 5 0 1 1 8 13 A5 5 0 1 1 8 3" },
+  { kind: "rect", label: "处理", icon: "M2 3h12v10H2z" },
+  { kind: "diamond", label: "判断", icon: "M8 1 15 8 8 15 1 8Z" },
+  { kind: "parallelogram", label: "输入/输出", icon: "M3 3h8l2 10H5Z" },
+  { kind: "rounded", label: "文档", icon: "M2 2h12v12H2z" },
+  { kind: "database", label: "数据库", icon: "M8 1c3 0 6 1.5 6 3.5S11 8 8 8 2 6.5 2 4.5 5 1 8 1Zm-6 3.5V12c0 2 3 3.5 6 3.5s6-1.5 6-3.5V4.5" },
+  { kind: "manual", label: "手动操作", icon: "M2 3h10l2 10H2z" },
+  { kind: "delay", label: "延迟", icon: "M6 3h7a3 3 0 0 1 0 10H6Z" },
+  { kind: "preparation", label: "准备", icon: "M3 8 8 3l5 5-5 5Z" },
 ];
+
+const EDGE_KINDS: { kind: EdgeKind; label: string }[] = [
+  { kind: "default", label: "曲线" },
+  { kind: "straight", label: "直线" },
+  { kind: "step", label: "正交" },
+  { kind: "smoothstep", label: "圆角正交" },
+];
+
+const FILL_COLORS = ["#ffffff", "#fee2e2", "#fef3c7", "#dcfce7", "#dbeafe", "#f3e8ff", "#e0f2fe", "#ffe4e6"];
+const STROKE_COLORS = ["#78716c", "#ef4444", "#f97316", "#22c55e", "#3b82f6", "#a855f7", "#0ea5e9", "#ec4899"];
 
 let nodeSeq = 0;
 function genId(prefix: string): string {
@@ -107,6 +138,22 @@ function shapePath(shape: ShapeKind, w: number, h: number): string {
       const r = 16;
       return `M ${r} 0 H ${w - r} Q ${w} 0 ${w} ${r} V ${h - r} Q ${w} ${h} ${w - r} ${h} H ${r} Q 0 ${h} 0 ${h - r} V ${r} Q 0 0 ${r} 0 Z`;
     }
+    case "database": {
+      const r = h / 4;
+      return `M 0 ${r} A ${w / 2} ${r} 0 0 1 ${w} ${r} L ${w} ${h - r} A ${w / 2} ${r} 0 0 1 0 ${h - r} Z`;
+    }
+    case "manual": {
+      const s = 18;
+      return `M 0 0 L ${w} 0 L ${w - s} ${h} L 0 ${h} Z`;
+    }
+    case "delay": {
+      const r = h / 2;
+      return `M ${r} 0 L ${w - r} 0 A ${r} ${r} 0 0 1 ${w - r} ${h} L ${r} ${h} Z`;
+    }
+    case "preparation": {
+      const s = 22;
+      return `M ${s} 0 L ${w - s} 0 L ${w} ${h / 2} L ${w - s} ${h} L ${s} ${h} L 0 ${h / 2} Z`;
+    }
     default:
       return `M 0 0 H ${w} V ${h} H 0 Z`;
   }
@@ -116,15 +163,12 @@ function ShapeNode({ data, selected }: NodeProps) {
   const d = data as unknown as FlowData;
   const w = NODE_W;
   const h = NODE_H;
+  const fill = d.fill || (selected ? "var(--accent-soft)" : "var(--background)");
+  const stroke = d.stroke || (selected ? "var(--accent)" : "var(--line-strong)");
   return (
     <div style={{ width: w, height: h }} className="relative">
       <svg width={w} height={h} className="overflow-visible">
-        <path
-          d={shapePath(d.shape, w, h)}
-          fill={selected ? "var(--accent-soft)" : "var(--background)"}
-          stroke={selected ? "var(--accent)" : "var(--line-strong)"}
-          strokeWidth={selected ? 2 : 1.5}
-        />
+        <path d={shapePath(d.shape, w, h)} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.5} />
         <text
           x={w / 2}
           y={h / 2}
@@ -146,11 +190,6 @@ function ShapeNode({ data, selected }: NodeProps) {
 }
 
 const nodeTypes = { shape: ShapeNode };
-
-const defaultEdgeOptions = {
-  markerEnd: { type: MarkerType.ArrowClosed, color: "var(--line-strong)" },
-  style: { stroke: "var(--line-strong)", strokeWidth: 1.5 },
-};
 
 // AI 生成后按拓扑简单分层布局
 function autoLayout(nodes: StoredNode[], edges: StoredEdge[]): void {
@@ -177,7 +216,6 @@ function autoLayout(nodes: StoredNode[], edges: StoredEdge[]): void {
     for (const t of out[id] || []) queue.push(t);
   }
   for (const n of nodes) if (!visited.has(n.id)) order.push(n.id);
-  // 分层：每层 4 个
   const COLS = 4;
   order.forEach((id, i) => {
     const n = nodes.find((x) => x.id === id);
@@ -200,7 +238,7 @@ export function FlowchartEditor({
       id: n.id,
       type: "shape",
       position: { x: n.x, y: n.y },
-      data: { label: n.label, shape: n.shape },
+      data: { label: n.label, shape: n.shape, fill: n.fill, stroke: n.stroke },
     })),
   );
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(
@@ -211,6 +249,7 @@ export function FlowchartEditor({
       label: e.label || undefined,
     })),
   );
+  const [edgeKind, setEdgeKind] = useState<EdgeKind>("default");
   const [mounted, setMounted] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [aiText, setAiText] = useState("");
@@ -218,15 +257,33 @@ export function FlowchartEditor({
 
   useEffect(() => setMounted(true), []);
 
+  const defaultEdgeOptions = useMemo(
+    () => ({
+      type: edgeKind,
+      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--line-strong)" },
+      style: { stroke: "var(--line-strong)", strokeWidth: 1.5 },
+      labelStyle: { fill: "var(--text)", fontSize: 12, fontWeight: 500 },
+      labelBgStyle: { fill: "var(--background)", fillOpacity: 0.9 },
+      labelBgPadding: [6, 3] as [number, number],
+      labelBgBorderRadius: 4,
+    }),
+    [edgeKind],
+  );
+
   const commit = useCallback(() => {
     const stored: StoredFlow = {
-      nodes: nodes.map((n) => ({
-        id: n.id,
-        label: (n.data as unknown as FlowData).label,
-        shape: (n.data as unknown as FlowData).shape,
-        x: n.position.x,
-        y: n.position.y,
-      })),
+      nodes: nodes.map((n) => {
+        const d = n.data as unknown as FlowData;
+        return {
+          id: n.id,
+          label: d.label,
+          shape: d.shape,
+          x: n.position.x,
+          y: n.position.y,
+          fill: d.fill,
+          stroke: d.stroke,
+        };
+      }),
       edges: edges.map((e) => ({
         id: e.id,
         source: e.source,
@@ -237,7 +294,6 @@ export function FlowchartEditor({
     onChange(JSON.stringify(stored));
   }, [nodes, edges, onChange]);
 
-  // 每次 nodes/edges 变化后持久化（延迟，避免拖拽时频繁写）
   useEffect(() => {
     if (!mounted) return;
     const t = setTimeout(commit, 200);
@@ -274,21 +330,46 @@ export function FlowchartEditor({
     setNodes((nds) => nds.map((x) => (x.id === id ? { ...x, data: { ...x.data, label: next || cur } } : x)));
   };
 
+  const editEdgeLabel = (id: string) => {
+    const e = edges.find((x) => x.id === id);
+    if (!e) return;
+    const cur = typeof e.label === "string" ? e.label : "";
+    const next = window.prompt("连线文字", cur);
+    if (next == null) return;
+    setEdges((eds) => eds.map((x) => (x.id === id ? { ...x, label: next } : x)));
+  };
+
   const deleteSelected = () => {
     const sel = nodes.filter((n) => n.selected);
-    if (sel.length === 0) {
-      alert("请先点击选中要删除的节点（或框选多个）");
+    const selEdges = edges.filter((e) => e.selected);
+    if (sel.length === 0 && selEdges.length === 0) {
+      alert("请先点击选中要删除的节点或连线");
       return;
     }
     const ids = new Set(sel.map((n) => n.id));
     setNodes((nds) => nds.filter((n) => !ids.has(n.id)));
-    setEdges((eds) => eds.filter((e) => !ids.has(e.source) && !ids.has(e.target)));
+    setEdges((eds) => eds.filter((e) => !ids.has(e.source) && !ids.has(e.target) && !selEdges.includes(e)));
   };
 
   const clearAll = () => {
     if (!window.confirm("清空整个流程图？")) return;
     setNodes([]);
     setEdges([]);
+  };
+
+  const selectedNodes = nodes.filter((n) => n.selected);
+  const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
+
+  const setFill = (color: string) => {
+    if (!selectedNode) return;
+    const id = selectedNode.id;
+    setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, fill: color || undefined } } : n)));
+  };
+
+  const setStroke = (color: string) => {
+    if (!selectedNode) return;
+    const id = selectedNode.id;
+    setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, stroke: color || undefined } } : n)));
   };
 
   const runAi = async () => {
@@ -328,18 +409,66 @@ export function FlowchartEditor({
     <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
       {/* 工具栏 */}
       <div className="flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
-        <span className="text-[11px] text-faint">形状：</span>
+        <span className="text-[11px] text-faint">形状</span>
         {SHAPES.map((s) => (
           <button
             key={s.kind}
             onClick={() => addNode(s.kind)}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
+            className="grid h-8 w-8 place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-text"
             title={`添加 ${s.label}`}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16">{s.icon}</svg>
-            {s.label}
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d={s.icon} />
+            </svg>
           </button>
         ))}
+
+        <span className="mx-1 h-4 w-px bg-line" />
+
+        <span className="text-[11px] text-faint">连线</span>
+        {EDGE_KINDS.map((k) => (
+          <button
+            key={k.kind}
+            onClick={() => setEdgeKind(k.kind)}
+            className={`rounded-md px-2 py-1 text-xs transition-colors ${
+              edgeKind === k.kind ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
+            }`}
+          >
+            {k.label}
+          </button>
+        ))}
+
+        {selectedNode && (
+          <>
+            <span className="mx-1 h-4 w-px bg-line" />
+            <span className="text-[11px] text-faint">填充</span>
+            {FILL_COLORS.map((c) => (
+              <button
+                key={c}
+                onClick={() => setFill(c)}
+                className="h-5 w-5 rounded border border-black/10 transition-transform hover:scale-110"
+                style={{ backgroundColor: c }}
+              />
+            ))}
+            <button onClick={() => setFill("")} className="grid h-5 w-5 place-items-center rounded border border-line text-faint hover:text-text" title="无填充">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+            </button>
+            <span className="mx-1 h-4 w-px bg-line" />
+            <span className="text-[11px] text-faint">边框</span>
+            {STROKE_COLORS.map((c) => (
+              <button
+                key={c}
+                onClick={() => setStroke(c)}
+                className="h-5 w-5 rounded-full border border-black/10 transition-transform hover:scale-110"
+                style={{ backgroundColor: c }}
+              />
+            ))}
+            <button onClick={() => setStroke("")} className="grid h-5 w-5 place-items-center rounded-full border border-line text-faint hover:text-text" title="默认边框">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+            </button>
+          </>
+        )}
+
         <span className="mx-1 h-4 w-px bg-line" />
         <button onClick={deleteSelected} className="rounded-md px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger-soft">
           删除选中
@@ -348,6 +477,7 @@ export function FlowchartEditor({
           清空
         </button>
         <span className="ml-auto flex items-center gap-1">
+          <span className="hidden text-[11px] text-faint lg:inline">双击节点/连线改文字</span>
           <button
             onClick={() => setAiOpen(true)}
             className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
@@ -393,6 +523,7 @@ export function FlowchartEditor({
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onNodeDoubleClick={(_, node) => editLabel(node.id)}
+          onEdgeDoubleClick={(_, edge) => editEdgeLabel(edge.id)}
           nodeTypes={nodeTypes}
           defaultEdgeOptions={defaultEdgeOptions}
           fitView
