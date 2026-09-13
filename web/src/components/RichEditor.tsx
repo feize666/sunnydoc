@@ -23,7 +23,6 @@ import {
   ChevronUpIcon,
   ChevronDownIcon,
   CloseIcon,
-  TranslateIcon,
   FormatPaintIcon,
   ClearFormatIcon,
   IndentIcon,
@@ -357,11 +356,12 @@ export function RichEditor({
   const [findIdx, setFindIdx] = useState(0);
   // 格式刷：暂存复制的 marks（null 表示未启用）
   const [painterMarks, setPainterMarks] = useState<Record<string, unknown> | null>(null);
-  // 翻译进行中
-  const [translating, setTranslating] = useState(false);
   // AI 写作菜单 + 操作进行中
   const [aiMenuOpen, setAiMenuOpen] = useState(false);
   const [aiBusy, setAiBusy] = useState<string | null>(null);
+  // 「更多」下拉 + 对齐下拉
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [alignOpen, setAlignOpen] = useState(false);
 
   const editor = useEditor({
     extensions: [
@@ -811,24 +811,6 @@ export function RichEditor({
     setPainterMarks(Object.keys(m).length ? m : null);
   };
 
-  // 翻译：选中文字，智能中英互译并原地替换
-  const translate = async () => {
-    const { from, to } = editor.state.selection;
-    if (from === to) return;
-    const text = editor.state.doc.textBetween(from, to, " ");
-    if (!text.trim()) return;
-    setTranslating(true);
-    try {
-      const hasCjk = /[\u4e00-\u9fff]/.test(text);
-      const result = await aiAssist(hasCjk ? "translate_en" : "translate_zh", text);
-      editor.chain().focus().insertContentAt({ from, to }, result).run();
-    } catch (e) {
-      alert(`翻译失败：${e instanceof Error ? e.message : "未知错误"}`);
-    } finally {
-      setTranslating(false);
-    }
-  };
-
   // 清除格式：移除所有 marks，段落/标题降为正文
   const clearFormat = () => {
     editor.chain().focus().unsetAllMarks().clearNodes().run();
@@ -887,9 +869,6 @@ export function RichEditor({
         </ToolBtn>
         <ToolBtn title="下划线" shortcut="⌘U" onClick={() => editor.chain().focus().toggleMark("underline").run()} active={editor.isActive("underline")}>
           <span className="text-[16px] leading-none underline underline-offset-2">U</span>
-        </ToolBtn>
-        <ToolBtn title="删除线" shortcut="⌘⇧X" onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive("strike")}>
-          <span className="text-[16px] leading-none line-through">S</span>
         </ToolBtn>
         <ToolBtn title="行内代码" shortcut="⌘E" tone="text-accent" onClick={() => editor.chain().focus().toggleCode().run()} active={editor.isActive("code")}>
           <CodeIcon size={16} />
@@ -1074,10 +1053,6 @@ export function RichEditor({
             </select>
           </Tooltip>
         )}
-        <ToolBtn title="分割线" onClick={() => editor.chain().focus().setHorizontalRule().run()}>
-          <MinusIcon size={17} />
-        </ToolBtn>
-
         <ToolDivider />
 
         <div className="relative shrink-0">
@@ -1157,42 +1132,44 @@ export function RichEditor({
             </div>
           )}
         </div>
-        <ToolBtn title="表格" tone="text-accent" onClick={insertTable}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="1" />
-            <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
-          </svg>
-        </ToolBtn>
-        <ToolBtn title="任务列表" tone="text-success" onClick={() => editor.chain().focus().toggleTaskList().run()} active={editor.isActive("taskList")}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="5" width="14" height="14" rx="2" />
-            <path d="M6 12l3 3 5-6" />
-          </svg>
-        </ToolBtn>
-
-        <ToolDivider />
-
-        <ToolBtn title="左对齐" onClick={() => (editor.chain().focus() as any).setTextAlign("left").run()} active={editor.isActive({ textAlign: "left" })}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M4 6h16M4 12h10M4 18h16" />
-          </svg>
-        </ToolBtn>
-        <ToolBtn title="居中对齐" onClick={() => (editor.chain().focus() as any).setTextAlign("center").run()} active={editor.isActive({ textAlign: "center" })}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M4 6h16M8 12h8M4 18h16" />
-          </svg>
-        </ToolBtn>
-        <ToolBtn title="右对齐" onClick={() => (editor.chain().focus() as any).setTextAlign("right").run()} active={editor.isActive({ textAlign: "right" })}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M4 6h16M14 12h6M4 18h16" />
-          </svg>
-        </ToolBtn>
-        <ToolBtn title="增加缩进" onClick={() => editor.chain().focus().sinkListItem("listItem").run()} active={false}>
-          <IndentIcon size={17} />
-        </ToolBtn>
-        <ToolBtn title="减少缩进" onClick={() => editor.chain().focus().liftListItem("listItem").run()} active={false}>
-          <OutdentIcon size={17} />
-        </ToolBtn>
+        {/* 对齐 */}
+        <div className="relative shrink-0">
+          <Tooltip content="对齐方式">
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setAlignOpen((v) => !v)}
+              className={`flex h-9 min-w-[34px] items-center justify-center rounded-md px-2 transition-colors ${
+                alignOpen || editor.isActive({ textAlign: "left" }) || editor.isActive({ textAlign: "center" }) || editor.isActive({ textAlign: "right" })
+                  ? "bg-active text-accent"
+                  : "text-muted hover:bg-hover hover:text-text"
+              }`}
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M4 6h16M4 12h10M4 18h16" />
+              </svg>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="ml-0.5 opacity-60">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+          </Tooltip>
+          {alignOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setAlignOpen(false)} />
+              <div className="menu-panel absolute left-0 top-full z-40 mt-1 flex gap-0.5 p-1">
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { (editor.chain().focus() as any).setTextAlign("left").run(); setAlignOpen(false); }} className={`grid h-8 w-8 place-items-center rounded-md transition-colors ${editor.isActive({ textAlign: "left" }) ? "bg-active text-accent" : "text-muted hover:bg-hover hover:text-text"}`} title="左对齐">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h10M4 18h16" /></svg>
+                </button>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { (editor.chain().focus() as any).setTextAlign("center").run(); setAlignOpen(false); }} className={`grid h-8 w-8 place-items-center rounded-md transition-colors ${editor.isActive({ textAlign: "center" }) ? "bg-active text-accent" : "text-muted hover:bg-hover hover:text-text"}`} title="居中对齐">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M8 12h8M4 18h16" /></svg>
+                </button>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { (editor.chain().focus() as any).setTextAlign("right").run(); setAlignOpen(false); }} className={`grid h-8 w-8 place-items-center rounded-md transition-colors ${editor.isActive({ textAlign: "right" }) ? "bg-active text-accent" : "text-muted hover:bg-hover hover:text-text"}`} title="右对齐">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M14 12h6M4 18h16" /></svg>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
 
         {/* 表格行列操作（仅光标在表格内时显示） */}
         {findTable() && (
@@ -1242,21 +1219,64 @@ export function RichEditor({
           </svg>
         </ToolBtn>
 
-        <ToolDivider />
+        {/* 更多 */}
+        <div className="relative shrink-0">
+          <Tooltip content="更多">
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setMoreOpen((v) => !v)}
+              className={`flex h-9 min-w-[34px] shrink-0 items-center justify-center rounded-md px-2 transition-colors ${
+                moreOpen ? "bg-active text-accent" : "text-muted hover:bg-hover hover:text-text"
+              }`}
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="5" cy="12" r="1.6" />
+                <circle cx="12" cy="12" r="1.6" />
+                <circle cx="19" cy="12" r="1.6" />
+              </svg>
+            </button>
+          </Tooltip>
+          {moreOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setMoreOpen(false)} />
+              <div className="menu-panel absolute right-0 top-full z-40 mt-1 w-40">
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().toggleStrike().run(); setMoreOpen(false); }} className={`flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] transition-colors hover:bg-hover ${editor.isActive("strike") ? "text-accent" : "text-text"}`}>
+                  <span className="w-4 text-center font-semibold leading-none line-through">S</span>删除线
+                </button>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().toggleTaskList().run(); setMoreOpen(false); }} className={`flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] transition-colors hover:bg-hover ${editor.isActive("taskList") ? "text-accent" : "text-text"}`}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><rect x="3" y="5" width="14" height="14" rx="2" /><path d="M6 12l3 3 5-6" /></svg>任务列表
+                </button>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { insertTable(); setMoreOpen(false); }} className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] text-text transition-colors hover:bg-hover">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><rect x="3" y="3" width="18" height="18" rx="1" /><path d="M3 9h18M3 15h18M9 3v18M15 3v18" /></svg>插入表格
+                </button>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().setHorizontalRule().run(); setMoreOpen(false); }} className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] text-text transition-colors hover:bg-hover">
+                  <MinusIcon size={15} />分割线
+                </button>
 
-        <ToolBtn title="格式刷" tone="text-accent" onClick={copyFormat} active={painterMarks !== null}>
-          <FormatPaintIcon size={17} />
-        </ToolBtn>
-        <ToolBtn title="清除格式" onClick={clearFormat}>
-          <ClearFormatIcon size={17} />
-        </ToolBtn>
-        <ToolBtn title="翻译（中英互译）" tone="text-success" onClick={translate} disabled={translating}>
-          {translating ? (
-            <span className="animate-pulse text-[12px] leading-none">…</span>
-          ) : (
-            <TranslateIcon size={17} />
+                <div className="my-1 border-t border-line" />
+
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().sinkListItem("listItem").run(); setMoreOpen(false); }} className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] text-text transition-colors hover:bg-hover">
+                  <IndentIcon size={15} />增加缩进
+                </button>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().liftListItem("listItem").run(); setMoreOpen(false); }} className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] text-text transition-colors hover:bg-hover">
+                  <OutdentIcon size={15} />减少缩进
+                </button>
+
+                <div className="my-1 border-t border-line" />
+
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { copyFormat(); setMoreOpen(false); }} className={`flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] transition-colors hover:bg-hover ${painterMarks ? "text-accent" : "text-text"}`}>
+                  <FormatPaintIcon size={15} />格式刷
+                </button>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { clearFormat(); setMoreOpen(false); }} className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] text-text transition-colors hover:bg-hover">
+                  <ClearFormatIcon size={15} />清除格式
+                </button>
+              </div>
+            </>
           )}
-        </ToolBtn>
+        </div>
+
+        <ToolDivider />
 
         {/* AI 写作 */}
         <div className="relative shrink-0">
