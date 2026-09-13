@@ -13,7 +13,7 @@ interface MindNode {
   collapsed?: boolean;
 }
 
-type LayoutMode = "logic" | "org" | "timeline";
+type LayoutMode = "logic" | "org" | "timeline" | "fishbone" | "tree";
 
 const NODE_H = 40;
 const GAP = 90; // 父子节点间距
@@ -46,6 +46,9 @@ interface LayoutItem {
   y: number;
   w: number;
   h: number;
+  anchorX?: number; // 鱼骨图：连线起点 x（主干锚点或父节点中心）
+  anchorY?: number; // 鱼骨图：连线起点 y
+  spineEndX?: number; // 鱼骨图：主干（鱼脊）右端 x（鱼头处）
 }
 
 // 时间轴布局：根在最左，一级子节点水平排成主干，二级及以下垂直挂在各自父节点下方
@@ -110,9 +113,147 @@ function layoutTimeline(nodes: MindNode[]): Record<string, LayoutItem> {
   return pos;
 }
 
+// 鱼骨图（因果分析图）：水平主干（鱼脊）在 y=0，根（鱼头/问题）在最右；
+// 一级主因沿主干上下交替伸出斜分支，二级及更深沿父节点外侧方向继续排开。
+function layoutFishbone(nodes: MindNode[]): Record<string, LayoutItem> {
+  const map: Record<string, MindNode> = {};
+  const kids: Record<string, string[]> = {};
+  for (const n of nodes) {
+    map[n.id] = n;
+    kids[n.id] = kids[n.id] || [];
+  }
+  for (const n of nodes) {
+    if (n.parent && map[n.parent]) kids[n.parent].push(n.id);
+  }
+  const roots = nodes.filter((n) => !n.parent || !map[n.parent]).map((n) => n.id);
+  const widthOf = (id: string) => estimateWidth(map[id]?.text || "");
+  const pos: Record<string, LayoutItem> = {};
+
+  const level1: string[] = [];
+  for (const r of roots) level1.push(...(kids[r] || []));
+
+  const slant = 78; // 一级主因相对主干的垂直偏移
+  const stepGap = 36; // 同侧相邻分支的水平额外间距
+  let upCursor = 0;
+  let downCursor = 0;
+  let maxRight = 0;
+
+  level1.forEach((id, i) => {
+    const up = i % 2 === 0; // 上下交替
+    const sign = up ? -1 : 1;
+    const w = widthOf(id);
+    const attachX = up ? upCursor : downCursor; // 同侧独立游标，避免重叠
+    const cx = attachX + 44;
+    const cy = sign * slant;
+    pos[id] = { x: cx - w / 2, y: cy - NODE_H / 2, w, h: NODE_H, anchorX: attachX, anchorY: 0 };
+    const step = w + stepGap;
+    if (up) upCursor += step;
+    else downCursor += step;
+    maxRight = Math.max(maxRight, cx + w / 2);
+
+    // 二级及更深：沿父节点外侧方向继续排开（x 略向右错，y 继续向外）
+    let frontier: { id: string; cx: number; cy: number; sign: number }[] = [{ id, cx, cy, sign }];
+    while (frontier.length) {
+      const next: { id: string; cx: number; cy: number; sign: number }[] = [];
+      for (const f of frontier) {
+        let yy = f.cy + f.sign * (NODE_H + 16);
+        for (const cid of kids[f.id] || []) {
+          const cw = widthOf(cid);
+          const ccx = f.cx + 8;
+          const ccy = yy;
+          pos[cid] = { x: ccx - cw / 2, y: ccy - NODE_H / 2, w: cw, h: NODE_H, anchorX: f.cx, anchorY: f.cy };
+          next.push({ id: cid, cx: ccx, cy: ccy, sign: f.sign });
+          yy += f.sign * (NODE_H + 12);
+          maxRight = Math.max(maxRight, ccx + cw / 2);
+        }
+      }
+      frontier = next;
+    }
+  });
+
+  // 鱼头（根）放在主干右端；多根时竖向堆叠
+  roots.forEach((r, ri) => {
+    const w = widthOf(r);
+    const ry = roots.length > 1 ? (ri - (roots.length - 1) / 2) * (NODE_H + V_GAP) : 0;
+    const rx = maxRight + GAP;
+    pos[r] = { x: rx, y: ry - NODE_H / 2, w, h: NODE_H, spineEndX: rx + w / 2 };
+  });
+
+  // 孤儿节点兜底
+  let gy = 0;
+  for (const n of nodes) {
+    if (!pos[n.id]) {
+      pos[n.id] = { x: 0, y: gy, w: widthOf(n.id), h: NODE_H };
+      gy += NODE_H + V_GAP;
+    }
+  }
+  return pos;
+}
+
+// 树形图：根在顶部居中，子节点向下分层、左右对称；连线用直角折线。
+function layoutTree(nodes: MindNode[]): Record<string, LayoutItem> {
+  const map: Record<string, MindNode> = {};
+  const kids: Record<string, string[]> = {};
+  for (const n of nodes) {
+    map[n.id] = n;
+    kids[n.id] = kids[n.id] || [];
+  }
+  for (const n of nodes) {
+    if (n.parent && map[n.parent]) kids[n.parent].push(n.id);
+  }
+  const roots = nodes.filter((n) => !n.parent || !map[n.parent]).map((n) => n.id);
+  const pos: Record<string, LayoutItem> = {};
+  const widthOf = (id: string) => estimateWidth(map[id]?.text || "");
+  const TREE_VGAP = 12; // 比 org 的 V_GAP 更紧凑
+
+  const spanOf = (id: string): number => {
+    const ks = kids[id] || [];
+    if (ks.length === 0) return widthOf(id) + TREE_VGAP;
+    let total = 0;
+    for (const k of ks) total += spanOf(k);
+    return total;
+  };
+
+  const place = (id: string, xLeft: number, y: number): void => {
+    const w = widthOf(id);
+    const ks = kids[id] || [];
+    if (ks.length === 0) {
+      pos[id] = { x: xLeft, y, w, h: NODE_H };
+      return;
+    }
+    let cursor = xLeft;
+    const centers: number[] = [];
+    for (const k of ks) {
+      place(k, cursor, y + NODE_H + TREE_VGAP);
+      centers.push(pos[k].x + pos[k].w / 2);
+      cursor += spanOf(k);
+    }
+    // 父节点 x = 子树水平中心 - 自身宽度/2（完全左右对称居中）
+    pos[id] = { x: (centers[0] + centers[centers.length - 1]) / 2 - w / 2, y, w, h: NODE_H };
+  };
+
+  let cursor = 0;
+  for (const r of roots) {
+    place(r, cursor, 0);
+    cursor += spanOf(r);
+  }
+
+  // 孤儿节点兜底
+  let gy = 0;
+  for (const n of nodes) {
+    if (!pos[n.id]) {
+      pos[n.id] = { x: 0, y: gy, w: widthOf(n.id), h: NODE_H };
+      gy += NODE_H + V_GAP;
+    }
+  }
+  return pos;
+}
+
 // 树形布局（logic 从左到右 / org 从上到下），只对传入的可见节点布局
 function layout(nodes: MindNode[], mode: LayoutMode): Record<string, LayoutItem> {
   if (mode === "timeline") return layoutTimeline(nodes);
+  if (mode === "fishbone") return layoutFishbone(nodes);
+  if (mode === "tree") return layoutTree(nodes);
   const map: Record<string, MindNode> = {};
   const kids: Record<string, string[]> = {};
   for (const n of nodes) {
@@ -663,6 +804,12 @@ export function MindMapEditor({
         <button onClick={() => { setLayoutMode("timeline"); setView(null); }} className={toolBtn(layoutMode === "timeline")} title="时间轴（左到右）">
           时间轴
         </button>
+        <button onClick={() => { setLayoutMode("fishbone"); setView(null); }} className={toolBtn(layoutMode === "fishbone")} title="鱼骨图（因果分析图）">
+          鱼骨图
+        </button>
+        <button onClick={() => { setLayoutMode("tree"); setView(null); }} className={toolBtn(layoutMode === "tree")} title="树形图（向下分类树）">
+          树形图
+        </button>
 
         <span className="mx-1 h-4 w-px bg-line" />
 
@@ -766,14 +913,38 @@ export function MindMapEditor({
       >
         <svg width="100%" height="100%">
           <g transform={`translate(${v.x},${v.y}) scale(${v.k})`}>
-            {/* 连线 */}
+            {/* 连线（按布局区分线型） */}
             {visibleNodes.map((n) => {
               if (!n.parent) return null;
               const p = pos[n.parent];
               const c = pos[n.id];
               if (!p || !c) return null;
-              let d = "";
+
+              // 鱼骨图：斜直线（从主干锚点或父节点中心到子节点中心）
+              if (layoutMode === "fishbone") {
+                const ax = c.anchorX ?? p.x + p.w / 2;
+                const ay = c.anchorY ?? p.y + NODE_H / 2;
+                const bx = c.x + c.w / 2;
+                const by = c.y + NODE_H / 2;
+                const d = `M ${ax} ${ay} L ${bx} ${by}`;
+                return <path key={`e-${n.id}`} d={d} fill="none" stroke="var(--line-strong)" strokeWidth={1.5} />;
+              }
+
+              // 树形图：直角折线（父下边中点 → 竖直 → 水平 → 子上边中点）
+              if (layoutMode === "tree") {
+                const sx = p.x + p.w / 2;
+                const sy = p.y + NODE_H;
+                const ex = c.x + c.w / 2;
+                const ey = c.y;
+                const my = (sy + ey) / 2;
+                const d = `M ${sx} ${sy} V ${my} H ${ex} V ${ey}`;
+                return <path key={`e-${n.id}`} d={d} fill="none" stroke="var(--line-strong)" strokeWidth={1.5} />;
+              }
+
+              // logic / org / timeline：贝塞尔曲线
+              // logic 用水平贝塞尔；org 与 timeline 二级用垂直贝塞尔
               const vertical = c.y > p.y + NODE_H - 1;
+              let d = "";
               if (vertical) {
                 const sx = p.x + p.w / 2;
                 const sy = p.y + NODE_H;
@@ -791,6 +962,16 @@ export function MindMapEditor({
               }
               return <path key={`e-${n.id}`} d={d} fill="none" stroke="var(--line-strong)" strokeWidth={1.5} />;
             })}
+
+            {/* 鱼骨图主干（鱼脊）：从 x=0 到鱼头处 */}
+            {layoutMode === "fishbone" &&
+              (() => {
+                let spineEndX = 0;
+                for (const it of Object.values(pos)) if (it.spineEndX) spineEndX = Math.max(spineEndX, it.spineEndX);
+                return (
+                  <line x1={0} y1={0} x2={spineEndX} y2={0} stroke="var(--line-strong)" strokeWidth={3} strokeLinecap="round" />
+                );
+              })()}
             {/* 节点 */}
             {visibleNodes.map((n) => {
               const p = pos[n.id];

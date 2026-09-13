@@ -117,6 +117,17 @@ const EDGE_KINDS: { kind: EdgeKind; label: string }[] = [
 const FILL_COLORS = ["#ffffff", "#fee2e2", "#fef3c7", "#dcfce7", "#dbeafe", "#f3e8ff", "#e0f2fe", "#ffe4e6"];
 const STROKE_COLORS = ["#78716c", "#ef4444", "#f97316", "#22c55e", "#3b82f6", "#a855f7", "#0ea5e9", "#ec4899"];
 
+// —— 整图主题（一键换色，全部用十六进制，不使用 CSS 变量）——
+const THEMES: { name: string; nodeFill: string; nodeStroke: string; edgeColor: string }[] = [
+  { name: "默认蓝", nodeFill: "#dbeafe", nodeStroke: "#3b82f6", edgeColor: "#3b82f6" },
+  { name: "商务灰", nodeFill: "#f1f5f9", nodeStroke: "#64748b", edgeColor: "#64748b" },
+  { name: "科技青", nodeFill: "#cffafe", nodeStroke: "#06b6d4", edgeColor: "#06b6d4" },
+  { name: "暖橙", nodeFill: "#ffedd5", nodeStroke: "#f97316", edgeColor: "#f97316" },
+  { name: "墨绿", nodeFill: "#dcfce7", nodeStroke: "#16a34a", edgeColor: "#16a34a" },
+  { name: "紫罗兰", nodeFill: "#ede9fe", nodeStroke: "#8b5cf6", edgeColor: "#8b5cf6" },
+  { name: "玫瑰红", nodeFill: "#ffe4e6", nodeStroke: "#f43f5e", edgeColor: "#f43f5e" },
+];
+
 let nodeSeq = 0;
 function genId(prefix: string): string {
   nodeSeq += 1;
@@ -162,37 +173,38 @@ function shapePath(shape: ShapeKind, w: number, h: number): string {
   }
 }
 
-function ShapeNode({ data, selected }: NodeProps) {
-  const d = data as unknown as FlowData;
-  const w = NODE_W;
-  const h = NODE_H;
-  const fill = d.fill || (selected ? "var(--accent-soft)" : "var(--background)");
-  const stroke = d.stroke || (selected ? "var(--accent)" : "var(--line-strong)");
-  return (
-    <div style={{ width: w, height: h }} className="relative">
-      <svg width={w} height={h} className="overflow-visible">
-        <path d={shapePath(d.shape, w, h)} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.5} />
-        <text
-          x={w / 2}
-          y={h / 2}
-          textAnchor="middle"
-          dominantBaseline="central"
-          fontSize={13}
-          fill="var(--text)"
-          style={{ userSelect: "none" }}
-        >
-          {d.label.length > 11 ? d.label.slice(0, 11) + "…" : d.label}
-        </text>
-      </svg>
-      <Handle type="target" position={Position.Left} style={{ background: "var(--accent)" }} />
-      <Handle type="source" position={Position.Right} style={{ background: "var(--accent)" }} />
-      <Handle type="source" position={Position.Top} style={{ background: "var(--accent)" }} />
-      <Handle type="target" position={Position.Bottom} style={{ background: "var(--accent)" }} />
-    </div>
-  );
+// 通过闭包把当前主题传入节点：未手动设色时使用主题色，手动色优先
+function createShapeNode(theme: { nodeFill: string; nodeStroke: string }) {
+  return function ShapeNode({ data, selected }: NodeProps) {
+    const d = data as unknown as FlowData;
+    const w = NODE_W;
+    const h = NODE_H;
+    const fill = d.fill ?? (selected ? "var(--accent-soft)" : theme.nodeFill);
+    const stroke = d.stroke ?? (selected ? "var(--accent)" : theme.nodeStroke);
+    return (
+      <div style={{ width: w, height: h }} className="relative">
+        <svg width={w} height={h} className="overflow-visible">
+          <path d={shapePath(d.shape, w, h)} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.5} />
+          <text
+            x={w / 2}
+            y={h / 2}
+            textAnchor="middle"
+            dominantBaseline="central"
+            fontSize={13}
+            fill="var(--text)"
+            style={{ userSelect: "none" }}
+          >
+            {d.label.length > 11 ? d.label.slice(0, 11) + "…" : d.label}
+          </text>
+        </svg>
+        <Handle type="target" position={Position.Left} style={{ background: "var(--accent)" }} />
+        <Handle type="source" position={Position.Right} style={{ background: "var(--accent)" }} />
+        <Handle type="source" position={Position.Top} style={{ background: "var(--accent)" }} />
+        <Handle type="target" position={Position.Bottom} style={{ background: "var(--accent)" }} />
+      </div>
+    );
+  };
 }
-
-const nodeTypes = { shape: ShapeNode };
 
 // AI 生成后按拓扑简单分层布局
 function autoLayout(nodes: StoredNode[], edges: StoredEdge[]): void {
@@ -262,6 +274,8 @@ export function FlowchartEditor({
   const [fillOpen, setFillOpen] = useState(false);
   const [strokeOpen, setStrokeOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [themeIndex, setThemeIndex] = useState(0);
+  const [themeOpen, setThemeOpen] = useState(false);
 
   // —— 撤销/重做 ——
   const [past, setPast] = useState<StoredFlow[]>([]);
@@ -273,6 +287,7 @@ export function FlowchartEditor({
   const dragStartRef = useRef<StoredFlow | null>(null);
   const clipboardRef = useRef<StoredNode[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  const prevThemeColorRef = useRef(THEMES[0].edgeColor);
 
   const snapshot = useCallback((): StoredFlow => {
     return {
@@ -325,15 +340,38 @@ export function FlowchartEditor({
   const defaultEdgeOptions = useMemo(
     () => ({
       type: edgeKind,
-      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--line-strong)" },
-      style: { stroke: "var(--line-strong)", strokeWidth: 1.5 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: THEMES[themeIndex].edgeColor },
+      style: { stroke: THEMES[themeIndex].edgeColor, strokeWidth: 1.5 },
       labelStyle: { fill: "var(--text)", fontSize: 12, fontWeight: 500 },
       labelBgStyle: { fill: "var(--background)", fillOpacity: 0.9 },
       labelBgPadding: [6, 3] as [number, number],
       labelBgBorderRadius: 4,
     }),
-    [edgeKind],
+    [edgeKind, themeIndex],
   );
+
+  // 节点类型随主题重建，使所有未手动设色节点即时换色
+  const nodeTypes = useMemo(() => ({ shape: createShapeNode(THEMES[themeIndex]) }), [themeIndex]);
+
+  // 切换主题时更新已有连线颜色（保留被手动设色的连线）
+  useEffect(() => {
+    const newColor = THEMES[themeIndex].edgeColor;
+    const prevColor = prevThemeColorRef.current;
+    setEdges((eds) =>
+      eds.map((e) => {
+        const cur = e.style?.stroke;
+        if (cur === undefined || cur === prevColor) {
+          return {
+            ...e,
+            style: { ...(e.style || {}), stroke: newColor },
+            markerEnd: { type: MarkerType.ArrowClosed, color: newColor },
+          };
+        }
+        return e;
+      }),
+    );
+    prevThemeColorRef.current = newColor;
+  }, [themeIndex, setEdges]);
 
   const commit = useCallback(() => {
     const stored: StoredFlow = {
@@ -722,6 +760,55 @@ export function FlowchartEditor({
           </button>
         ))}
 
+        {/* 整图主题：一键换色 */}
+        <span className="mx-1 h-4 w-px bg-line" />
+        <div className="relative shrink-0">
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setThemeOpen((v) => !v);
+              setFillOpen(false);
+              setStrokeOpen(false);
+            }}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
+            title="切换整图配色主题"
+          >
+            <span
+              className="h-3.5 w-3.5 rounded-sm"
+              style={{ backgroundColor: THEMES[themeIndex].nodeFill, border: `1.5px solid ${THEMES[themeIndex].nodeStroke}` }}
+            />
+            主题
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${themeOpen ? "rotate-180" : ""}`}>
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          {themeOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setThemeOpen(false)} />
+              <div className="menu-panel absolute left-0 top-full z-40 mt-1 flex w-32 flex-col gap-0.5 p-1.5">
+                {THEMES.map((t, i) => (
+                  <button
+                    key={t.name}
+                    onClick={() => {
+                      setThemeIndex(i);
+                      setThemeOpen(false);
+                    }}
+                    className={`flex items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors ${
+                      i === themeIndex ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
+                    }`}
+                  >
+                    <span
+                      className="h-4 w-4 shrink-0 rounded-sm"
+                      style={{ backgroundColor: t.nodeFill, border: `1.5px solid ${t.nodeStroke}` }}
+                    />
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
         {/* 选中连线时：样式编辑 */}
         {selectedEdge && (
           <>
@@ -773,6 +860,7 @@ export function FlowchartEditor({
                 onClick={() => {
                   setFillOpen((v) => !v);
                   setStrokeOpen(false);
+                  setThemeOpen(false);
                 }}
                 className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
               >
@@ -818,6 +906,7 @@ export function FlowchartEditor({
                 onClick={() => {
                   setStrokeOpen((v) => !v);
                   setFillOpen(false);
+                  setThemeOpen(false);
                 }}
                 className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
               >
