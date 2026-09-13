@@ -45,6 +45,7 @@ type ShapeKind =
   | "card"
   | "container"
   | "group"
+  | "lane"
   | "note";
 
 type EdgeKind = "default" | "straight" | "step" | "smoothstep";
@@ -167,6 +168,7 @@ const SHAPE_GROUPS: { cat: string; items: { kind: ShapeKind; label: string; icon
     items: [
       { kind: "container", label: "容器框", icon: "M3 3h10v10H3z" },
       { kind: "group", label: "分组框", icon: "M4 3h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z M2 5h4v1.5H2z" },
+      { kind: "lane", label: "泳道", icon: "M2 3h12v10H2z M4 3v10" },
     ],
   },
   {
@@ -203,6 +205,128 @@ const THEMES: { name: string; nodeFill: string; nodeStroke: string; edgeColor: s
   { name: "墨绿", nodeFill: "#dcfce7", nodeStroke: "#16a34a", edgeColor: "#16a34a" },
   { name: "紫罗兰", nodeFill: "#ede9fe", nodeStroke: "#8b5cf6", edgeColor: "#8b5cf6" },
   { name: "玫瑰红", nodeFill: "#ffe4e6", nodeStroke: "#f43f5e", edgeColor: "#f43f5e" },
+];
+
+// —— 内置模板库（静态预设，套用即可，不调后端 / 不调 AI）——
+const FLOW_TEMPLATES: { name: string; flow: { nodes: StoredNode[]; edges: StoredEdge[] } }[] = [
+  {
+    name: "登录注册流程",
+    flow: {
+      nodes: [
+        { id: "t1", label: "开始", shape: "ellipse", x: 0, y: 120 },
+        { id: "t2", label: "输入账号密码", shape: "rect", x: 250, y: 120 },
+        { id: "t3", label: "验证通过?", shape: "diamond", x: 520, y: 120 },
+        { id: "t4", label: "进入首页", shape: "rect", x: 820, y: 120 },
+        { id: "t5", label: "提示错误", shape: "rect", x: 520, y: -60 },
+      ],
+      edges: [
+        { id: "te1", source: "t1", target: "t2" },
+        { id: "te2", source: "t2", target: "t3" },
+        { id: "te3", source: "t3", target: "t4", label: "是" },
+        { id: "te4", source: "t3", target: "t5", label: "否" },
+        { id: "te5", source: "t5", target: "t2", label: "重试" },
+      ],
+    },
+  },
+  {
+    name: "审批流程",
+    flow: {
+      nodes: [
+        { id: "a1", label: "提交申请", shape: "rect", x: 0, y: 120 },
+        { id: "a2", label: "主管审批", shape: "diamond", x: 250, y: 120 },
+        { id: "a3", label: "财务审批", shape: "diamond", x: 520, y: 120 },
+        { id: "a4", label: "审批通过", shape: "rect", x: 820, y: 120 },
+        { id: "a5", label: "驳回", shape: "rect", x: 520, y: -60 },
+      ],
+      edges: [
+        { id: "ae1", source: "a1", target: "a2" },
+        { id: "ae2", source: "a2", target: "a3", label: "同意" },
+        { id: "ae3", source: "a2", target: "a5", label: "拒绝" },
+        { id: "ae4", source: "a3", target: "a4", label: "通过" },
+        { id: "ae5", source: "a3", target: "a5", label: "不通过" },
+      ],
+    },
+  },
+  {
+    name: "请假流程",
+    flow: {
+      nodes: [
+        { id: "l1", label: "开始", shape: "ellipse", x: 0, y: 120 },
+        { id: "l2", label: "填写请假单", shape: "rect", x: 250, y: 120 },
+        { id: "l3", label: "直属领导审批", shape: "diamond", x: 520, y: 120 },
+        { id: "l4", label: "HR 备案", shape: "rect", x: 820, y: 120 },
+        { id: "l5", label: "结束", shape: "ellipse", x: 1100, y: 120 },
+        { id: "l6", label: "驳回", shape: "rect", x: 520, y: -60 },
+      ],
+      edges: [
+        { id: "le1", source: "l1", target: "l2" },
+        { id: "le2", source: "l2", target: "l3" },
+        { id: "le3", source: "l3", target: "l4", label: "通过" },
+        { id: "le4", source: "l3", target: "l6", label: "不通过" },
+        { id: "le5", source: "l4", target: "l5" },
+      ],
+    },
+  },
+  {
+    name: "退款流程",
+    flow: {
+      nodes: [
+        { id: "r1", label: "用户申请退款", shape: "rect", x: 0, y: 120 },
+        { id: "r2", label: "审核", shape: "diamond", x: 250, y: 120 },
+        { id: "r3", label: "退款处理", shape: "rect", x: 520, y: 120 },
+        { id: "r4", label: "退款完成", shape: "ellipse", x: 820, y: 120 },
+        { id: "r5", label: "拒绝退款", shape: "rect", x: 250, y: -60 },
+      ],
+      edges: [
+        { id: "re1", source: "r1", target: "r2" },
+        { id: "re2", source: "r2", target: "r3", label: "通过" },
+        { id: "re3", source: "r2", target: "r5", label: "不通过" },
+        { id: "re4", source: "r3", target: "r4" },
+      ],
+    },
+  },
+  {
+    name: "软件部署发布",
+    flow: {
+      nodes: [
+        { id: "s1", label: "代码提交", shape: "rect", x: 0, y: 120 },
+        { id: "s2", label: "CI 构建", shape: "rect", x: 250, y: 120 },
+        { id: "s3", label: "测试通过?", shape: "diamond", x: 520, y: 120 },
+        { id: "s4", label: "部署到生产", shape: "rect", x: 820, y: 120 },
+        { id: "s5", label: "监控验证", shape: "rect", x: 1100, y: 120 },
+        { id: "s6", label: "回滚", shape: "rect", x: 820, y: -60 },
+      ],
+      edges: [
+        { id: "se1", source: "s1", target: "s2" },
+        { id: "se2", source: "s2", target: "s3" },
+        { id: "se3", source: "s3", target: "s4", label: "是" },
+        { id: "se4", source: "s3", target: "s6", label: "否" },
+        { id: "se5", source: "s4", target: "s5" },
+        { id: "se6", source: "s6", target: "s2", label: "重试" },
+      ],
+    },
+  },
+  {
+    name: "客服工单",
+    flow: {
+      nodes: [
+        { id: "c1", label: "创建工单", shape: "rect", x: 0, y: 120 },
+        { id: "c2", label: "分派客服", shape: "rect", x: 250, y: 120 },
+        { id: "c3", label: "处理问题", shape: "rect", x: 520, y: 120 },
+        { id: "c4", label: "已解决?", shape: "diamond", x: 820, y: 120 },
+        { id: "c5", label: "关闭工单", shape: "rect", x: 1100, y: 120 },
+        { id: "c6", label: "升级处理", shape: "rect", x: 820, y: -60 },
+      ],
+      edges: [
+        { id: "ce1", source: "c1", target: "c2" },
+        { id: "ce2", source: "c2", target: "c3" },
+        { id: "ce3", source: "c3", target: "c4" },
+        { id: "ce4", source: "c4", target: "c5", label: "是" },
+        { id: "ce5", source: "c4", target: "c6", label: "否" },
+        { id: "ce6", source: "c6", target: "c3", label: "跟进" },
+      ],
+    },
+  },
 ];
 
 let nodeSeq = 0;
@@ -276,7 +400,8 @@ function shapePath(shape: ShapeKind, w: number, h: number): string {
       return `M ${r} 0 H ${w - r} Q ${w} 0 ${w} ${r} V ${h - f} L ${w - f} ${h} H ${r} Q 0 ${h} 0 ${h - r} V ${r} Q 0 0 ${r} 0 Z`;
     }
     case "container":
-    case "group": {
+    case "group":
+    case "lane": {
       // 大圆角矩形（虚线边框由渲染层处理）
       const r = 18;
       return `M ${r} 0 H ${w - r} Q ${w} 0 ${w} ${r} V ${h - r} Q ${w} ${h} ${w - r} ${h} H ${r} Q 0 ${h} 0 ${h - r} V ${r} Q 0 0 ${r} 0 Z`;
@@ -359,6 +484,38 @@ function createShapeNode(theme: { nodeFill: string; nodeStroke: string }) {
     const startY = h / 2 - totalH / 2 + lineH / 2;
     const tx = align === "left" ? 10 : align === "right" ? w - 10 : w / 2;
     const anchor = align === "left" ? "start" : align === "right" ? "end" : "middle";
+
+    // 泳道：左侧标题栏（竖排标题）+ 主体，标题文字用节点 label（竖排显示在左侧标题栏）
+    if (d.shape === "lane") {
+      const BAR_W = 28;
+      const r = 12;
+      const titleBarPath = `M ${r} 0 H ${BAR_W} V ${h} H ${r} Q 0 ${h} 0 ${h - r} V ${r} Q 0 0 ${r} 0 Z`;
+      return (
+        <div style={{ width: w, height: h }} className="relative">
+          <svg width={w} height={h} className="overflow-visible">
+            <path d={shapePath(d.shape, w, h)} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.5} />
+            <path d={titleBarPath} fill="rgba(100,116,139,0.14)" stroke="none" />
+            <line x1={BAR_W} y1={0} x2={BAR_W} y2={h} stroke={stroke} strokeWidth={1} strokeOpacity={0.55} />
+            <text
+              x={BAR_W / 2}
+              y={h / 2}
+              textAnchor="middle"
+              dominantBaseline="central"
+              style={{ writingMode: "vertical-rl", userSelect: "none" }}
+              fontSize={fontSize}
+              fontWeight={fontWeight}
+              fill="var(--text)"
+            >
+              {d.label}
+            </text>
+          </svg>
+          <Handle type="target" position={Position.Left} style={{ background: "var(--accent)" }} />
+          <Handle type="source" position={Position.Right} style={{ background: "var(--accent)" }} />
+          <Handle type="source" position={Position.Top} style={{ background: "var(--accent)" }} />
+          <Handle type="target" position={Position.Bottom} style={{ background: "var(--accent)" }} />
+        </div>
+      );
+    }
 
     return (
       <div style={{ width: w, height: h }} className="relative">
@@ -480,6 +637,8 @@ export function FlowchartEditor({
   const [themeIndex, setThemeIndex] = useState(0);
   const [themeOpen, setThemeOpen] = useState(false);
   const [shapeLibOpen, setShapeLibOpen] = useState(false);
+  // 模板库下拉开关
+  const [tplOpen, setTplOpen] = useState(false);
   // 网格吸附开关
   const [snap, setSnap] = useState(false);
 
@@ -694,6 +853,12 @@ export function FlowchartEditor({
     const id = genId("n");
     const offset = (nodes.length % 5) * 40;
     const isContainer = CONTAINER_SHAPES.includes(shape);
+    const defaultSize =
+      shape === "lane"
+        ? { width: 520, height: 160 }
+        : isContainer
+          ? { width: 220, height: 140 }
+          : {};
     setNodes((nds) => [
       ...nds,
       {
@@ -703,7 +868,7 @@ export function FlowchartEditor({
         data: {
           label: SHAPE_LABEL[shape] || "节点",
           shape,
-          ...(isContainer ? { width: 220, height: 140 } : {}),
+          ...defaultSize,
         },
       },
     ]);
@@ -863,6 +1028,15 @@ export function FlowchartEditor({
     setNodes([]);
     setEdges([]);
   };
+
+  // —— 套用模板（静态预设，替换当前内容为模板，可撤销）——
+  const applyTemplate = useCallback(
+    (t: (typeof FLOW_TEMPLATES)[number]) => {
+      pushHistory();
+      applyFlow(t.flow);
+    },
+    [pushHistory, applyFlow],
+  );
 
   // —— 复制 / 粘贴 / 全选 ——
   const copySelected = useCallback(() => {
@@ -1352,6 +1526,7 @@ export function FlowchartEditor({
               setThemeOpen(false);
               setFillOpen(false);
               setStrokeOpen(false);
+              setTplOpen(false);
             }}
             className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
               shapeLibOpen ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"
@@ -1400,6 +1575,54 @@ export function FlowchartEditor({
           )}
         </div>
 
+        {/* 模板库 */}
+        <div className="relative shrink-0">
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setTplOpen((v) => !v);
+              setShapeLibOpen(false);
+              setThemeOpen(false);
+              setFillOpen(false);
+              setStrokeOpen(false);
+            }}
+            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
+              tplOpen ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"
+            }`}
+            title="套用流程图模板"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
+            </svg>
+            模板
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${tplOpen ? "rotate-180" : ""}`}>
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          {tplOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setTplOpen(false)} />
+              <div className="menu-panel absolute left-0 top-full z-40 mt-1 flex w-40 flex-col gap-0.5 p-1.5">
+                {FLOW_TEMPLATES.map((t) => (
+                  <button
+                    key={t.name}
+                    onClick={() => {
+                      applyTemplate(t);
+                      setTplOpen(false);
+                    }}
+                    className="rounded-md px-2 py-1.5 text-left text-xs text-muted transition-colors hover:bg-hover hover:text-text"
+                  >
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
         <span className="mx-1 h-4 w-px bg-line" />
 
         <span className="text-[11px] text-faint">连线</span>
@@ -1439,6 +1662,7 @@ export function FlowchartEditor({
               setFillOpen(false);
               setStrokeOpen(false);
               setShapeLibOpen(false);
+              setTplOpen(false);
             }}
             className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
             title="切换整图配色主题"
@@ -1562,6 +1786,7 @@ export function FlowchartEditor({
                   setStrokeOpen(false);
                   setThemeOpen(false);
                   setShapeLibOpen(false);
+                  setTplOpen(false);
                 }}
                 className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
               >
@@ -1609,6 +1834,7 @@ export function FlowchartEditor({
                   setFillOpen(false);
                   setThemeOpen(false);
                   setShapeLibOpen(false);
+                  setTplOpen(false);
                 }}
                 className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
               >
@@ -1872,7 +2098,63 @@ export function FlowchartEditor({
           onNodeDragStart={() => {
             dragStartRef.current = snapshot();
           }}
-          onNodeDragStop={() => {
+          onNodeDragStop={(_, node) => {
+            const byId = new Map(nodes.map((n) => [n.id, n]));
+            // 解析节点画布绝对坐标（沿 parentId 链向上累加）
+            const absOf = (n: Node) => {
+              const d = n.data as unknown as FlowData;
+              let ax = n.position.x;
+              let ay = n.position.y;
+              let p = n.parentId ? byId.get(n.parentId) : undefined;
+              while (p) {
+                ax += p.position.x;
+                ay += p.position.y;
+                p = p.parentId ? byId.get(p.parentId) : undefined;
+              }
+              return { x: ax, y: ay, w: d.width ?? NODE_W, h: d.height ?? NODE_H };
+            };
+            const dragged = byId.get(node.id);
+            if (dragged) {
+              const dShape = (dragged.data as unknown as FlowData).shape;
+              // 泳道自身不参与归属（不做泳池嵌套）；只处理普通节点拖入/拖出泳道
+              if (dShape !== "lane") {
+                const da = absOf(dragged);
+                const cx = da.x + da.w / 2;
+                const cy = da.y + da.h / 2;
+                // 找到中心点命中的泳道
+                let targetLane: Node | null = null;
+                for (const n of nodes) {
+                  const nd = n.data as unknown as FlowData;
+                  if (nd.shape === "lane" && n.id !== dragged.id) {
+                    const la = absOf(n);
+                    const lw = nd.width ?? 520;
+                    const lh = nd.height ?? 160;
+                    if (cx >= la.x && cx <= la.x + lw && cy >= la.y && cy <= la.y + lh) {
+                      targetLane = n;
+                      break;
+                    }
+                  }
+                }
+                const newParentId = targetLane ? targetLane.id : undefined;
+                // 归属发生变化才更新（拖入新泳道 / 拖出泳道）
+                if (newParentId !== dragged.parentId) {
+                  setNodes((nds) =>
+                    nds.map((n) => {
+                      if (n.id !== dragged.id) return n;
+                      const a = absOf(n);
+                      if (newParentId) {
+                        const laneAbs = absOf(byId.get(newParentId)!);
+                        // 坐标转为相对泳道
+                        return { ...n, parentId: newParentId, position: { x: a.x - laneAbs.x, y: a.y - laneAbs.y } };
+                      }
+                      // 拖出泳道：转回画布绝对坐标
+                      return { ...n, parentId: undefined, position: { x: a.x, y: a.y } };
+                    }),
+                  );
+                }
+              }
+            }
+            // 记录拖拽历史（含归属变化，可撤销）
             if (dragStartRef.current) {
               setPast((p) => [...p.slice(-(MAX_HISTORY - 1)), dragStartRef.current!]);
               setFuture([]);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useMemo } from "react";
-import { toPng } from "html-to-image";
+import { toPng, toSvg } from "html-to-image";
 import { generateDiagram } from "@/lib/api";
 
 // —— 数据结构：扁平节点 + parent 引用 ——
@@ -374,6 +374,89 @@ function bounds(nodes: MindNode[], pos: Record<string, LayoutItem>) {
   return { minX, minY, maxX, maxY };
 }
 
+// —— 颜色工具：hex <-> HSL，用于自定义主题自动生成 8 色调色板 ——
+function hexToHsl(hex: string): { h: number; s: number; l: number } {
+  let c = (hex || "#000000").replace("#", "");
+  if (c.length === 3) c = c.split("").map((x) => x + x).join("");
+  if (c.length !== 6) c = "000000";
+  const r = parseInt(c.slice(0, 2), 16) / 255;
+  const g = parseInt(c.slice(2, 4), 16) / 255;
+  const b = parseInt(c.slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  let h = 0;
+  let s = 0;
+  if (d !== 0) {
+    s = d / (1 - Math.abs(2 * l - 1));
+    switch (max) {
+      case r:
+        h = ((g - b) / d) % 6;
+        break;
+      case g:
+        h = (b - r) / d + 2;
+        break;
+      default:
+        h = (r - g) / d + 4;
+        break;
+    }
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  return { h, s: s * 100, l: l * 100 };
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const ss = Math.max(0, Math.min(100, s)) / 100;
+  const ll = Math.max(0, Math.min(100, l)) / 100;
+  const c = (1 - Math.abs(2 * ll - 1)) * ss;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = ll - c / 2;
+  let r = 0,
+    g = 0,
+    b = 0;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  const toHex = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+// 给定主色 hex，基于简单 HSL 变换生成 8 色调色板（主色 / 加深 / 变浅 / 相邻色相）
+function generatePalette(base: string): string[] {
+  const { h, s, l } = hexToHsl(base);
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+  const wrapHue = (hh: number) => ((hh % 360) + 360) % 360;
+  const specs: [number, number, number][] = [
+    [h, clamp(s - 10, 0, 100), clamp(l + 25, 0, 100)], // 变浅
+    [h, s, l], // 主色
+    [h, clamp(s - 10, 0, 100), clamp(l + 10, 0, 100)], // 略浅
+    [wrapHue(h - 15), s, l], // 相邻色相 -15°
+    [wrapHue(h + 15), s, l], // 相邻色相 +15°
+    [h, clamp(s - 20, 0, 100), clamp(l - 10, 0, 100)], // 加深
+    [wrapHue(h - 30), clamp(s - 10, 0, 100), clamp(l + 15, 0, 100)],
+    [wrapHue(h + 30), clamp(s - 10, 0, 100), clamp(l + 15, 0, 100)],
+  ];
+  return specs.map(([hh, ss, ll]) => hslToHex(hh, ss, ll));
+}
+
+// 自定义主题：预设主色（点击色块或在 input[type=color] 任选）
+const PRESET_COLORS = [
+  "#2f6bff",
+  "#16a34a",
+  "#f97316",
+  "#a855f7",
+  "#ec4899",
+  "#0ea5e9",
+  "#dc2626",
+  "#fcc419",
+  "#64748b",
+];
+
 const PALETTE = ["#2f6bff", "#16a34a", "#f97316", "#a855f7", "#0ea5e9", "#ec4899", "#dc2626", "#78716c"];
 const MAX_HISTORY = 100;
 
@@ -520,11 +603,16 @@ export function MindMapEditor({
   const [aiBusy, setAiBusy] = useState(false);
   const [themePalette, setThemePalette] = useState<string[]>(PALETTE);
   const [themeOpen, setThemeOpen] = useState(false);
+  // 自定义主题：会话内维护，不持久化
+  const [customThemes, setCustomThemes] = useState<{ name: string; palette: string[] }[]>([]);
+  const [themeCustomOpen, setThemeCustomOpen] = useState(false);
+  const [customBaseColor, setCustomBaseColor] = useState<string>(PRESET_COLORS[0]);
   const [iconOpen, setIconOpen] = useState(false);
   // 备注气泡：noteTarget 为打开备注的节点 id，noteDraft 为编辑中的草稿
   const [noteTarget, setNoteTarget] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   // 大纲模式：true 时画布区域改为渲染 HTML 缩进列表（与 SVG 共享同一份 nodes）
   const [outline, setOutline] = useState(false);
@@ -945,10 +1033,10 @@ export function MindMapEditor({
     }
   };
 
-  const exportPng = async () => {
+  // 临时 setView 成 fit-all，await 一帧让 SVG 重绘，再执行 fn，最后恢复 view（复用导出逻辑的公共骨架）
+  const withFitView = async <T,>(fn: () => Promise<T>): Promise<T> => {
     const el = containerRef.current;
-    if (!el) return;
-    setExporting(true);
+    if (!el) throw new Error("画布未就绪");
     const prev = view;
     const b = bounds(visibleNodes, pos);
     const cw = el.clientWidth || 800;
@@ -962,18 +1050,91 @@ export function MindMapEditor({
     setView(fit);
     await new Promise((r) => setTimeout(r, 150));
     try {
-      const bg = getComputedStyle(document.body).backgroundColor || "#ffffff";
-      const dataUrl = await toPng(el, { backgroundColor: bg, pixelRatio: 2 });
-      const a = document.createElement("a");
-      a.download = "思维导图.png";
-      a.href = dataUrl;
-      a.click();
+      return await fn();
+    } finally {
+      setView(prev);
+    }
+  };
+
+  // 生成 dataUrl（PNG 或 SVG），复用 fit 视图
+  const captureDataUrl = (format: "png" | "svg"): Promise<string> => {
+    const el = containerRef.current!;
+    const bg = getComputedStyle(document.body).backgroundColor || "#ffffff";
+    if (format === "png") return toPng(el, { backgroundColor: bg, pixelRatio: 2 });
+    return toSvg(el, { backgroundColor: bg });
+  };
+
+  const downloadDataUrl = (dataUrl: string, filename: string) => {
+    const a = document.createElement("a");
+    a.download = filename;
+    a.href = dataUrl;
+    a.click();
+  };
+
+  const exportPng = async () => {
+    setExporting(true);
+    try {
+      const dataUrl = await withFitView(() => captureDataUrl("png"));
+      downloadDataUrl(dataUrl, "思维导图.png");
     } catch (err) {
       alert(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
     } finally {
-      setView(prev);
       setExporting(false);
     }
+  };
+
+  const exportSvg = async () => {
+    setExporting(true);
+    try {
+      const dataUrl = await withFitView(() => captureDataUrl("svg"));
+      downloadDataUrl(dataUrl, "思维导图.svg");
+    } catch (err) {
+      alert(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // 导出 PDF：不引入新依赖，复用 PNG dataUrl，打开打印窗口（用户选「另存为 PDF」）；
+  // 若 window.open 被拦截，退化为下载 PNG 并提示。
+  const exportPdf = async () => {
+    setExporting(true);
+    try {
+      const dataUrl = await withFitView(() => captureDataUrl("png"));
+      const w = window.open("", "_blank");
+      if (!w) {
+        downloadDataUrl(dataUrl, "思维导图.png");
+        alert("浏览器拦截了打印窗口，已为您下载 PNG，可在打印对话框选择另存为 PDF");
+        return;
+      }
+      try {
+        w.document.write(
+          `<!DOCTYPE html><html><head><meta charset="utf-8"><title>思维导图</title>` +
+            `<style>html,body{margin:0;padding:0;}img{display:block;width:100%;height:auto;}</style>` +
+            `</head><body><img src="${dataUrl}" onload="window.print()" /></body></html>`,
+        );
+        w.document.close();
+      } catch {
+        // 写窗口失败：退化下载 PNG
+        downloadDataUrl(dataUrl, "思维导图.png");
+        alert("打印窗口打开失败，已为您下载 PNG，可在打印对话框选择另存为 PDF");
+        w.close();
+      }
+    } catch (err) {
+      alert(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // 自定义主题：确认后加入主题列表并立即应用
+  const confirmCustomTheme = () => {
+    const palette = generatePalette(customBaseColor);
+    const name = `自定义${customThemes.length + 1}`;
+    setCustomThemes((prev) => [...prev, { name, palette }]);
+    setThemePalette(palette);
+    setThemeCustomOpen(false);
+    setThemeOpen(false);
   };
 
   const levelColor = (id: string): string => {
@@ -1266,8 +1427,8 @@ export function MindMapEditor({
           {themeOpen && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setThemeOpen(false)} />
-              <div className="menu-panel absolute left-0 top-full z-40 mt-1 w-40 p-1.5">
-                {THEMES.map((t) => (
+              <div className="menu-panel absolute left-0 top-full z-40 mt-1 max-h-[60vh] w-44 overflow-auto p-1.5">
+                {[...THEMES, ...customThemes].map((t) => (
                   <button
                     key={t.name}
                     onClick={() => {
@@ -1284,6 +1445,16 @@ export function MindMapEditor({
                     {t.name}
                   </button>
                 ))}
+                {customThemes.length > 0 && <span className="my-1 block h-px w-full bg-line" />}
+                <button
+                  onClick={() => {
+                    setThemeCustomOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] text-accent transition-colors hover:bg-accent-soft"
+                >
+                  <span className="grid h-3 w-3 place-items-center rounded-full border border-accent text-[10px] leading-none">＋</span>
+                  自定义主题
+                </button>
               </div>
             </>
           )}
@@ -1300,9 +1471,45 @@ export function MindMapEditor({
           {outline ? "导图" : "大纲"}
         </button>
 
-        <button onClick={exportPng} disabled={exporting} className="rounded-md px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover disabled:opacity-50" title="导出 PNG 图片">
-          {exporting ? "导出中…" : "导出 PNG"}
-        </button>
+        {/* 导出（PNG / SVG / PDF）下拉 */}
+        <div className="relative shrink-0">
+          <button
+            onClick={() => setExportOpen((o) => !o)}
+            disabled={exporting}
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover disabled:opacity-50"
+            title="导出图片 / 矢量图 / PDF"
+          >
+            {exporting ? "导出中…" : "导出"}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${exportOpen ? "rotate-180" : ""}`}>
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          {exportOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setExportOpen(false)} />
+              <div className="menu-panel absolute right-0 top-full z-40 mt-1 w-36 p-1.5">
+                <button
+                  onClick={() => { setExportOpen(false); exportPng(); }}
+                  className="flex w-full items-center rounded-md px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover"
+                >
+                  导出 PNG
+                </button>
+                <button
+                  onClick={() => { setExportOpen(false); exportSvg(); }}
+                  className="flex w-full items-center rounded-md px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover"
+                >
+                  导出 SVG
+                </button>
+                <button
+                  onClick={() => { setExportOpen(false); exportPdf(); }}
+                  className="flex w-full items-center rounded-md px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover"
+                >
+                  导出 PDF
+                </button>
+              </div>
+            </>
+          )}
+        </div>
         <button onClick={() => setAiOpen(true)} className="rounded-md bg-accent px-2.5 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90">
           ✨ AI 生成
         </button>
@@ -1327,6 +1534,58 @@ export function MindMapEditor({
               <button onClick={() => setAiOpen(false)} className="rounded-md px-3 py-1.5 text-[13px] text-muted hover:bg-hover">取消</button>
               <button onClick={runAi} disabled={aiBusy || !aiText.trim()} className="rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-50">
                 {aiBusy ? "生成中…" : "生成"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 自定义主题对话框 */}
+      {themeCustomOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setThemeCustomOpen(false)}>
+          <div className="w-[480px] max-w-[92vw] rounded-xl border border-line bg-background p-4 shadow-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 text-[14px] font-semibold text-text">自定义主题</div>
+            <div className="mb-2 text-[12px] text-faint">选择主色</div>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              {PRESET_COLORS.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setCustomBaseColor(c)}
+                  className={`h-7 w-7 rounded-full border-2 transition-transform hover:scale-110 ${
+                    customBaseColor.toLowerCase() === c.toLowerCase() ? "border-accent" : "border-black/10"
+                  }`}
+                  style={{ backgroundColor: c }}
+                  title={c}
+                />
+              ))}
+              <label
+                className="grid h-7 w-7 cursor-pointer place-items-center overflow-hidden rounded-full border-2 border-dashed border-line"
+                title="自定义颜色"
+              >
+                <input
+                  type="color"
+                  value={customBaseColor}
+                  onChange={(e) => setCustomBaseColor(e.target.value)}
+                  className="h-9 w-9 cursor-pointer border-0 bg-transparent p-0"
+                  style={{ margin: -2 }}
+                />
+              </label>
+            </div>
+            <div className="mb-2 text-[12px] text-faint">预览（自动生成的 8 色调色板）</div>
+            <div className="mb-4 flex flex-wrap gap-1.5">
+              {generatePalette(customBaseColor).map((c, i) => (
+                <span key={`${c}-${i}`} className="h-7 w-7 rounded-md" style={{ backgroundColor: c }} title={c} />
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setThemeCustomOpen(false)} className="rounded-md px-3 py-1.5 text-[13px] text-muted hover:bg-hover">
+                取消
+              </button>
+              <button
+                onClick={confirmCustomTheme}
+                className="rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-white hover:opacity-90"
+              >
+                应用
               </button>
             </div>
           </div>
