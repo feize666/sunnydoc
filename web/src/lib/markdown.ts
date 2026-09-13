@@ -164,8 +164,8 @@ function wikilink(md: MarkdownItInstance) {
     }
     if (end === -1) return false;
     const label = src.slice(start + 2, end).trim();
-    // 空内容 / 含换行 / 含 [ ] 嵌套视为非 wikilink
-    if (!label || /[\n\[\]]/.test(label)) return false;
+    // 空内容 / 含换行 / 含 [ ] 嵌套 / 含 shell 特征（$、=~）视为非 wikilink
+    if (!label || /[\n\[\]$]/.test(label) || label.includes("=~")) return false;
     if (silent) return true;
     const token = state.push("wikilink", "span", 0);
     token.content = label;
