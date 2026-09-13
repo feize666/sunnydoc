@@ -979,6 +979,17 @@ export function MindMapEditor({
           )}
         </div>
 
+        {/* 节点备注 */}
+        <button
+          onClick={() => { if (!selected) return; openNote(selected); }}
+          disabled={!selected}
+          className={toolBtn(false)}
+          title="节点备注"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+          备注
+        </button>
+
         <span className="mx-1 h-4 w-px bg-line" />
 
         {/* 布局切换 */}
