@@ -427,6 +427,7 @@ export function Sidebar({
             {menuOpen && (
               <NewNodeMenu
                 align="left"
+                anchorRef={menuRef}
                 onSelect={(t) => {
                   onNew?.(t, null);
                   setMenuOpen(false);

@@ -1,5 +1,8 @@
 "use client";
 
+import { useLayoutEffect, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
+
 export type NodeType =
   | "doc"
   | "folder"
@@ -40,60 +43,95 @@ const TYPES: TypeDef[] = [
   { type: "slides", label: "幻灯片", desc: "演示文稿", color: "#ef4444", available: false, icon: "M3 5h18v12H3z|M3 9h18|M9 9v8" },
 ];
 
-/** 「+」新建多类型面板（彩色图标 + 释义）。 */
+/**
+ * 「+」新建多类型面板（彩色图标 + 释义）。
+ *
+ * 通过 createPortal 渲染到 body 并 fixed 定位，脱离文件树的
+ * overflow-y-auto 滚动容器，避免在侧栏中下部弹出时被裁剪。
+ * 传入 anchorRef 时按 trigger 位置定位；否则用默认视口内定位。
+ */
 export function NewNodeMenu({
   onSelect,
   onClose,
   align = "right",
+  anchorRef,
 }: {
   onSelect: (type: NodeType) => void;
   onClose: () => void;
   align?: "left" | "right";
+  anchorRef?: RefObject<HTMLElement | null>;
 }) {
-  return (
-    <>
-      <div className="fixed inset-0 z-20" onClick={onClose} />
-      <div className={`menu-panel absolute ${align === "left" ? "left-0" : "right-0"} top-full z-30 mt-1 w-[320px] overflow-hidden rounded-xl p-1.5`}>
-        <div className="grid grid-cols-2 gap-0.5">
-          {TYPES.map((t) => (
-            <button
-              key={t.type}
-              disabled={!t.available}
-              onClick={() => {
-                if (t.available) {
-                  onClose();
-                  onSelect(t.type);
-                }
-              }}
-              className={`flex items-start gap-2.5 rounded-lg px-2.5 py-2.5 text-left transition-colors ${
-                t.available
-                  ? "hover:bg-hover"
-                  : "cursor-not-allowed opacity-60"
-              }`}
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const el = anchorRef?.current;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const MENU_W = 320;
+      const MENU_H = 268;
+      let left = align === "left" ? r.left : r.right - MENU_W;
+      let top = r.bottom + 4;
+      // 视口校正：右侧溢出则靠左；下方空间不足则向上展开
+      if (left + MENU_W > window.innerWidth - 8) left = window.innerWidth - MENU_W - 8;
+      if (left < 8) left = 8;
+      if (top + MENU_H > window.innerHeight - 8) top = r.top - MENU_H - 4;
+      setPos({ left, top });
+    } else {
+      setPos(null);
+    }
+  }, [anchorRef, align]);
+
+  if (typeof document === "undefined") return null;
+
+  const menu = (
+    <div className="menu-panel fixed z-50 w-[320px] overflow-hidden rounded-xl p-1.5" style={pos ? { left: pos.left, top: pos.top } : undefined}>
+      <div className="grid grid-cols-2 gap-0.5">
+        {TYPES.map((t) => (
+          <button
+            key={t.type}
+            disabled={!t.available}
+            onClick={() => {
+              if (t.available) {
+                onClose();
+                onSelect(t.type);
+              }
+            }}
+            className={`flex items-start gap-2.5 rounded-lg px-2.5 py-2.5 text-left transition-colors ${
+              t.available
+                ? "hover:bg-hover"
+                : "cursor-not-allowed opacity-60"
+            }`}
+          >
+            <span
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg"
+              style={{ backgroundColor: `${t.color}1a` }}
             >
-              <span
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-lg"
-                style={{ backgroundColor: `${t.color}1a` }}
-              >
-                <Icon d={t.icon} color={t.color} />
-              </span>
-              <span className="min-w-0 flex-1 pt-0.5">
-                <span className="flex items-center gap-1">
-                  <span className={`text-[14px] font-medium ${t.available ? "text-text" : "text-faint"}`}>
-                    {t.label}
-                  </span>
-                  {!t.available && (
-                    <span className="rounded bg-surface-2 px-1 py-px text-[9px] leading-none text-faint">
-                      规划中
-                    </span>
-                  )}
+              <Icon d={t.icon} color={t.color} />
+            </span>
+            <span className="min-w-0 flex-1 pt-0.5">
+              <span className="flex items-center gap-1">
+                <span className={`text-[14px] font-medium ${t.available ? "text-text" : "text-faint"}`}>
+                  {t.label}
                 </span>
-                <span className="mt-0.5 block text-[11px] text-faint">{t.desc}</span>
+                {!t.available && (
+                  <span className="rounded bg-surface-2 px-1 py-px text-[9px] leading-none text-faint">
+                    规划中
+                  </span>
+                )}
               </span>
-            </button>
-          ))}
-        </div>
+              <span className="mt-0.5 block text-[11px] text-faint">{t.desc}</span>
+            </span>
+          </button>
+        ))}
       </div>
-    </>
+    </div>
+  );
+
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      {menu}
+    </>,
+    document.body,
   );
 }

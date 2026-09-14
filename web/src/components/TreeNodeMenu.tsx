@@ -1,6 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useLayoutEffect, useState, type ReactNode, type RefObject } from "react";
+import { createPortal } from "react-dom";
 
 export interface MenuItem {
   label: string;
@@ -9,18 +10,41 @@ export interface MenuItem {
   danger?: boolean;
 }
 
-/** 「···」更多操作下拉菜单。 */
+/** 「···」更多操作下拉菜单。用 portal + fixed 定位，脱离滚动容器裁剪。 */
 export function TreeNodeMenu({
   items,
   onClose,
+  anchorRef,
 }: {
   items: MenuItem[];
   onClose: () => void;
+  anchorRef?: RefObject<HTMLElement | null>;
 }) {
-  return (
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const el = anchorRef?.current;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const MENU_W = 176;
+      const MENU_H = items.length * 36 + 12;
+      let left = r.right - MENU_W;
+      let top = r.bottom + 4;
+      if (left + MENU_W > window.innerWidth - 8) left = window.innerWidth - MENU_W - 8;
+      if (left < 8) left = 8;
+      if (top + MENU_H > window.innerHeight - 8) top = r.top - MENU_H - 4;
+      setPos({ left, top });
+    } else {
+      setPos(null);
+    }
+  }, [anchorRef, items.length]);
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <>
-      <div className="fixed inset-0 z-20" onClick={onClose} />
-      <div className="menu-panel absolute right-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-xl py-1">
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="menu-panel fixed z-50 w-44 overflow-hidden rounded-xl py-1" style={pos ? { left: pos.left, top: pos.top } : undefined}>
         {items.map((item, i) => (
           <button
             key={i}
@@ -39,6 +63,7 @@ export function TreeNodeMenu({
           </button>
         ))}
       </div>
-    </>
+    </>,
+    document.body,
   );
 }

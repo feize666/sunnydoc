@@ -124,6 +124,8 @@ function FileTreeNode({
   const [moveOpen, setMoveOpen] = useState(false);
   const [dropPos, setDropPos] = useState<DropPos | null>(null);
   const dropPosRef = useRef<DropPos | null>(null);
+  const addBtnRef = useRef<HTMLButtonElement | null>(null);
+  const menuBtnRef = useRef<HTMLButtonElement | null>(null);
 
   const canDrag = !!onReorder;
   const isFolder = node.type === "folder";
@@ -258,20 +260,20 @@ function FileTreeNode({
 
           {onNew && (
             <div className="relative shrink-0">
-              <button onClick={(e) => { e.stopPropagation(); setAddOpen((v) => !v); }} className={hoverBtn} title="新建子节点">
+              <button ref={addBtnRef} onClick={(e) => { e.stopPropagation(); setAddOpen((v) => !v); }} className={hoverBtn} title="新建子节点">
                 <PlusIcon />
               </button>
               {addOpen && (
-                <NewNodeMenu align="left" onSelect={(t) => onNew(t, node.key ?? null)} onClose={() => setAddOpen(false)} />
+                <NewNodeMenu align="left" anchorRef={addBtnRef} onSelect={(t) => onNew(t, node.key ?? null)} onClose={() => setAddOpen(false)} />
               )}
             </div>
           )}
           {folderItems.length > 0 && (
             <div className="relative shrink-0">
-              <button onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }} className={hoverBtn} title="更多操作">
+              <button ref={menuBtnRef} onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }} className={hoverBtn} title="更多操作">
                 <DotsIcon />
               </button>
-              {menuOpen && <TreeNodeMenu items={folderItems} onClose={() => setMenuOpen(false)} />}
+              {menuOpen && <TreeNodeMenu items={folderItems} anchorRef={menuBtnRef} onClose={() => setMenuOpen(false)} />}
             </div>
           )}
 
@@ -365,20 +367,20 @@ function FileTreeNode({
 
       {onNew && (
         <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-          <button onClick={() => setAddOpen((v) => !v)} className={hoverBtn} title="新建子文档">
+          <button ref={addBtnRef} onClick={() => setAddOpen((v) => !v)} className={hoverBtn} title="新建子文档">
             <PlusIcon />
           </button>
           {addOpen && (
-            <NewNodeMenu align="left" onSelect={(t) => onNew(t, node.folder_id ?? null)} onClose={() => setAddOpen(false)} />
+            <NewNodeMenu align="left" anchorRef={addBtnRef} onSelect={(t) => onNew(t, node.folder_id ?? null)} onClose={() => setAddOpen(false)} />
           )}
         </div>
       )}
       {docItems.length > 0 && (
         <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-          <button onClick={() => setMenuOpen((v) => !v)} className={hoverBtn} title="更多操作">
+          <button ref={menuBtnRef} onClick={() => setMenuOpen((v) => !v)} className={hoverBtn} title="更多操作">
             <DotsIcon />
           </button>
-          {menuOpen && <TreeNodeMenu items={docItems} onClose={() => setMenuOpen(false)} />}
+          {menuOpen && <TreeNodeMenu items={docItems} anchorRef={menuBtnRef} onClose={() => setMenuOpen(false)} />}
         </div>
       )}
 
