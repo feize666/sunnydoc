@@ -46,7 +46,7 @@ export function TreeNodeMenu({
   return createPortal(
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="menu-panel fixed z-50 w-44 max-h-[70vh] overflow-y-auto overflow-x-hidden rounded-xl py-1" style={pos ? { left: pos.left, top: pos.top } : undefined}>
+      <div className="menu-panel fixed z-50 w-44 max-h-[70vh] rounded-xl py-1" style={{ ...(pos ?? {}), overflowY: "auto", overflowX: "hidden" }}>
         {items.map((item, i) => (
           <button
             key={i}
