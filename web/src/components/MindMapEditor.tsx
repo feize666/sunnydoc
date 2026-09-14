@@ -488,18 +488,36 @@ const THEMES: { name: string; palette: string[] }[] = [
   { name: "蓝灰", palette: ["#4263eb", "#5c7cfa", "#748ffc", "#4c6ef5", "#5b6bd6", "#6c7ae0", "#8094e8", "#3b5bdb"] },
 ];
 
-// 快捷键提示面板：本编辑器支持的全部快捷键（无 Space 折叠，故不列）
-const SHORTCUTS: { keys: string; desc: string }[] = [
-  { keys: "Tab", desc: "添加子主题" },
-  { keys: "Enter", desc: "添加同级主题" },
-  { keys: "Delete / Backspace", desc: "删除选中节点" },
-  { keys: "F2", desc: "编辑节点文字" },
-  { keys: "双击节点", desc: "编辑节点文字" },
-  { keys: "Ctrl / ⌘ + Z", desc: "撤销" },
-  { keys: "Ctrl / ⌘ + Y", desc: "重做" },
-  { keys: "拖拽节点", desc: "重排父子关系" },
-  { keys: "拖拽空白处", desc: "平移画布" },
-  { keys: "滚轮", desc: "缩放画布" },
+// 快捷键提示面板：本编辑器支持的全部快捷键（分组展示）
+const SHORTCUTS: { group: string; items: { keys: string; desc: string }[] }[] = [
+  {
+    group: "节点",
+    items: [
+      { keys: "Tab", desc: "添加子主题" },
+      { keys: "Enter", desc: "添加同级主题" },
+      { keys: "Delete / Backspace", desc: "删除选中节点" },
+      { keys: "F2", desc: "编辑节点文字" },
+      { keys: "双击节点", desc: "编辑节点文字" },
+    ],
+  },
+  {
+    group: "编辑",
+    items: [
+      { keys: "Ctrl / ⌘ + Z", desc: "撤销" },
+      { keys: "Ctrl / ⌘ + Y", desc: "重做" },
+      { keys: "Ctrl / ⌘ + C", desc: "复制节点" },
+      { keys: "Ctrl / ⌘ + V", desc: "粘贴为子主题" },
+      { keys: "Ctrl / ⌘ + D", desc: "复制为同级" },
+    ],
+  },
+  {
+    group: "视图",
+    items: [
+      { keys: "拖拽节点", desc: "重排父子关系" },
+      { keys: "拖拽空白处", desc: "平移画布" },
+      { keys: "滚轮", desc: "缩放画布" },
+    ],
+  },
 ];
 
 // —— 节点图标：30+ 矢量图标（单色 line icon，24x24 viewBox）——
@@ -1420,7 +1438,7 @@ export function MindMapEditor({
           </svg>
         </button>
 
-        <span className="mx-1 h-4 w-px bg-line" />
+        <span className="mx-1.5 h-5 w-px bg-line" />
 
         {/* 撤销/重做 */}
         <button onClick={undo} disabled={!canUndo} className={toolBtn(false)} title="撤销 (Ctrl+Z)">
@@ -1432,7 +1450,7 @@ export function MindMapEditor({
           重做
         </button>
 
-        <span className="mx-1 h-4 w-px bg-line" />
+        <span className="mx-1.5 h-5 w-px bg-line" />
 
         {/* 折叠 */}
         <button onClick={expandAll} className={toolBtn(false)} title="展开全部节点">
@@ -1444,7 +1462,7 @@ export function MindMapEditor({
           折叠
         </button>
 
-        <span className="mx-1 h-4 w-px bg-line" />
+        <span className="mx-1.5 h-5 w-px bg-line" />
 
         {/* 关联主题（主题链接） */}
         <button
@@ -1534,11 +1552,18 @@ export function MindMapEditor({
               <div className="fixed inset-0 z-10" onClick={() => setHelpOpen(false)} />
               <div className="menu-panel absolute right-0 top-full z-40 mt-1 w-64 p-3">
                 <div className="mb-2 text-[12px] font-medium text-text">快捷键</div>
-                <div className="flex flex-col gap-1.5">
-                  {SHORTCUTS.map((s) => (
-                    <div key={s.keys} className="flex items-center justify-between gap-3">
-                      <kbd className="rounded border border-line bg-surface px-1.5 py-0.5 text-[11px] text-muted">{s.keys}</kbd>
-                      <span className="text-[12px] text-text">{s.desc}</span>
+                <div className="flex flex-col gap-2">
+                  {SHORTCUTS.map((g) => (
+                    <div key={g.group}>
+                      <div className="mb-1 text-[10px] font-medium text-faint">{g.group}</div>
+                      <div className="flex flex-col gap-1">
+                        {g.items.map((s) => (
+                          <div key={s.keys} className="flex items-center justify-between gap-3">
+                            <kbd className="rounded border border-line bg-surface px-1.5 py-0.5 text-[11px] text-muted">{s.keys}</kbd>
+                            <span className="text-[12px] text-text">{s.desc}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1718,7 +1743,12 @@ export function MindMapEditor({
             if (linkingFrom && !(e.target as HTMLElement).closest(".mind-node")) setLinkingFrom(null);
           }}
           className="relative min-w-0 flex-1 cursor-grab overflow-hidden outline-none active:cursor-grabbing"
-          style={{ touchAction: "none", height: "100%" }}
+          style={{
+            touchAction: "none",
+            height: "100%",
+            backgroundImage: "radial-gradient(circle, var(--line) 1px, transparent 1px)",
+            backgroundSize: "22px 22px",
+          }}
         >
         {outline ? (
           renderOutline()

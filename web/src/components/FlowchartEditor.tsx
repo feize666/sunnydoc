@@ -193,18 +193,31 @@ const EDGE_KINDS: { kind: EdgeKind; label: string }[] = [
   { kind: "smoothstep", label: "圆角正交" },
 ];
 
-// 快捷键提示面板内容
-const SHORTCUTS: { key: string; desc: string }[] = [
-  { key: "Ctrl+Z", desc: "撤销" },
-  { key: "Ctrl+Y", desc: "重做" },
-  { key: "Ctrl+C", desc: "复制" },
-  { key: "Ctrl+V", desc: "粘贴" },
-  { key: "Ctrl+D", desc: "复制并粘贴" },
-  { key: "Ctrl+A", desc: "全选" },
-  { key: "Delete", desc: "删除选中" },
-  { key: "双击节点/连线", desc: "改文字" },
-  { key: "拖拽连线", desc: "创建连接" },
-  { key: "滚轮", desc: "缩放画布" },
+// 快捷键提示面板内容（分组展示）
+const SHORTCUTS: { group: string; items: { key: string; desc: string }[] }[] = [
+  {
+    group: "编辑",
+    items: [
+      { key: "Ctrl+Z", desc: "撤销" },
+      { key: "Ctrl+Y", desc: "重做" },
+      { key: "Ctrl+C", desc: "复制" },
+      { key: "Ctrl+V", desc: "粘贴" },
+      { key: "Ctrl+D", desc: "复制并粘贴" },
+      { key: "Ctrl+A", desc: "全选" },
+      { key: "Delete", desc: "删除选中" },
+    ],
+  },
+  {
+    group: "操作",
+    items: [
+      { key: "双击节点/连线", desc: "改文字" },
+      { key: "拖拽连线", desc: "创建连接" },
+    ],
+  },
+  {
+    group: "视图",
+    items: [{ key: "滚轮", desc: "缩放画布" }],
+  },
 ];
 
 // 右键菜单项样式（复用 menu-panel 面板）
@@ -693,6 +706,8 @@ export function FlowchartEditor({
   const [guides, setGuides] = useState<{ x: number | null; y: number | null }>({ x: null, y: null });
   // 画布视口（用于把辅助线的世界坐标换算成屏幕坐标）
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
+  // 画布背景：点阵 / 网格 / 空白
+  const [bgVariant, setBgVariant] = useState<"dots" | "lines" | "none">("dots");
   // 右键上下文菜单（fixed 定位到鼠标位置）
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; type: "node" | "edge" | "pane"; id?: string } | null>(null);
 
@@ -1672,9 +1687,9 @@ export function FlowchartEditor({
           </svg>
         </button>
 
-        <span className="mx-1 h-4 w-px bg-line" />
+        <span className="mx-1.5 h-5 w-px bg-line" />
 
-        <span className="text-[11px] text-faint">连线</span>
+        <span className="mr-0.5 text-[11px] font-medium text-faint">连线</span>
         {EDGE_KINDS.map((k) => (
           <button
             key={k.kind}
@@ -1687,6 +1702,7 @@ export function FlowchartEditor({
           </button>
         ))}
 
+        <span className="ml-1 mr-0.5 text-[11px] font-medium text-faint">视图</span>
         {/* 网格吸附开关 */}
         <button
           onClick={() => setSnap((v) => !v)}
@@ -1700,8 +1716,27 @@ export function FlowchartEditor({
           </svg>
           网格
         </button>
+        {/* 画布背景切换：点阵 / 网格线 / 空白 */}
+        <button
+          onClick={() => setBgVariant((v) => (v === "dots" ? "lines" : v === "lines" ? "none" : "dots"))}
+          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text"
+          title={`画布背景：${bgVariant === "dots" ? "点阵" : bgVariant === "lines" ? "网格线" : "空白"}（点击切换）`}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            {bgVariant === "dots" ? (
+              <>
+                <circle cx="6" cy="6" r="1" /><circle cx="18" cy="6" r="1" /><circle cx="6" cy="18" r="1" /><circle cx="18" cy="18" r="1" />
+              </>
+            ) : bgVariant === "lines" ? (
+              <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+            ) : (
+              <path d="M4 4l16 16" />
+            )}
+          </svg>
+          背景
+        </button>
 
-        <span className="mx-1 h-4 w-px bg-line" />
+        <span className="mx-1.5 h-5 w-px bg-line" />
         <button onClick={undo} disabled={!canUndo} className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed" title="撤销 (Ctrl+Z)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>
         </button>
@@ -1735,16 +1770,21 @@ export function FlowchartEditor({
             {helpOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setHelpOpen(false)} />
-                <div className="menu-panel absolute right-0 top-full z-40 mt-1 w-64 p-2">
-                  <div className="mb-1 px-1 text-[11px] font-medium text-faint">快捷键</div>
-                  <ul className="flex flex-col gap-0.5 text-xs text-muted">
-                    {SHORTCUTS.map((s) => (
-                      <li key={s.key} className="flex items-center justify-between gap-2 rounded-md px-1.5 py-1">
-                        <span>{s.desc}</span>
-                        <span className="shrink-0 rounded bg-hover px-1.5 py-0.5 text-[10px] font-medium text-text">{s.key}</span>
-                      </li>
-                    ))}
-                  </ul>
+                <div className="menu-panel absolute right-0 top-full z-40 mt-1 w-64 p-2.5">
+                  <div className="mb-1.5 px-1 text-[11px] font-medium text-text">快捷键</div>
+                  {SHORTCUTS.map((g) => (
+                    <div key={g.group} className="mb-2 last:mb-0">
+                      <div className="mb-1 px-1 text-[10px] font-medium text-faint">{g.group}</div>
+                      <ul className="flex flex-col gap-0.5 text-xs text-muted">
+                        {g.items.map((s) => (
+                          <li key={s.key} className="flex items-center justify-between gap-2 rounded-md px-1.5 py-1">
+                            <span>{s.desc}</span>
+                            <span className="shrink-0 rounded bg-hover px-1.5 py-0.5 text-[10px] font-medium text-text">{s.key}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
                 </div>
               </>
             )}
@@ -2097,7 +2137,9 @@ export function FlowchartEditor({
           fitView
           proOptions={{ hideAttribution: true }}
         >
-          <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
+          {bgVariant !== "none" && (
+            <Background variant={bgVariant === "dots" ? BackgroundVariant.Dots : BackgroundVariant.Lines} gap={20} size={1} color="var(--line)" />
+          )}
           <Controls />
           <MiniMap pannable zoomable className="!bg-background" />
         </ReactFlow>
