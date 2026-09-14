@@ -1059,6 +1059,13 @@ export function MindMapEditor({
       }
       return;
     }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setSelected(null);
+      setLinkingFrom(null);
+      setNoteTarget(null);
+      return;
+    }
     if (!selected) return;
     if (mod && e.key.toLowerCase() === "c") {
       e.preventDefault();
@@ -1838,6 +1845,10 @@ export function MindMapEditor({
             // 关联模式：点击空白处取消
             if (linkingFrom && !(e.target as HTMLElement).closest(".mind-node")) setLinkingFrom(null);
           }}
+          onDoubleClick={(e) => {
+            // 双击空白处：自适应视图（双击节点由节点的 onDoubleClick stopPropagation 拦截）
+            if (!(e.target as HTMLElement).closest(".mind-node")) setView(null);
+          }}
           className="relative min-w-0 flex-1 cursor-grab overflow-hidden outline-none active:cursor-grabbing"
           style={{
             touchAction: "none",
@@ -1962,7 +1973,10 @@ export function MindMapEditor({
                     }
                     setSelected(n.id);
                   }}
-                  onDoubleClick={() => startEdit(n.id, n.text)}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    startEdit(n.id, n.text);
+                  }}
                   onMouseEnter={() => {
                     // 编辑中 / 拖拽中不触发 hover 高亮
                     if (!dragNode && editing !== n.id) setHoverId(n.id);
@@ -2045,23 +2059,63 @@ export function MindMapEditor({
                       <circle cx={p.w - 8} cy={8} r={2} fill="#fff" />
                     </g>
                   )}
-                  {/* hover/选中时右侧「+」快捷按钮：添加子主题（有子节点时 hover 显示折叠指示器，不显示 +） */}
-                  {(sel || (hovered && !hasChildren(n.id))) && !editing && (
-                    <g
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        addChild(n.id);
-                      }}
-                      style={{ cursor: "pointer" }}
-                    >
-                      <title>添加子主题</title>
-                      <circle cx={p.w + 10} cy={NODE_H / 2} r={9} fill="var(--accent)" stroke="var(--background)" strokeWidth={2} />
-                      <path
-                        d={`M ${p.w + 6} ${NODE_H / 2} H ${p.w + 14} M ${p.w + 10} ${NODE_H / 2 - 4} V ${NODE_H / 2 + 4}`}
-                        stroke="#fff"
-                        strokeWidth={1.8}
-                        strokeLinecap="round"
-                      />
+                  {/* hover/选中时右侧快捷操作栏：+ 子主题 / 编辑 / 删除 */}
+                  {(sel || hovered) && !editing && (
+                    <g style={{ cursor: "pointer" }}>
+                      {/* + 子主题（有子节点时不显示，让位折叠指示器） */}
+                      {!hasChildren(n.id) && (
+                        <g
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addChild(n.id);
+                          }}
+                        >
+                          <title>添加子主题</title>
+                          <circle cx={p.w + 10} cy={NODE_H / 2} r={9} fill="var(--accent)" stroke="var(--background)" strokeWidth={2} />
+                          <path
+                            d={`M ${p.w + 6} ${NODE_H / 2} H ${p.w + 14} M ${p.w + 10} ${NODE_H / 2 - 4} V ${NODE_H / 2 + 4}`}
+                            stroke="#fff"
+                            strokeWidth={1.8}
+                            strokeLinecap="round"
+                          />
+                        </g>
+                      )}
+                      {/* 编辑 */}
+                      <g
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startEdit(n.id, n.text);
+                        }}
+                      >
+                        <title>编辑文字</title>
+                        <circle cx={p.w + 32} cy={NODE_H / 2} r={9} fill="var(--background)" stroke="var(--accent)" strokeWidth={1.5} />
+                        <path
+                          d={`M ${p.w + 28.5} ${NODE_H / 2 + 3.5} L ${p.w + 35.5} ${NODE_H / 2 - 3.5} M ${p.w + 29.5} ${NODE_H / 2 + 2.5} l -1.5 1.5 0.5 1.5 1.5 -0.5`}
+                          stroke="var(--accent)"
+                          strokeWidth={1.4}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          fill="none"
+                        />
+                      </g>
+                      {/* 删除 */}
+                      <g
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeNode(n.id);
+                        }}
+                      >
+                        <title>删除</title>
+                        <circle cx={p.w + 54} cy={NODE_H / 2} r={9} fill="var(--background)" stroke="var(--danger)" strokeWidth={1.5} />
+                        <path
+                          d={`M ${p.w + 50.5} ${NODE_H / 2 - 3} H ${p.w + 57.5} M ${p.w + 51.5} ${NODE_H / 2 - 3} V ${NODE_H / 2 - 4} H ${p.w + 56.5} V ${NODE_H / 2 - 3} M ${p.w + 52} ${NODE_H / 2 - 3} L ${p.w + 52.2} ${NODE_H / 2 + 4} H ${p.w + 55.8} L ${p.w + 56} ${NODE_H / 2 - 3}`}
+                          stroke="var(--danger)"
+                          strokeWidth={1.4}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          fill="none"
+                        />
+                      </g>
                     </g>
                   )}
                 </g>

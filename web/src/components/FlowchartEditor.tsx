@@ -1653,6 +1653,10 @@ export function FlowchartEditor({
             n.selected ? { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } } : n,
           ),
         );
+      } else if (e.key === "Escape") {
+        // 取消所有选择 + 关闭右键菜单
+        setNodes((nds) => nds.map((n) => (n.selected ? { ...n, selected: false } : n)));
+        setCtxMenu(null);
       }
     },
     [undo, redo, copySelected, pasteClipboard, duplicateSelected, selectAll, deleteSelected, pushHistory, setNodes],
