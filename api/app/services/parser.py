@@ -183,6 +183,9 @@ def parse_zip(data: bytes) -> list[dict]:
                 if ext in TEXT_EXTS:
                     text = raw.decode("utf-8", errors="replace")
                     results.append({"name": name, "ext": ext, "text": text})
+                elif ext in {".html", ".htm"}:
+                    _t, md = html_to_markdown(raw.decode("utf-8", errors="replace"))
+                    results.append({"name": name, "ext": ext, "text": md})
                 elif ext == ".pdf":
                     results.append({"name": name, "ext": ext, "text": parse_pdf(raw)})
                 elif ext == ".docx":
@@ -256,6 +259,10 @@ def parse_file(filename: str, data: bytes) -> list[dict]:
     if ext in TEXT_EXTS:
         text = data.decode("utf-8", errors="replace")
         return [{"name": filename, "ext": ext, "text": text}]
+    if ext in {".html", ".htm"}:
+        # HTML 文件：提取正文并转 Markdown（标题不入库，用文件名做标题）
+        _title, md = html_to_markdown(data.decode("utf-8", errors="replace"))
+        return [{"name": filename, "ext": ext, "text": md}]
     if ext == ".pdf":
         return [{"name": filename, "ext": ext, "text": parse_pdf(data)}]
     if ext == ".docx":

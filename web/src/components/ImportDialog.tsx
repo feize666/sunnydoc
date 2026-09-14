@@ -17,12 +17,16 @@ export function ImportDialog({
   onClose,
   onImported,
   kbId,
+  folderId,
+  folderName,
   autoFiles,
 }: {
   open: boolean;
   onClose: () => void;
   onImported: () => void;
   kbId?: string | null;
+  folderId?: string | null;
+  folderName?: string | null;
   autoFiles?: File[] | null;
 }) {
   const [dragOver, setDragOver] = useState(false);
@@ -66,7 +70,7 @@ export function ImportDialog({
       setErrorMsg(null);
 
       try {
-        const { task_id } = await importDocumentAsync(file, kbId, (p) => setProgress(p));
+        const { task_id } = await importDocumentAsync(file, kbId, (p) => setProgress(p), folderId);
         setPhase("parsing");
         pollRef.current = window.setInterval(async () => {
           try {
@@ -99,7 +103,7 @@ export function ImportDialog({
         setErrorMsg(e instanceof Error ? e.message : "上传失败");
       }
     },
-    [onImported, stopPolling, kbId],
+    [onImported, stopPolling, kbId, folderId],
   );
 
   const handleUrlImport = useCallback(async () => {
@@ -108,7 +112,7 @@ export function ImportDialog({
     setImportingUrl(true);
     setErrorMsg(null);
     try {
-      const r = await importFromUrl(url, kbId);
+      const r = await importFromUrl(url, kbId, folderId);
       setPhase("done");
       setResult({ count: 1, media: 0, titles: [r.title] });
       onImported();
@@ -118,7 +122,7 @@ export function ImportDialog({
     } finally {
       setImportingUrl(false);
     }
-  }, [urlInput, importingUrl, kbId, onImported]);
+  }, [urlInput, importingUrl, kbId, folderId, onImported]);
 
   if (!open) return null;
 
@@ -150,6 +154,14 @@ export function ImportDialog({
 
         {phase === "idle" && (
           <div className="p-4">
+            {folderName && (
+              <div className="mb-2 flex items-center gap-1.5 rounded-md bg-accent-soft px-3 py-1.5 text-[12px] text-accent">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                  <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                </svg>
+                导入到目录：<span className="font-medium">{folderName}</span>
+              </div>
+            )}
             <div
               onDragOver={(e) => {
                 e.preventDefault();
@@ -183,13 +195,13 @@ export function ImportDialog({
                 {dragOver ? "松开以导入文件" : "拖拽文件到此处，或点击选择"}
               </div>
               <div className="text-xs text-faint">
-                支持 .md .txt .json .csv .zip .pdf .docx .xlsx
+                支持 .md .txt .html .json .csv .zip .pdf .docx .xlsx
               </div>
             </div>
             <input
               ref={inputRef}
               type="file"
-              accept=".md,.markdown,.txt,.text,.json,.csv,.tsv,.zip,.pdf,.doc,.docx,.xls,.xlsx"
+              accept=".md,.markdown,.txt,.text,.html,.htm,.json,.csv,.tsv,.zip,.pdf,.doc,.docx,.xls,.xlsx"
               className="hidden"
               onChange={(e) => e.target.files && handleFiles(e.target.files)}
             />

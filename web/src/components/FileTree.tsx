@@ -61,6 +61,14 @@ function KbIcon({ size = 14 }: { size?: number }) {
   );
 }
 
+function ImportIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+    </svg>
+  );
+}
+
 type RenameTarget = { kind: "doc" | "folder"; id: string; name: string };
 type DropPos = "before" | "after" | "inside";
 
@@ -81,6 +89,7 @@ function FileTreeNode({
   onDuplicateDoc,
   onPinDoc,
   onExportDoc,
+  onImportToFolder,
   onReorder,
   siblings = [],
   depth = 0,
@@ -99,6 +108,7 @@ function FileTreeNode({
   onDuplicateDoc?: (docId: string) => void;
   onPinDoc?: (docId: string, pinned: boolean) => void;
   onExportDoc?: (docId: string) => void;
+  onImportToFolder?: (folderId: string, folderName: string) => void;
   onReorder?: (
     draggedKey: string,
     draggedKind: "folder" | "file",
@@ -200,6 +210,9 @@ function FileTreeNode({
 
   if (node.type === "folder") {
     const folderItems: MenuItem[] = [];
+    if (onImportToFolder && node.key) {
+      folderItems.push({ label: "导入文档到此处", icon: <ImportIcon size={14} />, onClick: () => onImportToFolder(node.key!, node.name) });
+    }
     if (onNew) {
       folderItems.push({ label: "新建文档", icon: <FileIcon size={14} />, onClick: () => onNew("doc", node.key ?? null) });
       folderItems.push({ label: "新建子目录", icon: <FolderIcon size={14} />, onClick: () => onNew("folder", node.key ?? null) });
@@ -284,6 +297,7 @@ function FileTreeNode({
                 onDuplicateDoc={onDuplicateDoc}
                 onPinDoc={onPinDoc}
                 onExportDoc={onExportDoc}
+                onImportToFolder={onImportToFolder}
                 onReorder={onReorder}
                 siblings={node.children}
                 depth={depth + 1}
@@ -390,6 +404,7 @@ export function FileTree({
   onDuplicateDoc,
   onPinDoc,
   onExportDoc,
+  onImportToFolder,
 }: {
   data: TreeNode[];
   activeKey: string | null;
@@ -406,6 +421,7 @@ export function FileTree({
   onDuplicateDoc?: (docId: string) => void;
   onPinDoc?: (docId: string, pinned: boolean) => void;
   onExportDoc?: (docId: string) => void;
+  onImportToFolder?: (folderId: string, folderName: string) => void;
 }) {
   const [pendingDeleteDoc, setPendingDeleteDoc] = useState<TreeNode | null>(null);
   const [pendingDeleteFolder, setPendingDeleteFolder] = useState<TreeNode | null>(null);
@@ -491,6 +507,7 @@ export function FileTree({
             onDuplicateDoc={onDuplicateDoc}
             onPinDoc={onPinDoc}
             onExportDoc={onExportDoc}
+            onImportToFolder={onImportToFolder}
             onReorder={canReorder ? handleReorder : undefined}
             siblings={data}
           />

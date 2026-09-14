@@ -326,6 +326,22 @@ def _require_kb_write(kb_id: str, user: dict) -> None:
         raise HTTPException(status_code=403, detail="没有权限修改该知识库的内容")
 
 
+def _require_folder_access(folder_id: str, user: dict) -> None:
+    """要求对该目录有写权限（自有目录，或所属知识库 write/owner），否则 403/404。"""
+    folder = next(
+        (f for f in store.list_folders(user_id=user["id"]) if f["id"] == folder_id),
+        None,
+    )
+    if folder is None:
+        raise HTTPException(status_code=404, detail="目录不存在")
+    if folder.get("user_id") == user["id"]:
+        return
+    kb_id = folder.get("kb_id")
+    if kb_id and _kb_permission(kb_id, user) in ("write", "owner"):
+        return
+    raise HTTPException(status_code=403, detail="没有权限写入该目录")
+
+
 def _dedupe_title(store, title: str, user_id: str | None = None) -> str:
     """若 title 已存在则自动追加「(2)」「(3)」…后缀，直到不重名（按 user 范围去重）"""
     existing = {d["title"] for d in store.all(user_id=user_id, with_chunks=False)}
@@ -431,6 +447,10 @@ def _iter_parse_zip(data: bytes, progress_cb):
             if ext in TEXT_EXTS:
                 text = raw.decode("utf-8", errors="replace")
                 parsed.append({"name": norm, "ext": ext, "text": text})
+            elif ext in {".html", ".htm"}:
+                # zip 内的 HTML：转 Markdown
+                _t, md = parser.html_to_markdown(raw.decode("utf-8", errors="replace"))
+                parsed.append({"name": norm, "ext": ext, "text": md})
             elif ext in {".pdf", ".docx", ".xlsx"}:
                 # 单个文件解析失败（如损坏的 PDF）不影响整个 zip 导入
                 try:
@@ -459,17 +479,22 @@ def _iter_parse_zip(data: bytes, progress_cb):
 
 
 def _ensure_folder_path(
-    store, path_parts: list[str], kb_id: str | None = None, user_id: str | None = None
+    store,
+    path_parts: list[str],
+    kb_id: str | None = None,
+    user_id: str | None = None,
+    start_parent_id: str | None = None,
 ) -> str | None:
-    """按目录层级逐级查找/创建文件夹，返回最深层 folder_id；空路径返回 None。
+    """按目录层级逐级查找/创建文件夹，返回最深层 folder_id；空路径返回 start_parent_id。
 
     逐级匹配：在现有 list_folders() 中按 parent_id + name 找同名子文件夹，
     找不到才 create_folder（避免 create_folder 无去重导致重复创建）。
     kb_id / user_id 提供时，查找与创建均限定在该范围内。
+    start_parent_id 提供时，从该目录开始逐级展开（用于「导入到指定目录」）。
     """
     if not path_parts:
-        return None
-    parent_id: str | None = None
+        return start_parent_id
+    parent_id: str | None = start_parent_id
     for name in path_parts:
         child = next(
             (
@@ -493,6 +518,7 @@ def _run_import_task(
     filename: str,
     kb_id: str | None = None,
     user_id: str | None = None,
+    target_folder_id: str | None = None,
 ) -> None:
     """后台线程：读临时文件 → 解析 + 提取媒体 → 保存媒体 → 逐文档入库 + 向量化。
 
@@ -547,7 +573,10 @@ def _run_import_task(
             # 拆出目录层级与文件名，逐级创建/复用文件夹
             dir_part, _, file_part = name.rpartition("/")
             path_parts = [s for s in dir_part.split("/") if s] if dir_part else []
-            folder_id = _ensure_folder_path(store, path_parts, kb_id, user_id)
+            # 指定目录导入：从目标目录开始逐级展开（单文件直接落入该目录）
+            folder_id = _ensure_folder_path(
+                store, path_parts, kb_id, user_id, start_parent_id=target_folder_id
+            )
             # 用文件名（去扩展名）作为标题
             title = file_part
             title = title.rsplit(".", 1)[0] if "." in title else title
@@ -1032,18 +1061,24 @@ def get_shared_doc(token: str, password: str | None = None):
 async def import_documents(
     file: UploadFile = File(...),
     kb_id: str | None = Form(None),
+    folder_id: str | None = Form(None),
     current_user: dict = Depends(get_current_user),
 ):
-    """上传文件（支持 md/txt/json/csv/pdf/docx/xlsx/zip），异步解析并入库。
+    """上传文件（支持 md/txt/html/json/csv/pdf/docx/xlsx/zip），异步解析并入库。
 
     文件先流式写入临时文件（避免整读进内存），随后返回 task_id，
     后台线程执行解析 + 媒体保存 + 逐文档向量化入库，进度经
     GET /documents/import/{task_id} 查询。
+    folder_id 提供时，导入的文档落入该目录（zip 内目录从该目录开始展开）。
     """
     filename = file.filename or "untitled"
 
     if kb_id:
         _require_kb_write(kb_id, current_user)
+
+    # 校验目标目录归属（防止越权导入到他人目录）
+    if folder_id:
+        _require_folder_access(folder_id, current_user)
 
     # 流式落盘，不 await file.read() 整读内存
     fd, tmp_path = tempfile.mkstemp(dir=str(TMP_DIR))
@@ -1072,7 +1107,7 @@ async def import_documents(
     _set_task(task_id, status="queued")
     thread = threading.Thread(
         target=_run_import_task,
-        args=(task_id, tmp_path, filename, kb_id, current_user["id"]),
+        args=(task_id, tmp_path, filename, kb_id, current_user["id"], folder_id),
         daemon=True,
     )
     thread.start()

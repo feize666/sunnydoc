@@ -134,6 +134,7 @@ export default function Home() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [importTarget, setImportTarget] = useState<{ folderId: string; folderName: string } | null>(null);
   const [dragFiles, setDragFiles] = useState<File[] | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [newDocOpen, setNewDocOpen] = useState(false);
@@ -252,6 +253,18 @@ export default function Home() {
     } else {
       setSidebarCollapsed((v) => !v);
     }
+  }, []);
+
+  // 打开普通导入（导入到知识库根目录）
+  const openImport = useCallback(() => {
+    setImportTarget(null);
+    setImportOpen(true);
+  }, []);
+
+  // 从目录右键「导入到此处」：导入到指定目录
+  const handleImportToFolder = useCallback((folderId: string, folderName: string) => {
+    setImportTarget({ folderId, folderName });
+    setImportOpen(true);
   }, []);
 
   useEffect(() => {
@@ -405,7 +418,7 @@ export default function Home() {
       const files = Array.from(e.dataTransfer?.files ?? []);
       if (files.length > 0) {
         setDragFiles(files);
-        setImportOpen(true);
+        openImport();
       }
     };
     window.addEventListener("dragenter", onDragEnter);
@@ -910,7 +923,7 @@ export default function Home() {
       icon: "📥",
       label: "导入文档",
       hint: "Ctrl+I",
-      action: () => setImportOpen(true),
+      action: openImport,
     },
     {
       icon: "📁",
@@ -957,7 +970,8 @@ export default function Home() {
     activeKey,
     onSelect: openDoc,
     folders,
-    onImport: () => setImportOpen(true),
+    onImport: openImport,
+    onImportToFolder: handleImportToFolder,
     onExport: () => setExportOpen(true),
     onRefresh: refreshList,
     onDeleteDoc: handleDelete,
@@ -1159,11 +1173,14 @@ export default function Home() {
         onClose={() => {
           setImportOpen(false);
           setDragFiles(null);
+          setImportTarget(null);
         }}
         onImported={() => {
           refreshList();
         }}
         kbId={currentKbId}
+        folderId={importTarget?.folderId ?? null}
+        folderName={importTarget?.folderName ?? null}
         autoFiles={dragFiles}
       />
 

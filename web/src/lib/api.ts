@@ -226,10 +226,12 @@ export async function deleteFolder(id: string): Promise<void> {
 export async function importDocument(
   file: File,
   kbId?: string | null,
+  folderId?: string | null,
 ): Promise<{ imported: number; documents: { id: string; title: string }[] }> {
   const form = new FormData();
   form.append("file", file);
   if (kbId) form.append("kb_id", kbId);
+  if (folderId) form.append("folder_id", folderId);
   return request("/documents/import", { method: "POST", body: form });
 }
 
@@ -248,14 +250,20 @@ export async function importDocumentAsync(
   file: File,
   kbId?: string | null,
   onUploadProgress?: (percent: number) => void,
+  folderId?: string | null,
 ): Promise<{ task_id: string; status: string }> {
   const form = new FormData();
   form.append("file", file);
   if (kbId) form.append("kb_id", kbId);
+  if (folderId) form.append("folder_id", folderId);
 
   return new Promise<{ task_id: string; status: string }>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${BASE}/documents/import`);
+
+    // 关键：XHR 不会自动带 cookie/authorization，需手动附加 token
+    const token = getToken();
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && e.total > 0) {
@@ -296,11 +304,12 @@ export async function getImportTask(taskId: string): Promise<ImportTaskStatus> {
 export async function importFromUrl(
   url: string,
   kbId?: string | null,
+  folderId?: string | null,
 ): Promise<{ id: string; title: string }> {
   return request("/import/url", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, kb_id: kbId ?? undefined }),
+    body: JSON.stringify({ url, kb_id: kbId ?? undefined, folder_id: folderId ?? undefined }),
   });
 }
 

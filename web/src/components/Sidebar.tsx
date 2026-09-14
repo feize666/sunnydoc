@@ -128,6 +128,7 @@ export function Sidebar({
   onDuplicateDoc,
   onPinDoc,
   onExportDoc,
+  onImportToFolder,
   listError,
   kbName,
   onBackHome,
@@ -169,6 +170,7 @@ export function Sidebar({
   onDuplicateDoc?: (docId: string) => void;
   onPinDoc?: (docId: string, pinned: boolean) => void;
   onExportDoc?: (docId: string) => void;
+  onImportToFolder?: (folderId: string, folderName: string) => void;
   listError?: string | null;
   kbName?: string;
   onBackHome?: () => void;
@@ -724,6 +726,7 @@ export function Sidebar({
               onMoveDoc={readOnly ? undefined : onMoveDoc}
               onMoveFolder={readOnly ? undefined : onMoveFolder}
               onMoveToKb={readOnly ? undefined : onMoveToKb}
+              onImportToFolder={readOnly ? undefined : onImportToFolder}
             />
           </>
         )}
