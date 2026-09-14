@@ -98,6 +98,16 @@ export function TitleBar({
             <div
               key={d.key}
               onClick={() => onSelect(d.key)}
+              onAuxClick={(e) => {
+                if (e.button === 1) {
+                  e.preventDefault();
+                  onClose(d.key);
+                }
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                onClose(d.key);
+              }}
               className={`group flex h-full cursor-pointer items-center gap-1.5 whitespace-nowrap border-b-2 px-3 text-[14px] transition-colors ${
                 active
                   ? "border-accent text-text"

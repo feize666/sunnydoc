@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Tooltip } from "./Tooltip";
+import { EmptyState } from "./EmptyState";
 
 function BackIcon({ size = 15 }: { size?: number }) {
   return (
@@ -129,9 +130,15 @@ export function TrashView({ onBack }: { onBack: () => void }) {
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-3xl px-6 py-6">
           {!loading && total === 0 && (
-            <div className="rounded-xl border border-dashed border-line py-16 text-center text-[14px] text-faint">
-              回收站是空的
-            </div>
+            <EmptyState
+              icon={
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6" />
+                </svg>
+              }
+              title="回收站是空的"
+              description="删除的文档、文件夹和知识库会先进入回收站，可在此恢复"
+            />
           )}
           {renderSection("文档", data.documents, "document")}
           {renderSection("文件夹", data.folders, "folder")}
