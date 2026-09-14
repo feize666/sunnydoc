@@ -1724,6 +1724,12 @@ export function MindMapEditor({
           renderOutline()
         ) : (
           <svg width="100%" height="100%">
+            <defs>
+              {/* 根节点柔和阴影：仅作用于根节点 rect，不波及选中/hover 高亮 */}
+              <filter id="rootGlow" x="-50%" y="-50%" width="200%" height="200%">
+                <feDropShadow dx="0" dy="2" stdDeviation="4" floodColor="#0f172a" floodOpacity="0.28" />
+              </filter>
+            </defs>
           <g transform={`translate(${v.x},${v.y}) scale(${v.k})`}>
             {/* 连线（按布局区分线型） */}
             {visibleNodes.map((n) => {
@@ -1739,7 +1745,7 @@ export function MindMapEditor({
                 const bx = c.x + c.w / 2;
                 const by = c.y + NODE_H / 2;
                 const d = `M ${ax} ${ay} L ${bx} ${by}`;
-                return <path key={`e-${n.id}`} d={d} fill="none" stroke="var(--line-strong)" strokeWidth={1.5} />;
+                return <path key={`e-${n.id}`} d={d} fill="none" stroke={levelColor(n.id)} strokeWidth={1.5} />;
               }
 
               // 树形图：直角折线（父下边中点 → 竖直 → 水平 → 子上边中点）
@@ -1750,7 +1756,7 @@ export function MindMapEditor({
                 const ey = c.y;
                 const my = (sy + ey) / 2;
                 const d = `M ${sx} ${sy} V ${my} H ${ex} V ${ey}`;
-                return <path key={`e-${n.id}`} d={d} fill="none" stroke="var(--line-strong)" strokeWidth={1.5} />;
+                return <path key={`e-${n.id}`} d={d} fill="none" stroke={levelColor(n.id)} strokeWidth={1.5} />;
               }
 
               // logic / org / timeline：贝塞尔曲线
@@ -1772,7 +1778,7 @@ export function MindMapEditor({
                 const mx = (sx + ex) / 2;
                 d = `M ${sx} ${sy} C ${mx} ${sy}, ${mx} ${ey}, ${ex} ${ey}`;
               }
-              return <path key={`e-${n.id}`} d={d} fill="none" stroke="var(--line-strong)" strokeWidth={1.5} />;
+              return <path key={`e-${n.id}`} d={d} fill="none" stroke={levelColor(n.id)} strokeWidth={1.5} />;
             })}
 
             {/* 鱼骨图主干（鱼脊）：从 x=0 到鱼头处 */}
@@ -1846,6 +1852,7 @@ export function MindMapEditor({
                     rx={isRoot(n.id) ? 20 : 8}
                     fill={isRoot(n.id) ? color : "var(--background)"}
                     stroke={isRoot(n.id) ? color : hovered ? "var(--accent)" : color}
+                    filter={isRoot(n.id) ? "url(#rootGlow)" : undefined}
                     strokeWidth={
                       isRoot(n.id)
                         ? hovered

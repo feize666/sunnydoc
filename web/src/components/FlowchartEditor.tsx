@@ -485,9 +485,20 @@ function createShapeNode(theme: { nodeFill: string; nodeStroke: string }) {
     const d = data as unknown as FlowData;
     const w = d.width ?? NODE_W;
     const h = d.height ?? NODE_H;
-    const fill = d.fill ?? (selected ? "var(--accent-soft)" : theme.nodeFill);
+    const isContainerShape = d.shape === "container" || d.shape === "group" || d.shape === "lane";
+    // 容器类：更淡的半透明填充（基于主题边框色，低透明度），让容器更清晰且不喧宾夺主
+    const containerFill = (() => {
+      const hex = theme.nodeStroke;
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `rgba(${r}, ${g}, ${b}, 0.06)`;
+    })();
+    const fill = d.fill ?? (selected ? "var(--accent-soft)" : isContainerShape ? containerFill : theme.nodeFill);
     const stroke = d.stroke ?? (selected ? "var(--accent)" : theme.nodeStroke);
     const dashed = d.shape === "container" || d.shape === "group";
+    // 选中态加粗到 2.5；容器类非选中态 2，其它 1.5
+    const strokeW = selected ? 2.5 : isContainerShape ? 2 : 1.5;
 
     // 文字样式
     const fontSize = d.fontSize ?? 13;
@@ -510,11 +521,11 @@ function createShapeNode(theme: { nodeFill: string; nodeStroke: string }) {
       const r = 12;
       const titleBarPath = `M ${r} 0 H ${BAR_W} V ${h} H ${r} Q 0 ${h} 0 ${h - r} V ${r} Q 0 0 ${r} 0 Z`;
       return (
-        <div style={{ width: w, height: h }} className="relative" title={d.label}>
-          <svg width={w} height={h} className="overflow-visible">
-            <path d={shapePath(d.shape, w, h)} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.5} />
-            <path d={titleBarPath} fill="rgba(100,116,139,0.14)" stroke="none" />
-            <line x1={BAR_W} y1={0} x2={BAR_W} y2={h} stroke={stroke} strokeWidth={1} strokeOpacity={0.55} />
+      <div style={{ width: w, height: h, filter: selected ? "drop-shadow(0 0 4px var(--accent))" : undefined }} className="relative" title={d.label}>
+        <svg width={w} height={h} className="overflow-visible">
+          <path d={shapePath(d.shape, w, h)} fill={fill} stroke={stroke} strokeWidth={strokeW} />
+          <path d={titleBarPath} fill="rgba(100,116,139,0.2)" stroke="none" />
+          <line x1={BAR_W} y1={0} x2={BAR_W} y2={h} stroke={stroke} strokeWidth={1} strokeOpacity={0.6} />
             <text
               x={BAR_W / 2}
               y={h / 2}
@@ -537,14 +548,14 @@ function createShapeNode(theme: { nodeFill: string; nodeStroke: string }) {
     }
 
     return (
-      <div style={{ width: w, height: h }} className="relative" title={d.label}>
+      <div style={{ width: w, height: h, filter: selected ? "drop-shadow(0 0 4px var(--accent))" : undefined }} className="relative" title={d.label}>
         <svg width={w} height={h} className="overflow-visible">
           <path
             d={shapePath(d.shape, w, h)}
             fill={fill}
             stroke={stroke}
-            strokeWidth={selected ? 2 : 1.5}
-            strokeDasharray={dashed ? "8 4" : undefined}
+            strokeWidth={strokeW}
+            strokeDasharray={dashed ? "6 4" : undefined}
           />
           {shapeDecoration(d.shape, w, h, stroke)}
           <text
@@ -692,7 +703,7 @@ export function FlowchartEditor({
   const dragStartRef = useRef<StoredFlow | null>(null);
   const clipboardRef = useRef<StoredNode[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
-  const prevThemeColorRef = useRef(THEMES[0].edgeColor);
+  const prevThemeColorRef = useRef(THEMES[0].nodeStroke);
   // 方向键微调：标记「本次方向键序列是否已记历史」，避免连续按污染撤销栈
   const arrowMovedRef = useRef(false);
 
@@ -793,7 +804,7 @@ export function FlowchartEditor({
     () => ({
       type: edgeKind,
       // 注意：markerEnd/markerStart 不在此设置，改由 viewEdges 依据 edge.data 箭头类型生成（含「无箭头」）
-      style: { stroke: THEMES[themeIndex].edgeColor, strokeWidth: 1.5 },
+      style: { stroke: THEMES[themeIndex].nodeStroke, strokeWidth: 1.5 },
       labelStyle: { fill: "var(--text)", fontSize: 12, fontWeight: 500 },
       labelBgStyle: { fill: "var(--background)", fillOpacity: 0.9 },
       labelBgPadding: [6, 3] as [number, number],
@@ -807,7 +818,7 @@ export function FlowchartEditor({
 
   // 切换主题时更新已有连线颜色（保留被手动设色的连线）。箭头由 viewEdges 的 decorate 统一生成。
   useEffect(() => {
-    const newColor = THEMES[themeIndex].edgeColor;
+    const newColor = THEMES[themeIndex].nodeStroke;
     const prevColor = prevThemeColorRef.current;
     setEdges((eds) =>
       eds.map((e) => {
@@ -826,7 +837,7 @@ export function FlowchartEditor({
     () =>
       edges.map((e) => {
         const ad = (e.data as EdgeArrowData) || {};
-        const color = (e.style?.stroke as string) || THEMES[themeIndex].edgeColor;
+        const color = (e.style?.stroke as string) || THEMES[themeIndex].nodeStroke;
         return {
           ...e,
           markerEnd: buildMarker(ad.arrowEnd ?? "solid", color),
