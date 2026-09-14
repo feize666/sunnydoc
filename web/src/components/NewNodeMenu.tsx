@@ -68,13 +68,14 @@ export function NewNodeMenu({
     if (el) {
       const r = el.getBoundingClientRect();
       const MENU_W = 320;
-      const MENU_H = 268;
+      const MENU_H = Math.min(268, window.innerHeight * 0.7);
       let left = align === "left" ? r.left : r.right - MENU_W;
       let top = r.bottom + 4;
       // 视口校正：右侧溢出则靠左；下方空间不足则向上展开
       if (left + MENU_W > window.innerWidth - 8) left = window.innerWidth - MENU_W - 8;
       if (left < 8) left = 8;
       if (top + MENU_H > window.innerHeight - 8) top = r.top - MENU_H - 4;
+      if (top < 8) top = 8;
       setPos({ left, top });
     } else {
       setPos(null);
@@ -84,7 +85,7 @@ export function NewNodeMenu({
   if (typeof document === "undefined") return null;
 
   const menu = (
-    <div className="menu-panel fixed z-50 w-[320px] overflow-hidden rounded-xl p-1.5" style={pos ? { left: pos.left, top: pos.top } : undefined}>
+    <div className="menu-panel fixed z-50 w-[320px] max-h-[70vh] overflow-y-auto overflow-x-hidden rounded-xl p-1.5" style={pos ? { left: pos.left, top: pos.top } : undefined}>
       <div className="grid grid-cols-2 gap-0.5">
         {TYPES.map((t) => (
           <button

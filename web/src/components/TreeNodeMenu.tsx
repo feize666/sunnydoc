@@ -27,12 +27,14 @@ export function TreeNodeMenu({
     if (el) {
       const r = el.getBoundingClientRect();
       const MENU_W = 176;
-      const MENU_H = items.length * 36 + 12;
+      // 菜单高度受 max-h-[70vh] 限制，超出部分内部滚动
+      const MENU_H = Math.min(items.length * 36 + 12, window.innerHeight * 0.7);
       let left = r.right - MENU_W;
       let top = r.bottom + 4;
       if (left + MENU_W > window.innerWidth - 8) left = window.innerWidth - MENU_W - 8;
       if (left < 8) left = 8;
       if (top + MENU_H > window.innerHeight - 8) top = r.top - MENU_H - 4;
+      if (top < 8) top = 8;
       setPos({ left, top });
     } else {
       setPos(null);
@@ -44,7 +46,7 @@ export function TreeNodeMenu({
   return createPortal(
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="menu-panel fixed z-50 w-44 overflow-hidden rounded-xl py-1" style={pos ? { left: pos.left, top: pos.top } : undefined}>
+      <div className="menu-panel fixed z-50 w-44 max-h-[70vh] overflow-y-auto overflow-x-hidden rounded-xl py-1" style={pos ? { left: pos.left, top: pos.top } : undefined}>
         {items.map((item, i) => (
           <button
             key={i}
