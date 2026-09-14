@@ -628,12 +628,10 @@ export function MindMapEditor({
   const [aiText, setAiText] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [themePalette, setThemePalette] = useState<string[]>(PALETTE);
-  const [themeOpen, setThemeOpen] = useState(false);
   // 自定义主题：会话内维护，不持久化
   const [customThemes, setCustomThemes] = useState<{ name: string; palette: string[] }[]>([]);
   const [themeCustomOpen, setThemeCustomOpen] = useState(false);
   const [customBaseColor, setCustomBaseColor] = useState<string>(PRESET_COLORS[0]);
-  const [iconOpen, setIconOpen] = useState(false);
   // 备注气泡：noteTarget 为打开备注的节点 id，noteDraft 为编辑中的草稿
   const [noteTarget, setNoteTarget] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
@@ -644,6 +642,8 @@ export function MindMapEditor({
 
   // 大纲模式：true 时画布区域改为渲染 HTML 缩进列表（与 SVG 共享同一份 nodes）
   const [outline, setOutline] = useState(false);
+  // 左侧侧栏 tab：结构 / 风格
+  const [leftTab, setLeftTab] = useState<"structure" | "style">("structure");
   // 关联模式：记录「起点」节点 id；点击另一节点建立 link，再次点击按钮或点空白取消
   const [linkingFrom, setLinkingFrom] = useState<string | null>(null);
 
@@ -1210,7 +1210,6 @@ export function MindMapEditor({
     setCustomThemes((prev) => [...prev, { name, palette }]);
     setThemePalette(palette);
     setThemeCustomOpen(false);
-    setThemeOpen(false);
   };
 
   const levelColor = (id: string): string => {
@@ -1327,29 +1326,9 @@ export function MindMapEditor({
   const canRedo = future.length > 0;
 
   return (
-    <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
-      {/* 工具栏（参考 ProcessOn 分组） */}
+    <div className="flex h-[calc(100vh-300px)] min-h-[400px] flex-col rounded-lg border border-line bg-background">
+      {/* 工具栏（精简，只留高频操作） */}
       <div className="flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
-        {/* 节点操作 */}
-        <button onClick={() => selected && addChild(selected)} disabled={!selected} className={toolBtn(false)} title="添加子主题 (Tab)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-          子主题
-        </button>
-        <button onClick={() => selected && addSibling(selected)} disabled={!selected} className={toolBtn(false)} title="添加同级主题 (Enter)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 9h16M4 15h16" /></svg>
-          同级
-        </button>
-        <button onClick={() => selected && insertParent(selected)} disabled={!selected} className={toolBtn(false)} title="插入父级主题">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-          父级
-        </button>
-        <button onClick={() => selected && removeNode(selected)} disabled={!selected} className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] text-danger transition-colors hover:bg-danger-soft disabled:opacity-40 disabled:cursor-not-allowed" title="删除 (Delete)">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /></svg>
-          删除
-        </button>
-
-        <span className="mx-1 h-4 w-px bg-line" />
-
         {/* 撤销/重做 */}
         <button onClick={undo} disabled={!canUndo} className={toolBtn(false)} title="撤销 (Ctrl+Z)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>
@@ -1358,104 +1337,6 @@ export function MindMapEditor({
         <button onClick={redo} disabled={!canRedo} className={toolBtn(false)} title="重做 (Ctrl+Y)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 15-6.7L21 13" /></svg>
           重做
-        </button>
-
-        <span className="mx-1 h-4 w-px bg-line" />
-
-        {/* 节点颜色 */}
-        <div className="flex items-center gap-1">
-          {PALETTE.map((c) => (
-            <button
-              key={c}
-              onClick={() => setNodeColor(c)}
-              className="h-5 w-5 rounded-full border border-black/10 transition-transform hover:scale-110"
-              style={{ backgroundColor: c }}
-              title="节点颜色"
-            />
-          ))}
-          <button
-            onClick={() => setNodeColor("")}
-            className="grid h-5 w-5 place-items-center rounded-full border border-line text-faint hover:text-text"
-            title="清除颜色"
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
-          </button>
-        </div>
-
-        <span className="mx-1 h-4 w-px bg-line" />
-
-        {/* 节点图标 */}
-        <div className="relative shrink-0">
-          <button
-            onClick={() => { if (!selected) return; setIconOpen((o) => !o); setHelpOpen(false); }}
-            disabled={!selected}
-            className={toolBtn(false)}
-            title="设置节点图标"
-          >
-            <Glyph iconId="star" size={14} />
-            图标
-          </button>
-          {iconOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setIconOpen(false)} />
-              <div className="menu-panel absolute left-0 top-full z-40 mt-1 w-[280px] p-2">
-                <div className="mb-1 flex items-center justify-between px-0.5">
-                  <span className="text-[12px] text-faint">选择图标</span>
-                  <button
-                    onClick={() => { setNodeIcon(""); setIconOpen(false); }}
-                    className="text-[12px] text-muted hover:text-text"
-                  >
-                    清除
-                  </button>
-                </div>
-                <div className="grid grid-cols-7 gap-1">
-                  {ICONS.map((ic) => (
-                    <button
-                      key={ic.id}
-                      title={ic.label}
-                      onClick={() => { setNodeIcon(ic.id); setIconOpen(false); }}
-                      className="grid place-items-center rounded-md p-1.5 transition-colors hover:bg-hover"
-                    >
-                      <Glyph iconId={ic.id} size={18} />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* 节点备注 */}
-        <button
-          onClick={() => { if (!selected) return; openNote(selected); }}
-          disabled={!selected}
-          className={toolBtn(false)}
-          title="节点备注"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-          备注
-        </button>
-
-        <span className="mx-1 h-4 w-px bg-line" />
-
-        {/* 布局切换 */}
-        <button onClick={() => { setLayoutMode("logic"); setView(null); }} className={toolBtn(layoutMode === "logic")} title="逻辑图（左到右）">
-          逻辑图
-        </button>
-        <button onClick={() => { setLayoutMode("org"); setView(null); }} className={toolBtn(layoutMode === "org")} title="组织结构图（上到下）">
-          组织结构图
-        </button>
-        <button onClick={() => { setLayoutMode("timeline"); setView(null); }} className={toolBtn(layoutMode === "timeline")} title="时间轴（左到右）">
-          时间轴
-        </button>
-        <button onClick={() => { setLayoutMode("fishbone"); setView(null); }} className={toolBtn(layoutMode === "fishbone")} title="鱼骨图（因果分析图）">
-          鱼骨图
-        </button>
-        <button onClick={() => { setLayoutMode("tree"); setView(null); }} className={toolBtn(layoutMode === "tree")} title="树形图（向下分类树）">
-          树形图
-        </button>
-        <button onClick={applyFreeLayout} className={toolBtn(layoutMode === "free")} title="自由分布：可自由拖拽定位节点，不自动重排">
-          自由分布
         </button>
 
         <span className="mx-1 h-4 w-px bg-line" />
@@ -1488,53 +1369,6 @@ export function MindMapEditor({
         <button onClick={clearLinks} disabled={links.length === 0} className={toolBtn(false)} title="清除所有关联">
           清除关联
         </button>
-
-        <span className="mx-1 h-4 w-px bg-line" />
-
-        {/* 主题配色 */}
-        <div className="relative shrink-0">
-          <button onClick={() => { setThemeOpen((v) => !v); setHelpOpen(false); }} className={toolBtn(false)} title="主题配色">
-            <span className="h-3.5 w-3.5 rounded-full" style={{ background: `linear-gradient(135deg, ${themePalette[0]}, ${themePalette[2]})` }} />
-            主题
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${themeOpen ? "rotate-180" : ""}`}>
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </button>
-          {themeOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setThemeOpen(false)} />
-              <div className="menu-panel absolute left-0 top-full z-40 mt-1 max-h-[60vh] w-44 overflow-auto p-1.5">
-                {[...THEMES, ...customThemes].map((t) => (
-                  <button
-                    key={t.name}
-                    onClick={() => {
-                      setThemePalette(t.palette);
-                      setThemeOpen(false);
-                    }}
-                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover"
-                  >
-                    <span className="flex gap-0.5">
-                      {t.palette.slice(0, 4).map((c) => (
-                        <span key={c} className="h-3 w-3 rounded-full" style={{ backgroundColor: c }} />
-                      ))}
-                    </span>
-                    {t.name}
-                  </button>
-                ))}
-                {customThemes.length > 0 && <span className="my-1 block h-px w-full bg-line" />}
-                <button
-                  onClick={() => {
-                    setThemeCustomOpen(true);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] text-accent transition-colors hover:bg-accent-soft"
-                >
-                  <span className="grid h-3 w-3 place-items-center rounded-full border border-accent text-[10px] leading-none">＋</span>
-                  自定义主题
-                </button>
-              </div>
-            </>
-          )}
-        </div>
 
         <span className="mx-auto" />
 
@@ -1593,8 +1427,6 @@ export function MindMapEditor({
               const next = !helpOpen;
               setHelpOpen(next);
               if (next) {
-                setIconOpen(false);
-                setThemeOpen(false);
                 setExportOpen(false);
               }
             }}
@@ -1704,22 +1536,95 @@ export function MindMapEditor({
         </div>
       )}
 
-      {/* 画布 */}
-      <div
-        ref={containerRef}
-        tabIndex={0}
-        onKeyDown={onKeyDown}
-        onPointerDown={outline ? undefined : onPointerDown}
-        onPointerMove={outline ? undefined : onPointerMove}
-        onPointerUp={outline ? undefined : onPointerUp}
-        onWheel={outline ? undefined : onWheel}
-        onClick={(e) => {
-          // 关联模式：点击空白处取消
-          if (linkingFrom && !(e.target as HTMLElement).closest(".mind-node")) setLinkingFrom(null);
-        }}
-        className="cursor-grab overflow-hidden outline-none active:cursor-grabbing"
-        style={{ touchAction: "none", height: "60vh", minHeight: 400, position: "relative" }}
-      >
+      {/* 主体：左侧栏 + 画布 + 右侧栏 */}
+      <div className="flex min-h-0 flex-1">
+        {/* 左侧侧栏：结构 / 风格 */}
+        <div className="flex w-44 shrink-0 flex-col border-r border-line bg-background">
+          <div className="flex border-b border-line">
+            <button
+              onClick={() => setLeftTab("structure")}
+              className={`flex-1 py-2 text-xs transition-colors ${leftTab === "structure" ? "bg-accent-soft font-medium text-accent" : "text-muted hover:text-text"}`}
+            >
+              结构
+            </button>
+            <button
+              onClick={() => setLeftTab("style")}
+              className={`flex-1 py-2 text-xs transition-colors ${leftTab === "style" ? "bg-accent-soft font-medium text-accent" : "text-muted hover:text-text"}`}
+            >
+              风格
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2">
+            {leftTab === "structure" ? (
+              <div className="flex flex-col gap-0.5">
+                {(
+                  [
+                    ["logic", "逻辑图", "左到右展开"],
+                    ["org", "组织结构图", "上到下展开"],
+                    ["timeline", "时间轴", "根左、一级水平主干"],
+                    ["fishbone", "鱼骨图", "因果分析"],
+                    ["tree", "树形图", "向下分类树"],
+                    ["free", "自由分布", "自由拖拽定位"],
+                  ] as [LayoutMode, string, string][]
+                ).map(([m, label, desc]) => (
+                  <button
+                    key={m}
+                    onClick={() => {
+                      setLayoutMode(m);
+                      setView(null);
+                    }}
+                    className={`rounded-md px-2 py-1.5 text-left transition-colors ${layoutMode === m ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"}`}
+                  >
+                    <div className="text-xs font-medium leading-none">{label}</div>
+                    <div className="mt-0.5 text-[10px] text-faint">{desc}</div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div>
+                <div className="mb-1.5 px-1 text-[10px] font-medium text-faint">主题配色</div>
+                {[...THEMES, ...customThemes].map((t) => (
+                  <button
+                    key={t.name}
+                    onClick={() => setThemePalette(t.palette)}
+                    className={`mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${JSON.stringify(themePalette) === JSON.stringify(t.palette) ? "bg-accent-soft font-medium text-accent" : "text-text hover:bg-hover"}`}
+                  >
+                    <span className="flex gap-0.5">
+                      {t.palette.slice(0, 4).map((c) => (
+                        <span key={c} className="h-3 w-3 rounded-full" style={{ backgroundColor: c }} />
+                      ))}
+                    </span>
+                    {t.name}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setThemeCustomOpen(true)}
+                  className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-accent transition-colors hover:bg-accent-soft"
+                >
+                  <span className="grid h-3 w-3 place-items-center rounded-full border border-accent text-[10px] leading-none">＋</span>
+                  自定义主题
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 画布 */}
+        <div
+          ref={containerRef}
+          tabIndex={0}
+          onKeyDown={onKeyDown}
+          onPointerDown={outline ? undefined : onPointerDown}
+          onPointerMove={outline ? undefined : onPointerMove}
+          onPointerUp={outline ? undefined : onPointerUp}
+          onWheel={outline ? undefined : onWheel}
+          onClick={(e) => {
+            // 关联模式：点击空白处取消
+            if (linkingFrom && !(e.target as HTMLElement).closest(".mind-node")) setLinkingFrom(null);
+          }}
+          className="relative min-w-0 flex-1 cursor-grab overflow-hidden outline-none active:cursor-grabbing"
+          style={{ touchAction: "none", height: "100%" }}
+        >
         {outline ? (
           renderOutline()
         ) : (
@@ -2082,6 +1987,91 @@ export function MindMapEditor({
             </div>
           );
         })()}
+        </div>
+
+        {/* 右侧样式侧栏 */}
+        <div className="flex w-52 shrink-0 flex-col overflow-y-auto border-l border-line bg-background">
+          {selected ? (
+            <div className="space-y-3 p-3">
+              <div>
+                <div className="mb-1.5 text-[11px] font-medium text-faint">节点操作</div>
+                <div className="grid grid-cols-2 gap-1">
+                  <button onClick={() => addChild(selected!)} className="flex items-center justify-center gap-1.5 rounded-md border border-line px-2 py-1.5 text-xs text-text transition-colors hover:bg-hover" title="添加子主题 (Tab)">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                    子主题
+                  </button>
+                  <button onClick={() => addSibling(selected!)} className="flex items-center justify-center gap-1.5 rounded-md border border-line px-2 py-1.5 text-xs text-text transition-colors hover:bg-hover" title="添加同级主题 (Enter)">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 9h16M4 15h16" /></svg>
+                    同级
+                  </button>
+                  <button onClick={() => insertParent(selected!)} className="flex items-center justify-center gap-1.5 rounded-md border border-line px-2 py-1.5 text-xs text-text transition-colors hover:bg-hover" title="插入父级主题">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                    父级
+                  </button>
+                  <button onClick={() => removeNode(selected!)} className="flex items-center justify-center gap-1.5 rounded-md border border-line px-2 py-1.5 text-xs text-danger transition-colors hover:bg-danger-soft" title="删除 (Delete)">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /></svg>
+                    删除
+                  </button>
+                </div>
+              </div>
+              <div>
+                <div className="mb-1.5 text-[11px] font-medium text-faint">节点颜色</div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {PALETTE.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setNodeColor(c)}
+                      className="h-7 w-7 rounded-full border border-line transition-transform hover:scale-110"
+                      style={{ backgroundColor: c }}
+                      title={c}
+                    />
+                  ))}
+                  <button
+                    onClick={() => setNodeColor("")}
+                    className="grid h-7 w-7 place-items-center rounded-full border border-dashed border-line text-faint hover:text-text"
+                    title="清除颜色"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                  </button>
+                </div>
+              </div>
+              <div>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-[11px] font-medium text-faint">图标</span>
+                  <button onClick={() => setNodeIcon("")} className="text-[11px] text-muted transition-colors hover:text-text" title="清除图标">
+                    清除
+                  </button>
+                </div>
+                <div className="grid grid-cols-7 gap-0.5">
+                  {ICONS.map((ic) => (
+                    <button
+                      key={ic.id}
+                      title={ic.label}
+                      onClick={() => setNodeIcon(ic.id)}
+                      className={`grid place-items-center rounded-md p-1 transition-colors hover:bg-hover ${mapNode(selected)?.icon === ic.id ? "bg-accent-soft" : ""}`}
+                    >
+                      <Glyph iconId={ic.id} size={16} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <button
+                onClick={() => openNote(selected!)}
+                className="flex w-full items-center justify-center gap-1.5 rounded-md border border-line px-2 py-1.5 text-xs text-text transition-colors hover:bg-hover"
+                title="节点备注"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                备注
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-1 items-center justify-center p-4 text-center text-xs leading-relaxed text-faint">
+              选中节点
+              <br />
+              以编辑样式
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
