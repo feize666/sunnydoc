@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { ToastProvider } from "@/components/Toast";
 
 export const metadata: Metadata = {
   title: "知库 · 文档知识库",
@@ -22,7 +23,9 @@ export default function RootLayout({
         <meta httpEquiv="Pragma" content="no-cache" />
         <meta httpEquiv="Expires" content="0" />
       </head>
-      <body className="h-full">{children}</body>
+      <body className="h-full">
+        <ToastProvider>{children}</ToastProvider>
+      </body>
     </html>
   );
 }

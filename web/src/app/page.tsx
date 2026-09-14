@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { Editor } from "@/components/Editor";
 import { AiPanel } from "@/components/AiPanel";
 import { StatusBar } from "@/components/StatusBar";
+import { useToast } from "@/components/Toast";
 import { CommandPalette, type Command } from "@/components/CommandPalette";
 import { ImportDialog } from "@/components/ImportDialog";
 import { NewDocDialog } from "@/components/NewDocDialog";
@@ -105,6 +106,7 @@ function clearSessionKbId() {
 }
 
 export default function Home() {
+  const toast = useToast();
   const [docs, setDocs] = useState<Record<string, Doc>>({});
   const [metas, setMetas] = useState<DocMeta[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -511,11 +513,12 @@ export default function Home() {
         });
         closeDoc(key);
         refreshList();
+        toast.success("文档已删除");
       } catch (e) {
-        alert(`删除失败：${e instanceof Error ? e.message : "未知错误"}`);
+        toast.error(`删除失败：${e instanceof Error ? e.message : "未知错误"}`);
       }
     },
-    [closeDoc, refreshList],
+    [closeDoc, refreshList, toast],
   );
 
   // 删除文件夹
@@ -525,7 +528,7 @@ export default function Home() {
         await deleteFolder(id);
         refreshList();
       } catch (e) {
-        alert(`删除文件夹失败：${e instanceof Error ? e.message : "未知错误"}`);
+        toast.error(`删除文件夹失败：${e instanceof Error ? e.message : "未知错误"}`);
       }
     },
     [refreshList],
@@ -539,7 +542,7 @@ export default function Home() {
         setSortBy("manual");
         refreshList();
       } catch (e) {
-        alert(`移动文档失败：${e instanceof Error ? e.message : "未知错误"}`);
+        toast.error(`移动文档失败：${e instanceof Error ? e.message : "未知错误"}`);
       }
     },
     [refreshList],
@@ -553,7 +556,7 @@ export default function Home() {
         setSortBy("manual");
         refreshList();
       } catch (e) {
-        alert(`移动文件夹失败：${e instanceof Error ? e.message : "未知错误"}`);
+        toast.error(`移动文件夹失败：${e instanceof Error ? e.message : "未知错误"}`);
       }
     },
     [refreshList],
@@ -622,7 +625,7 @@ export default function Home() {
           openDoc(doc.id);
         }
       } catch (e) {
-        alert(`新建失败：${e instanceof Error ? e.message : "未知错误"}`);
+        toast.error(`新建失败：${e instanceof Error ? e.message : "未知错误"}`);
       }
     },
     [currentKbId, refreshList, openDoc],
@@ -635,7 +638,7 @@ export default function Home() {
         await renameDocument(docId, name);
         refreshList();
       } catch (e) {
-        alert(`重命名失败：${e instanceof Error ? e.message : "未知错误"}`);
+        toast.error(`重命名失败：${e instanceof Error ? e.message : "未知错误"}`);
       }
     },
     [refreshList],
@@ -648,7 +651,7 @@ export default function Home() {
         await renameFolder(folderId, name);
         refreshList();
       } catch (e) {
-        alert(`重命名失败：${e instanceof Error ? e.message : "未知错误"}`);
+        toast.error(`重命名失败：${e instanceof Error ? e.message : "未知错误"}`);
       }
     },
     [refreshList],
@@ -660,11 +663,12 @@ export default function Home() {
       try {
         await duplicateDocument(docId);
         refreshList();
+        toast.success("已复制文档");
       } catch (e) {
-        alert(`复制失败：${e instanceof Error ? e.message : "未知错误"}`);
+        toast.error(`复制失败：${e instanceof Error ? e.message : "未知错误"}`);
       }
     },
-    [refreshList],
+    [refreshList, toast],
   );
 
   // 导出单文档（markdown）
@@ -678,7 +682,7 @@ export default function Home() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert(`导出失败：${e instanceof Error ? e.message : "未知错误"}`);
+      toast.error(`导出失败：${e instanceof Error ? e.message : "未知错误"}`);
     }
   }, []);
 
@@ -724,7 +728,7 @@ export default function Home() {
       if (hit) {
         openRecent(hit.id, hit.kb_id ?? null);
       } else {
-        alert(`未找到文档「${title}」，请确认标题是否正确`);
+        toast.error(`未找到文档「${title}」，请确认标题是否正确`);
       }
     },
     [openRecent],
@@ -769,11 +773,12 @@ export default function Home() {
         }
         refreshKbs();
         refreshRecent();
+        toast.success("知识库已删除");
       } catch (e) {
-        alert(`删除知识库失败：${e instanceof Error ? e.message : "未知错误"}`);
+        toast.error(`删除知识库失败：${e instanceof Error ? e.message : "未知错误"}`);
       }
     },
-    [currentKbId, refreshKbs, refreshRecent],
+    [currentKbId, refreshKbs, refreshRecent, toast],
   );
 
   // 切换收藏
@@ -792,7 +797,7 @@ export default function Home() {
         else await addFavorite(docId);
         refreshFavorites();
       } catch (e) {
-        alert(`收藏操作失败：${e instanceof Error ? e.message : "未知错误"}`);
+        toast.error(`收藏操作失败：${e instanceof Error ? e.message : "未知错误"}`);
         // 失败回滚
         setFavIds((prev) => {
           const next = new Set(prev);
@@ -818,7 +823,7 @@ export default function Home() {
         else await pinDocument(docId);
         refreshList();
       } catch (e) {
-        alert(`置顶操作失败：${e instanceof Error ? e.message : "未知错误"}`);
+        toast.error(`置顶操作失败：${e instanceof Error ? e.message : "未知错误"}`);
       }
     },
     [refreshList],
@@ -831,7 +836,7 @@ export default function Home() {
         await generateSummary(docId);
         refreshList();
       } catch (e) {
-        alert(`生成摘要失败：${e instanceof Error ? e.message : "未知错误"}`);
+        toast.error(`生成摘要失败：${e instanceof Error ? e.message : "未知错误"}`);
       }
     },
     [refreshList],
