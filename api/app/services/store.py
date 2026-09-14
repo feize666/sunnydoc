@@ -148,8 +148,10 @@ class DocStore:
             "utf-8",
         )
 
-    def _build_chunks(self, text: str) -> list[dict[str, Any]]:
-        """分片 + 向量化，供 add / update 共用。"""
+    def _build_chunks(self, text: str, kind: str = "doc") -> list[dict[str, Any]]:
+        """分片 + 向量化，供 add / update 共用。kind="html" 时先去标签转纯文本。"""
+        if kind == "html":
+            text = _html_to_plain(text)
         chunks = _segment(text)
         # 尝试向量化（无 embedding 服务时为 None）
         vectors = embedding.embed(chunks) if embedding.available() else None
@@ -369,7 +371,7 @@ class DocStore:
             "user_id": user_id,
             "type": type,
             "sort_order": time.time(),
-            "chunks": self._build_chunks(text),
+            "chunks": self._build_chunks(text, kind=type),
         }
         if self._backend == "db":
             db.add_document(doc)
@@ -423,7 +425,7 @@ class DocStore:
                 doc["title"] = title
             if text is not _UNSET:
                 doc["text"] = text
-                doc["chunks"] = self._build_chunks(text)
+                doc["chunks"] = self._build_chunks(text, kind=doc.get("type", "doc"))
             if folder_id is not _UNSET:
                 doc["folder_id"] = folder_id
             if kb_id is not _UNSET:
@@ -1345,6 +1347,16 @@ class DocStore:
 
 
 store = DocStore()
+
+
+def _html_to_plain(text: str) -> str:
+    """去除 HTML 标签并解码实体，得到纯文本（用于 html 类型文档的分片）。"""
+    import html as _html_mod
+
+    plain = re.sub(r"<[^>]+>", " ", text)
+    plain = _html_mod.unescape(plain)
+    plain = re.sub(r"[ \t]+", " ", plain)
+    return plain.strip()
 
 
 def _segment(text: str, size: int = 400) -> list[str]:

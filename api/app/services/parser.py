@@ -184,8 +184,8 @@ def parse_zip(data: bytes) -> list[dict]:
                     text = raw.decode("utf-8", errors="replace")
                     results.append({"name": name, "ext": ext, "text": text})
                 elif ext in {".html", ".htm"}:
-                    _t, md = html_to_markdown(raw.decode("utf-8", errors="replace"))
-                    results.append({"name": name, "ext": ext, "text": md})
+                    cleaned = html_clean(raw.decode("utf-8", errors="replace"))
+                    results.append({"name": name, "ext": ext, "text": cleaned, "type": "html", "plain": html_to_plain(cleaned)})
                 elif ext == ".pdf":
                     results.append({"name": name, "ext": ext, "text": parse_pdf(raw)})
                 elif ext == ".docx":
@@ -260,9 +260,9 @@ def parse_file(filename: str, data: bytes) -> list[dict]:
         text = data.decode("utf-8", errors="replace")
         return [{"name": filename, "ext": ext, "text": text}]
     if ext in {".html", ".htm"}:
-        # HTML 文件：提取正文并转 Markdown（标题不入库，用文件名做标题）
-        _title, md = html_to_markdown(data.decode("utf-8", errors="replace"))
-        return [{"name": filename, "ext": ext, "text": md}]
+        # HTML 文件：保留原始 HTML（直接渲染），另附纯文本用于分片/搜索
+        cleaned = html_clean(data.decode("utf-8", errors="replace"))
+        return [{"name": filename, "ext": ext, "text": cleaned, "type": "html", "plain": html_to_plain(cleaned)}]
     if ext == ".pdf":
         return [{"name": filename, "ext": ext, "text": parse_pdf(data)}]
     if ext == ".docx":
@@ -270,6 +270,32 @@ def parse_file(filename: str, data: bytes) -> list[dict]:
     if ext == ".xlsx":
         return [{"name": filename, "ext": ext, "text": parse_xlsx(data)}]
     return []
+
+
+def html_clean(html: str) -> str:
+    """网页 HTML → 清洗后的正文 HTML 片段。
+
+    与 html_to_markdown 相同的噪音清理逻辑，但保留原始 HTML 结构
+    （用于「HTML 文件直接渲染」），返回 body/article/main 的内部 HTML。
+    """
+    import bs4
+
+    soup = bs4.BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript", "iframe", "nav", "header", "footer", "aside", "form", "button"]):
+        tag.decompose()
+    body = soup.find("article") or soup.find("main") or soup.body or soup
+    inner = getattr(body, "decode_contents", None)
+    return inner() if inner else str(body)
+
+
+def html_to_plain(html: str) -> str:
+    """HTML → 纯文本（去标签 + 解码实体），供分片/向量化与附件预览使用。"""
+    import re
+
+    text = re.sub(r"<[^>]+>", " ", html)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n\s*\n+", "\n\n", text)
+    return text.strip()
 
 
 def html_to_markdown(html: str, base_url: str = "") -> tuple[str, str]:

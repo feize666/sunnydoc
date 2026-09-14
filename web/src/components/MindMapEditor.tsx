@@ -662,9 +662,11 @@ function Glyph({
 export function MindMapEditor({
   value,
   onChange,
+  readOnly = false,
 }: {
   value: string;
   onChange: (json: string) => void;
+  readOnly?: boolean;
 }) {
   const [nodes, setNodes] = useState<MindNode[]>(() => {
     const p = parseMind(value);
@@ -1544,6 +1546,7 @@ export function MindMapEditor({
   return (
     <div className="flex h-[calc(100vh-300px)] min-h-[400px] flex-col rounded-lg border border-line bg-background">
       {/* 工具栏（精简，只留高频操作） */}
+      {!readOnly && (
       <div className="relative z-20 flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
         {/* 侧栏折叠开关 */}
         <button
@@ -1726,9 +1729,10 @@ export function MindMapEditor({
           重置
         </button>
       </div>
+      )}
 
       {/* AI 生成对话框 */}
-      {aiOpen && (
+      {!readOnly && aiOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setAiOpen(false)}>
           <div className="w-[480px] max-w-[92vw] rounded-xl border border-line bg-background p-4 shadow-lg" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 text-[14px] font-semibold text-text">AI 生成思维导图</div>
@@ -1804,7 +1808,7 @@ export function MindMapEditor({
       {/* 主体：左侧栏 + 画布 + 右侧栏 */}
       <div className="flex min-h-0 flex-1">
         {/* 左侧侧栏：结构 / 风格 */}
-        {!leftCollapsed && (
+        {!leftCollapsed && !readOnly && (
         <div className="flex w-44 shrink-0 flex-col border-r border-line bg-background">
           <div className="flex border-b border-line">
             <button
@@ -1879,12 +1883,12 @@ export function MindMapEditor({
         {/* 画布 */}
         <div
           ref={containerRef}
-          tabIndex={0}
-          onKeyDown={onKeyDown}
-          onPointerDown={outline ? undefined : onPointerDown}
-          onPointerMove={outline ? undefined : onPointerMove}
-          onPointerUp={outline ? undefined : onPointerUp}
-          onWheel={outline ? undefined : onWheel}
+          tabIndex={readOnly ? -1 : 0}
+          onKeyDown={readOnly ? undefined : onKeyDown}
+          onPointerDown={readOnly ? undefined : outline ? undefined : onPointerDown}
+          onPointerMove={readOnly ? undefined : outline ? undefined : onPointerMove}
+          onPointerUp={readOnly ? undefined : outline ? undefined : onPointerUp}
+          onWheel={readOnly ? undefined : outline ? undefined : onWheel}
           onClick={(e) => {
             // 关联模式：点击空白处取消
             if (linkingFrom && !(e.target as HTMLElement).closest(".mind-node")) setLinkingFrom(null);
@@ -1893,7 +1897,7 @@ export function MindMapEditor({
             // 双击空白处：自适应视图（双击节点由节点的 onDoubleClick stopPropagation 拦截）
             if (!(e.target as HTMLElement).closest(".mind-node")) setView(null);
           }}
-          className="relative min-w-0 flex-1 cursor-grab overflow-hidden outline-none active:cursor-grabbing"
+          className={`relative min-w-0 flex-1 cursor-grab overflow-hidden outline-none active:cursor-grabbing ${readOnly ? "pointer-events-none select-none" : ""}`}
           style={{
             touchAction: "none",
             height: "100%",
@@ -2354,7 +2358,7 @@ export function MindMapEditor({
         </div>
 
         {/* 右侧样式侧栏 */}
-        {!rightCollapsed && (
+        {!rightCollapsed && !readOnly && (
         <div className="flex w-52 shrink-0 flex-col border-l border-line bg-background">
           <div className="flex items-center justify-between border-b border-line px-3 py-2">
             <span className="text-xs font-semibold text-text">样式</span>
@@ -2446,6 +2450,7 @@ export function MindMapEditor({
         )}
       </div>
 
+      {!readOnly && (
       <DiagramTemplateDialog
         open={templateOpen}
         onClose={() => setTemplateOpen(false)}
@@ -2453,6 +2458,7 @@ export function MindMapEditor({
         currentData={JSON.stringify({ nodes, links })}
         onApply={applyTemplate}
       />
+      )}
     </div>
   );
 }

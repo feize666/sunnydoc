@@ -448,9 +448,9 @@ def _iter_parse_zip(data: bytes, progress_cb):
                 text = raw.decode("utf-8", errors="replace")
                 parsed.append({"name": norm, "ext": ext, "text": text})
             elif ext in {".html", ".htm"}:
-                # zip 内的 HTML：转 Markdown
-                _t, md = parser.html_to_markdown(raw.decode("utf-8", errors="replace"))
-                parsed.append({"name": norm, "ext": ext, "text": md})
+                # zip 内的 HTML：保留原始 HTML（直接渲染），另附纯文本用于分片
+                cleaned = parser.html_clean(raw.decode("utf-8", errors="replace"))
+                parsed.append({"name": norm, "ext": ext, "text": cleaned, "type": "html", "plain": parser.html_to_plain(cleaned)})
             elif ext in {".pdf", ".docx", ".xlsx"}:
                 # 单个文件解析失败（如损坏的 PDF）不影响整个 zip 导入
                 try:
@@ -582,7 +582,7 @@ def _run_import_task(
             title = title.rsplit(".", 1)[0] if "." in title else title
             title = _dedupe_title(store, title, user_id)
             doc = store.add(
-                title=title, text=text, source=filename, ext=p["ext"], folder_id=folder_id, kb_id=kb_id, user_id=user_id
+                title=title, text=text, source=filename, ext=p["ext"], folder_id=folder_id, kb_id=kb_id, user_id=user_id, type=p.get("type", "doc")
             )
             imported.append({"id": doc["id"], "title": doc["title"]})
             progress = 50 + int(50 * i / n) if n else 100
@@ -1394,10 +1394,10 @@ async def upload_chat_attachment(
             parsed = parser.parse_zip(data)
         except Exception:  # noqa: BLE001
             parsed = []
-        text = "\n\n".join(f"### {p['name']}\n{p['text']}" for p in parsed if p.get("text"))
+        text = "\n\n".join(f"### {p['name']}\n{p.get('plain') or p['text']}" for p in parsed if p.get("text"))
     else:
         parsed = parser.parse_file(filename, data)
-        text = "\n\n".join(p.get("text", "") for p in parsed)
+        text = "\n\n".join(p.get("plain") or p.get("text", "") for p in parsed)
 
     text = (text or "").strip()[:_ATTACHMENT_TEXT_MAX]
 

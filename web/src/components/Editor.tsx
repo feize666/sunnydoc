@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { renderMarkdown, extractToc, type TocItem } from "@/lib/markdown";
+import { renderMarkdown, extractToc, sanitizeHtml, type TocItem } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
 import { updateDocument } from "@/lib/api";
@@ -104,6 +104,7 @@ export function Editor({
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
+  const [htmlPreview, setHtmlPreview] = useState("");
   const [copied, setCopied] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const { width: tocWidth, onMouseDown: onTocResize } = useResizable(224, 180, 400, "toc_width", -1);
@@ -162,6 +163,15 @@ export function Editor({
       cancelled = true;
     };
   }, [doc?.body, highlight, theme]);
+
+  // HTML 文档：清洗后直接渲染（不做 Markdown 转换）
+  useEffect(() => {
+    if (doc?.type === "html") {
+      setHtmlPreview(sanitizeHtml(doc.body));
+    } else {
+      setHtmlPreview("");
+    }
+  }, [doc?.body, doc?.type]);
 
   // 搜索命中定位：预览渲染后，滚动到第一个高亮标记
   useEffect(() => {
@@ -528,6 +538,21 @@ export function Editor({
                     </tbody>
                   </table>
                 </div>
+              ) : doc.type === "flowchart" ? (
+                <div className="mt-6 overflow-hidden rounded-lg border border-line">
+                  <FlowchartEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly />
+                </div>
+              ) : doc.type === "mindmap" ? (
+                <div className="mt-6 overflow-hidden rounded-lg border border-line">
+                  <MindMapEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly />
+                </div>
+              ) : doc.type === "html" ? (
+                <div
+                  ref={contentRef}
+                  className="md-body mt-6"
+                  onMouseUp={handleTextSelect}
+                  dangerouslySetInnerHTML={{ __html: htmlPreview }}
+                />
               ) : (
                 <div
                   ref={contentRef}
@@ -596,7 +621,13 @@ export function Editor({
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     className="min-h-[60vh] w-full resize-y rounded-lg border border-line bg-background px-4 py-3 font-mono text-[14px] leading-relaxed text-text outline-none focus:border-accent"
-                    placeholder="在此输入 Markdown 源码…"
+                    placeholder={
+                      doc.type === "html"
+                        ? "在此编辑 HTML 源码…"
+                        : doc.type === "flowchart" || doc.type === "mindmap"
+                          ? "在此编辑 JSON 源码…"
+                          : "在此输入 Markdown 源码…"
+                    }
                     spellCheck={false}
                   />
                 ) : doc.type === "table" ? (
@@ -606,9 +637,17 @@ export function Editor({
                 ) : doc.type === "datasheet" ? (
                   <DatasheetEditor value={draft} onChange={setDraft} />
                 ) : doc.type === "flowchart" ? (
-                  <FlowchartEditor value={draft} onChange={setDraft} />
+                  <FlowchartEditor key={doc.key} value={draft} onChange={setDraft} />
                 ) : doc.type === "mindmap" ? (
-                  <MindMapEditor value={draft} onChange={setDraft} />
+                  <MindMapEditor key={doc.key} value={draft} onChange={setDraft} />
+                ) : doc.type === "html" ? (
+                  <textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    className="min-h-[60vh] w-full resize-y rounded-lg border border-line bg-background px-4 py-3 font-mono text-[14px] leading-relaxed text-text outline-none focus:border-accent"
+                    placeholder="在此编辑 HTML 源码…"
+                    spellCheck={false}
+                  />
                 ) : (
                   <RichEditor
                     value={draft}

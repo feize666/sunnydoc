@@ -210,6 +210,13 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/** 清洗原始 HTML（用于「HTML 文件直接渲染」预览），杜绝 XSS。
+ *  SSR / 无 DOM 环境返回空串（客户端挂载后由 useEffect 重新清洗填充）。 */
+export function sanitizeHtml(html: string): string {
+  if (typeof window === "undefined" || !DOMPurify.isSupported) return "";
+  return DOMPurify.sanitize(html, PURIFY_CONFIG);
+}
+
 /** 对文本做大小写不敏感的关键词高亮（支持多关键词），非命中部分转义。 */
 function highlightText(content: string, keyword: string): string {
   if (!keyword) return escapeHtml(content);

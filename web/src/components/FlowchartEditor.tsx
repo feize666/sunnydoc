@@ -652,9 +652,11 @@ const MAX_HISTORY = 100;
 export function FlowchartEditor({
   value,
   onChange,
+  readOnly = false,
 }: {
   value: string;
   onChange: (json: string) => void;
+  readOnly?: boolean;
 }) {
   const initial = useMemo(() => parseFlow(value), []);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>(
@@ -1716,6 +1718,7 @@ export function FlowchartEditor({
   return (
     <div className="flex h-[calc(100vh-300px)] min-h-[400px] flex-col rounded-lg border border-line bg-background">
       {/* 工具栏 */}
+      {!readOnly && (
       <div className="relative z-20 flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
         {/* 侧栏折叠开关 */}
         <button
@@ -1873,9 +1876,10 @@ export function FlowchartEditor({
           </button>
         </span>
       </div>
+      )}
 
       {/* AI 生成对话框 */}
-      {aiOpen && (
+      {!readOnly && aiOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setAiOpen(false)}>
           <div
             className="w-[480px] max-w-[92vw] rounded-xl border border-line bg-background p-4 shadow-lg"
@@ -1970,7 +1974,7 @@ export function FlowchartEditor({
       {/* 主体：左侧栏 + 画布 */}
       <div className="flex min-h-0 flex-1">
         {/* 左侧侧栏：图形库 / 风格 */}
-        {!leftCollapsed && (
+        {!leftCollapsed && !readOnly && (
         <div className="flex w-44 shrink-0 flex-col border-r border-line bg-background">
           <div className="flex border-b border-line">
             <button
@@ -2040,12 +2044,12 @@ export function FlowchartEditor({
         {/* 画布 */}
         <div
           ref={containerRef}
-          tabIndex={0}
-          onKeyDown={onKeyDown}
-          onKeyUp={() => {
+          tabIndex={readOnly ? -1 : 0}
+          onKeyDown={readOnly ? undefined : onKeyDown}
+          onKeyUp={readOnly ? undefined : () => {
             arrowMovedRef.current = false;
           }}
-          className="relative min-w-0 flex-1 outline-none"
+          className={`relative min-w-0 flex-1 outline-none ${readOnly ? "pointer-events-none select-none" : ""}`}
           style={{ height: "100%", minHeight: 400 }}
         >
         {/* 自定义菱形箭头 marker（颜色用 context-stroke 跟随连线描边） */}
@@ -2244,7 +2248,7 @@ export function FlowchartEditor({
         </div>
 
         {/* 右侧样式侧栏：按选中状态切换内容 */}
-        {!rightCollapsed && (
+        {!rightCollapsed && !readOnly && (
         <div className="flex w-52 shrink-0 flex-col border-l border-line bg-background">
           <div className="flex items-center justify-between border-b border-line px-3 py-2">
             <span className="text-xs font-semibold text-text">样式</span>
@@ -2550,6 +2554,7 @@ export function FlowchartEditor({
         </>
       )}
 
+      {!readOnly && (
       <DiagramTemplateDialog
         open={templateOpen}
         onClose={() => setTemplateOpen(false)}
@@ -2557,6 +2562,7 @@ export function FlowchartEditor({
         currentData={JSON.stringify(buildStored())}
         onApply={applyLocalTemplate}
       />
+      )}
     </div>
   );
 }
