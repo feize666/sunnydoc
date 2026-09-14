@@ -13,7 +13,6 @@ import {
   CopyIcon,
 } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { Tooltip } from "./Tooltip";
 import { NewNodeMenu, type NodeType } from "./NewNodeMenu";
 import { TreeNodeMenu, type MenuItem } from "./TreeNodeMenu";
 import { RenameDialog } from "./RenameDialog";
@@ -259,11 +258,9 @@ function FileTreeNode({
 
           {onNew && (
             <div className="relative shrink-0">
-              <Tooltip content="新建子节点">
-                <button onClick={(e) => { e.stopPropagation(); setAddOpen((v) => !v); }} className={hoverBtn}>
-                  <PlusIcon />
-                </button>
-              </Tooltip>
+              <button onClick={(e) => { e.stopPropagation(); setAddOpen((v) => !v); }} className={hoverBtn} title="新建子节点">
+                <PlusIcon />
+              </button>
               {addOpen && (
                 <NewNodeMenu align="left" onSelect={(t) => onNew(t, node.key ?? null)} onClose={() => setAddOpen(false)} />
               )}
@@ -271,11 +268,9 @@ function FileTreeNode({
           )}
           {folderItems.length > 0 && (
             <div className="relative shrink-0">
-              <Tooltip content="更多操作">
-                <button onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }} className={hoverBtn}>
-                  <DotsIcon />
-                </button>
-              </Tooltip>
+              <button onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }} className={hoverBtn} title="更多操作">
+                <DotsIcon />
+              </button>
               {menuOpen && <TreeNodeMenu items={folderItems} onClose={() => setMenuOpen(false)} />}
             </div>
           )}
@@ -370,11 +365,9 @@ function FileTreeNode({
 
       {onNew && (
         <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-          <Tooltip content="新建子文档">
-            <button onClick={() => setAddOpen((v) => !v)} className={hoverBtn}>
-              <PlusIcon />
-            </button>
-          </Tooltip>
+          <button onClick={() => setAddOpen((v) => !v)} className={hoverBtn} title="新建子文档">
+            <PlusIcon />
+          </button>
           {addOpen && (
             <NewNodeMenu align="left" onSelect={(t) => onNew(t, node.folder_id ?? null)} onClose={() => setAddOpen(false)} />
           )}
@@ -382,11 +375,9 @@ function FileTreeNode({
       )}
       {docItems.length > 0 && (
         <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-          <Tooltip content="更多操作">
-            <button onClick={() => setMenuOpen((v) => !v)} className={hoverBtn}>
-              <DotsIcon />
-            </button>
-          </Tooltip>
+          <button onClick={() => setMenuOpen((v) => !v)} className={hoverBtn} title="更多操作">
+            <DotsIcon />
+          </button>
           {menuOpen && <TreeNodeMenu items={docItems} onClose={() => setMenuOpen(false)} />}
         </div>
       )}
