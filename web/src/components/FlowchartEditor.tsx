@@ -588,6 +588,21 @@ function autoLayout(nodes: StoredNode[], edges: StoredEdge[]): void {
   });
 }
 
+// 沿 parentId 链累加，求节点在画布上的绝对坐标（不含尺寸），供对齐/分布/粘贴复用
+function absPositionOf(id: string, byId: Map<string, Node>): { x: number; y: number } {
+  const n = byId.get(id);
+  if (!n) return { x: 0, y: 0 };
+  let ax = n.position.x;
+  let ay = n.position.y;
+  let p = n.parentId ? byId.get(n.parentId) : undefined;
+  while (p) {
+    ax += p.position.x;
+    ay += p.position.y;
+    p = p.parentId ? byId.get(p.parentId) : undefined;
+  }
+  return { x: ax, y: ay };
+}
+
 const MAX_HISTORY = 100;
 
 export function FlowchartEditor({
@@ -1066,14 +1081,33 @@ export function FlowchartEditor({
     const items = clipboardRef.current;
     if (items.length === 0) return;
     pushHistory();
+    // 先建立 id 映射（所有被复制节点，确保父子关系可正确重映射）
     const idMap: Record<string, string> = {};
+    for (const n of items) idMap[n.id] = genId("n");
+    const byIdLive = new Map(nodesRef.current.map((n) => [n.id, n]));
     const newNodes: Node[] = items.map((n) => {
-      const nid = genId("n");
-      idMap[n.id] = nid;
+      const nid = idMap[n.id];
+      let parentId: string | undefined;
+      let position: { x: number; y: number };
+      if (n.parentId && idMap[n.parentId]) {
+        // 父节点也被一起复制：保持相对坐标，挂到映射后的新父节点（整体随父偏移 +30）
+        parentId = idMap[n.parentId];
+        position = { x: n.x, y: n.y };
+      } else if (n.parentId && byIdLive.has(n.parentId)) {
+        // 父节点不在本次复制范围：转成绝对坐标，成为独立顶层节点（避免悬空 parentId）
+        const oldParentAbs = absPositionOf(n.parentId, byIdLive);
+        position = { x: oldParentAbs.x + n.x + 30, y: oldParentAbs.y + n.y + 30 };
+        parentId = undefined;
+      } else {
+        // 顶层节点：整体偏移 30 避免与原位置重叠
+        parentId = undefined;
+        position = { x: n.x + 30, y: n.y + 30 };
+      }
       return {
         id: nid,
         type: "shape",
-        position: { x: n.x + 30, y: n.y + 30 },
+        parentId,
+        position,
         selected: true,
         data: {
           label: n.label,
@@ -1374,57 +1408,89 @@ export function FlowchartEditor({
     const sel = nodesRef.current.filter((n) => n.selected);
     if (sel.length < 2) return;
     pushHistory();
+    const byId = new Map(nodesRef.current.map((n) => [n.id, n]));
+    // 在绝对坐标系下计算选中节点的包围盒（子节点需沿 parentId 链累加）
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const n of sel) {
       const { w, h } = nodeSizeOf(n);
-      minX = Math.min(minX, n.position.x);
-      maxX = Math.max(maxX, n.position.x + w);
-      minY = Math.min(minY, n.position.y);
-      maxY = Math.max(maxY, n.position.y + h);
+      const a = absPositionOf(n.id, byId);
+      minX = Math.min(minX, a.x);
+      maxX = Math.max(maxX, a.x + w);
+      minY = Math.min(minY, a.y);
+      maxY = Math.max(maxY, a.y + h);
     }
     const ids = new Set(sel.map((n) => n.id));
-    setNodes((nds) =>
-      nds.map((n) => {
+    // 各选中节点在绝对坐标系下的目标位置（先全部算好，避免回写时依赖数组顺序）
+    const targetAbs: Record<string, { x: number; y: number }> = {};
+    for (const n of sel) {
+      const { w, h } = nodeSizeOf(n);
+      const a = absPositionOf(n.id, byId);
+      let ax = a.x;
+      let ay = a.y;
+      if (mode === "left") ax = minX;
+      else if (mode === "right") ax = maxX - w;
+      else if (mode === "centerH") ax = (minX + maxX) / 2 - w / 2;
+      else if (mode === "top") ay = minY;
+      else if (mode === "bottom") ay = maxY - h;
+      else if (mode === "centerV") ay = (minY + maxY) / 2 - h / 2;
+      targetAbs[n.id] = { x: ax, y: ay };
+    }
+    setNodes((nds) => {
+      // 父节点若也被选中并已移动，则用其新绝对坐标；否则用未变的旧绝对坐标
+      const parentAbs = (pid: string): { x: number; y: number } =>
+        targetAbs[pid] ? targetAbs[pid] : absPositionOf(pid, byId);
+      return nds.map((n) => {
         if (!ids.has(n.id)) return n;
-        const { w, h } = nodeSizeOf(n);
-        let x = n.position.x;
-        let y = n.position.y;
-        if (mode === "left") x = minX;
-        else if (mode === "right") x = maxX - w;
-        else if (mode === "centerH") x = (minX + maxX) / 2 - w / 2;
-        else if (mode === "top") y = minY;
-        else if (mode === "bottom") y = maxY - h;
-        else if (mode === "centerV") y = (minY + maxY) / 2 - h / 2;
-        return { ...n, position: { x, y } };
-      }),
-    );
+        const t = targetAbs[n.id];
+        // 有父节点：新绝对坐标减去父节点新绝对坐标，转回相对坐标写回
+        if (n.parentId && byId.has(n.parentId)) {
+          const pa = parentAbs(n.parentId);
+          return { ...n, position: { x: t.x - pa.x, y: t.y - pa.y } };
+        }
+        return { ...n, position: { x: t.x, y: t.y } };
+      });
+    });
   };
 
   const distributeNodes = (axis: "h" | "v") => {
     const sel = nodesRef.current.filter((n) => n.selected);
     if (sel.length < 3) return;
     pushHistory();
+    const byId = new Map(nodesRef.current.map((n) => [n.id, n]));
+    const absOf = (n: Node) => absPositionOf(n.id, byId);
+    // 按绝对坐标排序，避免子节点相对坐标干扰
     const sorted = [...sel].sort((a, b) =>
-      axis === "h" ? a.position.x - b.position.x : a.position.y - b.position.y,
+      axis === "h" ? absOf(a).x - absOf(b).x : absOf(a).y - absOf(b).y,
     );
     const first = sorted[0];
     const last = sorted[sorted.length - 1];
     const ids = new Set(sel.map((n) => n.id));
     const total =
       axis === "h"
-        ? last.position.x - first.position.x
-        : last.position.y - first.position.y;
+        ? absOf(last).x - absOf(first).x
+        : absOf(last).y - absOf(first).y;
     const step = total / (sorted.length - 1);
-    const idxMap: Record<string, number> = {};
-    sorted.forEach((n, i) => (idxMap[n.id] = i));
-    setNodes((nds) =>
-      nds.map((n) => {
+    // 各选中节点在绝对坐标系下的目标位置（先全部算好）
+    const targetAbs: Record<string, { x: number; y: number }> = {};
+    sorted.forEach((n, i) => {
+      const a = absOf(n);
+      if (axis === "h") targetAbs[n.id] = { x: absOf(first).x + step * i, y: a.y };
+      else targetAbs[n.id] = { x: a.x, y: absOf(first).y + step * i };
+    });
+    setNodes((nds) => {
+      const parentAbs = (pid: string): { x: number; y: number } =>
+        targetAbs[pid] ? targetAbs[pid] : absPositionOf(pid, byId);
+      return nds.map((n) => {
         if (!ids.has(n.id)) return n;
-        const i = idxMap[n.id];
-        if (axis === "h") return { ...n, position: { x: first.position.x + step * i, y: n.position.y } };
-        return { ...n, position: { x: n.position.x, y: first.position.y + step * i } };
-      }),
-    );
+        const t = targetAbs[n.id];
+        // 有父节点：转回相对坐标写回
+        if (n.parentId && byId.has(n.parentId)) {
+          const pa = parentAbs(n.parentId);
+          return { ...n, position: { x: t.x - pa.x, y: t.y - pa.y } };
+        }
+        return { ...n, position: { x: t.x, y: t.y } };
+      });
+    });
   };
 
   const runAi = async () => {

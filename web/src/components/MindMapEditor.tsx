@@ -159,6 +159,16 @@ function layoutFishbone(nodes: MindNode[]): Record<string, LayoutItem> {
 
   const slant = 78; // 一级主因相对主干的垂直偏移
   const stepGap = 36; // 同侧相邻分支的水平额外间距
+
+  // 同侧分支按「该侧最大节点宽度」定游标步长，保证同侧任意两个节点在长文本时也不重叠
+  let upMaxW = 0;
+  let downMaxW = 0;
+  level1.forEach((id, i) => {
+    const w = widthOf(id);
+    if (i % 2 === 0) upMaxW = Math.max(upMaxW, w);
+    else downMaxW = Math.max(downMaxW, w);
+  });
+
   let upCursor = 0;
   let downCursor = 0;
   let maxRight = 0;
@@ -171,7 +181,7 @@ function layoutFishbone(nodes: MindNode[]): Record<string, LayoutItem> {
     const cx = attachX + 44;
     const cy = sign * slant;
     pos[id] = { x: cx - w / 2, y: cy - NODE_H / 2, w, h: NODE_H, anchorX: attachX, anchorY: 0 };
-    const step = w + stepGap;
+    const step = (up ? upMaxW : downMaxW) + stepGap; // 用该侧最大宽度定步长，避免长文本相邻重叠
     if (up) upCursor += step;
     else downCursor += step;
     maxRight = Math.max(maxRight, cx + w / 2);
@@ -1475,9 +1485,9 @@ export function MindMapEditor({
         <div className="relative shrink-0">
           <button
             onClick={() => setExportOpen((o) => !o)}
-            disabled={exporting}
+            disabled={exporting || outline}
             className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover disabled:opacity-50"
-            title="导出图片 / 矢量图 / PDF"
+            title={outline ? "大纲视图下不支持导出，请先切换回导图视图" : "导出图片 / 矢量图 / PDF"}
           >
             {exporting ? "导出中…" : "导出"}
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${exportOpen ? "rotate-180" : ""}`}>
