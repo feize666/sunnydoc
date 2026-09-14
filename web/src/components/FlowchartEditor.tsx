@@ -193,6 +193,20 @@ const EDGE_KINDS: { kind: EdgeKind; label: string }[] = [
   { kind: "smoothstep", label: "圆角正交" },
 ];
 
+// 快捷键提示面板内容
+const SHORTCUTS: { key: string; desc: string }[] = [
+  { key: "Ctrl+Z", desc: "撤销" },
+  { key: "Ctrl+Y", desc: "重做" },
+  { key: "Ctrl+C", desc: "复制" },
+  { key: "Ctrl+V", desc: "粘贴" },
+  { key: "Ctrl+D", desc: "复制并粘贴" },
+  { key: "Ctrl+A", desc: "全选" },
+  { key: "Delete", desc: "删除选中" },
+  { key: "双击节点/连线", desc: "改文字" },
+  { key: "拖拽连线", desc: "创建连接" },
+  { key: "滚轮", desc: "缩放画布" },
+];
+
 const FILL_COLORS = ["#ffffff", "#fee2e2", "#fef3c7", "#dcfce7", "#dbeafe", "#f3e8ff", "#e0f2fe", "#ffe4e6"];
 const STROKE_COLORS = ["#78716c", "#ef4444", "#f97316", "#22c55e", "#3b82f6", "#a855f7", "#0ea5e9", "#ec4899"];
 
@@ -656,6 +670,10 @@ export function FlowchartEditor({
   const [tplOpen, setTplOpen] = useState(false);
   // 网格吸附开关
   const [snap, setSnap] = useState(false);
+  // 自定义编辑对话框（替代 window.prompt，支持多行、样式统一）
+  const [editTarget, setEditTarget] = useState<{ type: "node" | "edge"; id: string; draft: string; cur: string } | null>(null);
+  // 快捷键提示面板开关
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // —— 撤销/重做 ——
   const [past, setPast] = useState<StoredFlow[]>([]);
@@ -893,21 +911,30 @@ export function FlowchartEditor({
     const n = nodes.find((x) => x.id === id);
     if (!n) return;
     const cur = (n.data as unknown as FlowData).label;
-    const next = window.prompt("节点文字", cur);
-    if (next == null) return;
-    pushHistory();
-    setNodes((nds) => nds.map((x) => (x.id === id ? { ...x, data: { ...x.data, label: next || cur } } : x)));
+    setEditTarget({ type: "node", id, draft: cur, cur });
   };
 
   const editEdgeLabel = (id: string) => {
     const e = edges.find((x) => x.id === id);
     if (!e) return;
     const cur = typeof e.label === "string" ? e.label : "";
-    const next = window.prompt("连线文字", cur);
-    if (next == null) return;
-    pushHistory();
-    setEdges((eds) => eds.map((x) => (x.id === id ? { ...x, label: next } : x)));
+    setEditTarget({ type: "edge", id, draft: cur, cur });
   };
+
+  const commitEdit = () => {
+    if (!editTarget) return;
+    const { type, id, draft, cur } = editTarget;
+    pushHistory();
+    if (type === "node") {
+      const val = draft || cur; // 空内容保留原文字（与原 prompt 行为一致）
+      setNodes((nds) => nds.map((x) => (x.id === id ? { ...x, data: { ...x.data, label: val } } : x)));
+    } else {
+      setEdges((eds) => eds.map((x) => (x.id === id ? { ...x, label: draft } : x)));
+    }
+    setEditTarget(null);
+  };
+
+  const closeEdit = () => setEditTarget(null);
 
   const deleteSelected = () => {
     const sel = nodes.filter((n) => n.selected);
@@ -1593,6 +1620,7 @@ export function FlowchartEditor({
               setFillOpen(false);
               setStrokeOpen(false);
               setTplOpen(false);
+              setHelpOpen(false);
             }}
             className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
               shapeLibOpen ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"
@@ -1651,6 +1679,7 @@ export function FlowchartEditor({
               setThemeOpen(false);
               setFillOpen(false);
               setStrokeOpen(false);
+              setHelpOpen(false);
             }}
             className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
               tplOpen ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"
@@ -1729,6 +1758,7 @@ export function FlowchartEditor({
               setStrokeOpen(false);
               setShapeLibOpen(false);
               setTplOpen(false);
+              setHelpOpen(false);
             }}
             className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
             title="切换整图配色主题"
@@ -1853,6 +1883,7 @@ export function FlowchartEditor({
                   setThemeOpen(false);
                   setShapeLibOpen(false);
                   setTplOpen(false);
+                  setHelpOpen(false);
                 }}
                 className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
               >
@@ -1901,6 +1932,7 @@ export function FlowchartEditor({
                   setThemeOpen(false);
                   setShapeLibOpen(false);
                   setTplOpen(false);
+                  setHelpOpen(false);
                 }}
                 className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
               >
@@ -2081,6 +2113,42 @@ export function FlowchartEditor({
           自动布局
         </button>
         <span className="ml-auto flex items-center gap-1">
+          {/* 快捷键提示按钮（靠右，导出/AI 附近） */}
+          <div className="relative shrink-0">
+            <button
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setHelpOpen((v) => !v);
+                setShapeLibOpen(false);
+                setTplOpen(false);
+                setThemeOpen(false);
+                setFillOpen(false);
+                setStrokeOpen(false);
+              }}
+              className={`flex h-7 w-7 items-center justify-center rounded-md text-sm font-semibold transition-colors ${
+                helpOpen ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
+              }`}
+              title="快捷键"
+            >
+              ?
+            </button>
+            {helpOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setHelpOpen(false)} />
+                <div className="menu-panel absolute right-0 top-full z-40 mt-1 w-64 p-2">
+                  <div className="mb-1 px-1 text-[11px] font-medium text-faint">快捷键</div>
+                  <ul className="flex flex-col gap-0.5 text-xs text-muted">
+                    {SHORTCUTS.map((s) => (
+                      <li key={s.key} className="flex items-center justify-between gap-2 rounded-md px-1.5 py-1">
+                        <span>{s.desc}</span>
+                        <span className="shrink-0 rounded bg-hover px-1.5 py-0.5 text-[10px] font-medium text-text">{s.key}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </>
+            )}
+          </div>
           <span className="hidden text-[11px] text-faint lg:inline">双击改文字 · 拖拽连线 · Ctrl+Z 撤销</span>
           <button
             onClick={exportPng}
@@ -2134,8 +2202,74 @@ export function FlowchartEditor({
         </div>
       )}
 
+      {/* 自定义文字编辑对话框（替代 window.prompt） */}
+      {editTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+          onClick={closeEdit}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              closeEdit();
+            }
+          }}
+        >
+          <div
+            className="w-[420px] max-w-[92vw] rounded-xl border border-line bg-background p-4 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 text-[14px] font-semibold text-text">
+              {editTarget.type === "node" ? "编辑节点文字" : "编辑连线文字"}
+            </div>
+            {editTarget.type === "node" ? (
+              <textarea
+                autoFocus
+                value={editTarget.draft}
+                onChange={(e) => setEditTarget({ ...editTarget, draft: e.target.value })}
+                rows={3}
+                placeholder="支持多行，用换行分隔"
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    closeEdit();
+                  } else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                    e.preventDefault();
+                    commitEdit();
+                  }
+                }}
+                className="mb-3 w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-text outline-none focus:border-accent"
+              />
+            ) : (
+              <input
+                autoFocus
+                value={editTarget.draft}
+                onChange={(e) => setEditTarget({ ...editTarget, draft: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    closeEdit();
+                  } else if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitEdit();
+                  }
+                }}
+                className="mb-3 w-full rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-text outline-none focus:border-accent"
+              />
+            )}
+            <div className="flex justify-end gap-2">
+              <button onClick={closeEdit} className="rounded-md px-3 py-1.5 text-[13px] text-muted hover:bg-hover">
+                取消
+              </button>
+              <button onClick={commitEdit} className="rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-white">
+                确定
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 画布 */}
-      <div ref={containerRef} tabIndex={0} onKeyDown={onKeyDown} className="outline-none" style={{ height: "60vh", minHeight: 400 }}>
+      <div ref={containerRef} tabIndex={0} onKeyDown={onKeyDown} className="relative outline-none" style={{ height: "60vh", minHeight: 400 }}>
         {/* 自定义菱形箭头 marker（颜色用 context-stroke 跟随连线描边） */}
         <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden>
           <defs>
@@ -2240,6 +2374,13 @@ export function FlowchartEditor({
           <Controls />
           <MiniMap pannable zoomable className="!bg-background" />
         </ReactFlow>
+        {/* 空状态引导：画布无节点时居中提示，pointer-events-none 不挡操作 */}
+        {nodes.length === 0 && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 text-center">
+            <div className="text-sm text-faint">画布是空的</div>
+            <div className="text-xs text-faint">从左上角形状库添加形状，或点击 ✨AI 生成 一键生成</div>
+          </div>
+        )}
       </div>
     </div>
   );

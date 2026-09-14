@@ -488,6 +488,20 @@ const THEMES: { name: string; palette: string[] }[] = [
   { name: "蓝灰", palette: ["#4263eb", "#5c7cfa", "#748ffc", "#4c6ef5", "#5b6bd6", "#6c7ae0", "#8094e8", "#3b5bdb"] },
 ];
 
+// 快捷键提示面板：本编辑器支持的全部快捷键（无 Space 折叠，故不列）
+const SHORTCUTS: { keys: string; desc: string }[] = [
+  { keys: "Tab", desc: "添加子主题" },
+  { keys: "Enter", desc: "添加同级主题" },
+  { keys: "Delete / Backspace", desc: "删除选中节点" },
+  { keys: "F2", desc: "编辑节点文字" },
+  { keys: "双击节点", desc: "编辑节点文字" },
+  { keys: "Ctrl / ⌘ + Z", desc: "撤销" },
+  { keys: "Ctrl / ⌘ + Y", desc: "重做" },
+  { keys: "拖拽节点", desc: "重排父子关系" },
+  { keys: "拖拽空白处", desc: "平移画布" },
+  { keys: "滚轮", desc: "缩放画布" },
+];
+
 // —— 节点图标：30+ 矢量图标（单色 line icon，24x24 viewBox）——
 // 每个图标用一条 `path`（可含多段 M 子路径）绘制；数字 1-9 用 `char` 渲染文本。
 interface IconDef {
@@ -623,6 +637,8 @@ export function MindMapEditor({
   const [noteDraft, setNoteDraft] = useState("");
   const [exporting, setExporting] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  // 快捷键提示面板（与主题/图标/导出下拉互斥）
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // 大纲模式：true 时画布区域改为渲染 HTML 缩进列表（与 SVG 共享同一份 nodes）
   const [outline, setOutline] = useState(false);
@@ -1321,7 +1337,7 @@ export function MindMapEditor({
         {/* 节点图标 */}
         <div className="relative shrink-0">
           <button
-            onClick={() => { if (!selected) return; setIconOpen((o) => !o); }}
+            onClick={() => { if (!selected) return; setIconOpen((o) => !o); setHelpOpen(false); }}
             disabled={!selected}
             className={toolBtn(false)}
             title="设置节点图标"
@@ -1427,7 +1443,7 @@ export function MindMapEditor({
 
         {/* 主题配色 */}
         <div className="relative shrink-0">
-          <button onClick={() => setThemeOpen((v) => !v)} className={toolBtn(false)} title="主题配色">
+          <button onClick={() => { setThemeOpen((v) => !v); setHelpOpen(false); }} className={toolBtn(false)} title="主题配色">
             <span className="h-3.5 w-3.5 rounded-full" style={{ background: `linear-gradient(135deg, ${themePalette[0]}, ${themePalette[2]})` }} />
             主题
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${themeOpen ? "rotate-180" : ""}`}>
@@ -1484,7 +1500,7 @@ export function MindMapEditor({
         {/* 导出（PNG / SVG / PDF）下拉 */}
         <div className="relative shrink-0">
           <button
-            onClick={() => setExportOpen((o) => !o)}
+            onClick={() => { setExportOpen((o) => !o); setHelpOpen(false); }}
             disabled={exporting || outline}
             className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover disabled:opacity-50"
             title={outline ? "大纲视图下不支持导出，请先切换回导图视图" : "导出图片 / 矢量图 / PDF"}
@@ -1520,6 +1536,42 @@ export function MindMapEditor({
             </>
           )}
         </div>
+        {/* 快捷键提示面板（与主题/图标/导出下拉互斥） */}
+        <div className="relative shrink-0">
+          <button
+            onClick={() => {
+              const next = !helpOpen;
+              setHelpOpen(next);
+              if (next) {
+                setIconOpen(false);
+                setThemeOpen(false);
+                setExportOpen(false);
+              }
+            }}
+            className={toolBtn(helpOpen)}
+            title="快捷键说明"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1 .9-1 1.7M12 17h.01" /></svg>
+            快捷键
+          </button>
+          {helpOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setHelpOpen(false)} />
+              <div className="menu-panel absolute right-0 top-full z-40 mt-1 w-64 p-3">
+                <div className="mb-2 text-[12px] font-medium text-text">快捷键</div>
+                <div className="flex flex-col gap-1.5">
+                  {SHORTCUTS.map((s) => (
+                    <div key={s.keys} className="flex items-center justify-between gap-3">
+                      <kbd className="rounded border border-line bg-surface px-1.5 py-0.5 text-[11px] text-muted">{s.keys}</kbd>
+                      <span className="text-[12px] text-text">{s.desc}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
         <button onClick={() => setAiOpen(true)} className="rounded-md bg-accent px-2.5 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90">
           ✨ AI 生成
         </button>
@@ -1872,6 +1924,18 @@ export function MindMapEditor({
             );
           })()}
         </svg>
+        )}
+
+        {/* 空状态引导：仅根节点时，画布中央提示如何添加子/同级主题（不挡操作） */}
+        {!outline && nodes.length === 1 && (
+          <div
+            className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center text-center text-faint"
+          >
+            <div className="px-6 text-[15px] leading-relaxed">
+              选中节点后按 <span className="font-medium">Tab</span> 添加子主题、
+              <span className="font-medium">Enter</span> 添加同级主题
+            </div>
+          </div>
         )}
 
         {/* 备注气泡：HTML 绝对定位，屏幕坐标 = 世界坐标 * k + v */}
