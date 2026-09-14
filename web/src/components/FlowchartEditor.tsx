@@ -47,7 +47,10 @@ type ShapeKind =
   | "container"
   | "group"
   | "lane"
-  | "note";
+  | "note"
+  | "umlClass"
+  | "entity"
+  | "actor";
 
 type EdgeKind = "default" | "straight" | "step" | "smoothstep";
 
@@ -176,6 +179,32 @@ const SHAPE_GROUPS: { cat: string; items: { kind: ShapeKind; label: string; icon
     cat: "备注类",
     items: [
       { kind: "note", label: "注释", icon: "M2 3h9l3 3v7H2z M11 3v3h3" },
+    ],
+  },
+  {
+    cat: "UML",
+    items: [
+      { kind: "umlClass", label: "类", icon: "M2 3h12v10H2z M2 6.5h12 M2 9.5h12" },
+      { kind: "actor", label: "参与者", icon: "M8 2.5a1.5 1.5 0 1 0 0.01 0 M8 4v2.5 M3.5 6h9 M8 6.5l-2.5 3.5 M8 6.5l2.5 3.5" },
+      { kind: "ellipse", label: "用例", icon: "M8 3 A5 5 0 1 1 8 13 A5 5 0 1 1 8 3" },
+      { kind: "note", label: "注释", icon: "M2 3h9l3 3v7H2z M11 3v3h3" },
+    ],
+  },
+  {
+    cat: "ER",
+    items: [
+      { kind: "entity", label: "实体", icon: "M2 3h12v10H2z M2 6.5h12" },
+      { kind: "diamond", label: "关系", icon: "M8 1 15 8 8 15 1 8Z" },
+      { kind: "ellipse", label: "属性", icon: "M8 3 A5 5 0 1 1 8 13 A5 5 0 1 1 8 3" },
+    ],
+  },
+  {
+    cat: "BPMN",
+    items: [
+      { kind: "ellipse", label: "事件", icon: "M8 3 A5 5 0 1 1 8 13 A5 5 0 1 1 8 3" },
+      { kind: "rounded", label: "活动", icon: "M3 4h10a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" },
+      { kind: "diamond", label: "网关", icon: "M8 1 15 8 8 15 1 8Z" },
+      { kind: "lane", label: "泳道", icon: "M2 3h12v10H2z M4 3v10" },
     ],
   },
 ];
@@ -360,6 +389,55 @@ const FLOW_TEMPLATES: { name: string; flow: { nodes: StoredNode[]; edges: Stored
       ],
     },
   },
+  {
+    name: "UML 类图",
+    flow: {
+      nodes: [
+        { id: "u1", label: "用户\n---\n- id: int\n- name: string\n- email: string\n---\n+ login()\n+ logout()", shape: "umlClass", x: 0, y: 100, width: 200, height: 170 },
+        { id: "u2", label: "订单\n---\n- orderId: int\n- total: float\n- status: string\n---\n+ create()\n+ cancel()", shape: "umlClass", x: 430, y: 100, width: 200, height: 170 },
+        { id: "u3", label: "管理员\n---\n- role: string\n---\n+ manage()", shape: "umlClass", x: 200, y: 340, width: 200, height: 140 },
+      ],
+      edges: [
+        { id: "ue1", source: "u1", target: "u2", label: "下单" },
+        { id: "ue2", source: "u3", target: "u1", label: "继承", markerEnd: "hollow" },
+      ],
+    },
+  },
+  {
+    name: "ER 图",
+    flow: {
+      nodes: [
+        { id: "e1", label: "用户\n---\n- 用户ID (PK)\n- 姓名\n- 邮箱", shape: "entity", x: 0, y: 100, width: 180, height: 130 },
+        { id: "e2", label: "订单\n---\n- 订单ID (PK)\n- 用户ID (FK)\n- 金额", shape: "entity", x: 440, y: 100, width: 180, height: 130 },
+        { id: "r1", label: "下单", shape: "diamond", x: 230, y: 110 },
+      ],
+      edges: [
+        { id: "ee1", source: "e1", target: "r1", label: "1" },
+        { id: "ee2", source: "r1", target: "e2", label: "N" },
+      ],
+    },
+  },
+  {
+    name: "BPMN 流程",
+    flow: {
+      nodes: [
+        { id: "b1", label: "开始", shape: "ellipse", x: 0, y: 120 },
+        { id: "b2", label: "提交申请", shape: "rounded", x: 220, y: 120 },
+        { id: "b3", label: "审核通过?", shape: "diamond", x: 460, y: 120 },
+        { id: "b4", label: "归档", shape: "rounded", x: 700, y: 120 },
+        { id: "b5", label: "结束", shape: "ellipse", x: 940, y: 120 },
+        { id: "b6", label: "退回修改", shape: "rounded", x: 460, y: -40 },
+      ],
+      edges: [
+        { id: "be1", source: "b1", target: "b2" },
+        { id: "be2", source: "b2", target: "b3" },
+        { id: "be3", source: "b3", target: "b4", label: "是" },
+        { id: "be4", source: "b3", target: "b6", label: "否" },
+        { id: "be5", source: "b4", target: "b5" },
+        { id: "be6", source: "b6", target: "b2", label: "重提" },
+      ],
+    },
+  },
 ];
 
 let nodeSeq = 0;
@@ -444,6 +522,10 @@ function shapePath(shape: ShapeKind, w: number, h: number): string {
       const f = 16;
       return `M 0 0 H ${w - f} L ${w} ${f} V ${h} H 0 Z`;
     }
+    case "umlClass":
+    case "entity":
+      // 矩形（多分区由渲染层绘制横线分隔）
+      return `M 0 0 H ${w} V ${h} H 0 Z`;
     default:
       return `M 0 0 H ${w} V ${h} H 0 Z`;
   }
@@ -550,6 +632,78 @@ function createShapeNode(theme: { nodeFill: string; nodeStroke: string }) {
               fontWeight={fontWeight}
               fill="var(--text)"
             >
+              {d.label}
+            </text>
+          </svg>
+          <Handle type="target" position={Position.Left} style={{ background: "var(--accent)" }} />
+          <Handle type="source" position={Position.Right} style={{ background: "var(--accent)" }} />
+          <Handle type="source" position={Position.Top} style={{ background: "var(--accent)" }} />
+          <Handle type="target" position={Position.Bottom} style={{ background: "var(--accent)" }} />
+        </div>
+      );
+    }
+
+    // UML 类图 / ER 实体：多栏矩形，label 用 "---" 分隔各栏（类名 / 属性 / 方法 或 实体名 / 属性）
+    if (d.shape === "umlClass" || d.shape === "entity") {
+      const isClass = d.shape === "umlClass";
+      const parts = (d.label || "").split("---");
+      const title = (parts[0] || "").trim();
+      const body1 = (parts[1] || "").trim();
+      const body2 = isClass ? (parts[2] || "").trim() : "";
+      const hasBody1 = !!body1;
+      const hasBody2 = isClass && !!body2;
+      const colCount = hasBody1 ? (hasBody2 ? 3 : 2) : 1;
+      const colH = h / colCount;
+      const fs = Math.max(11, fontSize - 1);
+      const lh = fs * 1.3;
+      const linesOf = (t: string) => t.split("\n").filter((s) => s.trim());
+      const renderLines = (t: string, y0: number) =>
+        linesOf(t).map((ln, i) => (
+          <text
+            key={i}
+            x={8}
+            y={y0 + lh / 2 + 3 + i * lh}
+            textAnchor="start"
+            dominantBaseline="central"
+            fontSize={fs}
+            fill="var(--text)"
+            style={{ userSelect: "none" }}
+          >
+            {ln}
+          </text>
+        ));
+      return (
+        <div style={{ width: w, height: h, filter: selected ? "drop-shadow(0 0 4px var(--accent))" : undefined }} className="relative" title={d.label}>
+          <svg width={w} height={h} className="overflow-visible">
+            <path d={shapePath(d.shape, w, h)} fill={fill} stroke={stroke} strokeWidth={strokeW} />
+            <text x={w / 2} y={colH / 2} textAnchor="middle" dominantBaseline="central" fontSize={fontSize} fontWeight={700} fill="var(--text)" style={{ userSelect: "none" }}>
+              {title}
+            </text>
+            {hasBody1 && <line x1={0} y1={colH} x2={w} y2={colH} stroke={stroke} strokeWidth={1} />}
+            {renderLines(body1, colH)}
+            {hasBody2 && <line x1={0} y1={colH * 2} x2={w} y2={colH * 2} stroke={stroke} strokeWidth={1} />}
+            {renderLines(body2, colH * 2)}
+          </svg>
+          <Handle type="target" position={Position.Left} style={{ background: "var(--accent)" }} />
+          <Handle type="source" position={Position.Right} style={{ background: "var(--accent)" }} />
+          <Handle type="source" position={Position.Top} style={{ background: "var(--accent)" }} />
+          <Handle type="target" position={Position.Bottom} style={{ background: "var(--accent)" }} />
+        </div>
+      );
+    }
+
+    // UML 用例图参与者：火柴人
+    if (d.shape === "actor") {
+      const cx = w / 2;
+      return (
+        <div style={{ width: w, height: h, filter: selected ? "drop-shadow(0 0 4px var(--accent))" : undefined }} className="relative" title={d.label}>
+          <svg width={w} height={h} className="overflow-visible">
+            <circle cx={cx} cy={24} r={13} fill="none" stroke={stroke} strokeWidth={strokeW} />
+            <line x1={cx} y1={37} x2={cx} y2={70} stroke={stroke} strokeWidth={strokeW} />
+            <line x1={cx - 20} y1={52} x2={cx + 20} y2={52} stroke={stroke} strokeWidth={strokeW} />
+            <line x1={cx} y1={70} x2={cx - 15} y2={98} stroke={stroke} strokeWidth={strokeW} />
+            <line x1={cx} y1={70} x2={cx + 15} y2={98} stroke={stroke} strokeWidth={strokeW} />
+            <text x={cx} y={112} textAnchor="middle" dominantBaseline="central" fontSize={fontSize} fill="var(--text)" style={{ userSelect: "none" }}>
               {d.label}
             </text>
           </svg>
@@ -977,9 +1131,15 @@ export function FlowchartEditor({
     const defaultSize =
       shape === "lane"
         ? { width: 520, height: 160 }
-        : isContainer
-          ? { width: 220, height: 140 }
-          : {};
+        : shape === "umlClass"
+          ? { width: 200, height: 150 }
+          : shape === "entity"
+            ? { width: 180, height: 120 }
+            : shape === "actor"
+              ? { width: 120, height: 130 }
+              : isContainer
+                ? { width: 220, height: 140 }
+                : {};
     setNodes((nds) => [
       ...nds,
       {
