@@ -56,6 +56,35 @@ def publish_comment(doc_id: str, event: dict) -> None:
         except RuntimeError:
             pass
 
+
+# ---------- 多人协作：文档级订阅 + 在线 presence ----------
+_collab_subscribers: dict[str, set[tuple[asyncio.Queue, asyncio.AbstractEventLoop]]] = {}
+# doc_id -> {user_id -> {id, nickname, avatar, joined_at}}
+_doc_presence: dict[str, dict[str, dict]] = {}
+_presence_lock = threading.Lock()
+
+
+def publish_collab(doc_id: str, event: dict) -> None:
+    """向某文档的协作订阅者广播事件（presence 变化 / 文档被他人更新）。"""
+    for q, loop in list(_collab_subscribers.get(doc_id, ())):
+        try:
+            loop.call_soon_threadsafe(_safe_put, q, event)
+        except RuntimeError:
+            pass
+
+
+def _presence_snapshot(doc_id: str) -> list[dict]:
+    with _presence_lock:
+        return list(_doc_presence.get(doc_id, {}).values())
+
+
+def _presence_user(user: dict) -> dict:
+    return {
+        "id": user["id"],
+        "nickname": user.get("nickname") or user.get("username") or "用户",
+        "avatar": user.get("avatar"),
+    }
+
 # ---------- AI 对话附件（会话内临时） ----------
 # attachment_id -> {filename, ext, kind, size, text, tmp_path, preview_url, user_id, created_at}
 _attachments: dict[str, dict] = {}
@@ -1481,6 +1510,17 @@ def update_document(
     if not doc:
         raise HTTPException(status_code=404, detail="文档不存在")
     _audit(current_user, "update", "doc", doc["id"], f"更新文档「{doc['title']}」")
+    # 多人协作：内容有变化时广播给该文档的其他在线协作者
+    if "text" in kwargs:
+        publish_collab(
+            doc_id,
+            {
+                "type": "doc_updated",
+                "doc_id": doc_id,
+                "title": doc["title"],
+                "updated_by": _presence_user(current_user),
+            },
+        )
     return {
         "id": doc["id"],
         "title": doc["title"],
@@ -1494,6 +1534,7 @@ def delete_document(doc_id: str, current_user: dict = Depends(get_current_user))
     doc = store.get(doc_id, current_user["id"])
     if store.delete(doc_id, current_user["id"]):
         _audit(current_user, "delete", "doc", doc_id, f"删除文档「{(doc or {}).get('title', doc_id)}」")
+        publish_collab(doc_id, {"type": "doc_deleted", "doc_id": doc_id})
         return {"deleted": doc_id}
     raise HTTPException(status_code=404, detail="文档不存在")
 
@@ -2444,6 +2485,60 @@ async def comments_stream(doc_id: str, request: Request, current_user: dict = De
                     s.discard((q, loop))
                     if not s:
                         _doc_subscribers.pop(doc_id, None)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+
+@router.get("/events/collab/{doc_id}")
+async def collab_stream(doc_id: str, request: Request, current_user: dict = Depends(get_current_user)):
+    """SSE 事件流：多人协作。连接时登记 presence 并广播在线列表；断开时移除并广播离开。
+
+    事件类型：connected / presence（在线协作者列表）/ doc_updated（他人保存了文档）。
+    """
+    if store.get(doc_id, current_user["id"]) is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+
+    uid = current_user["id"]
+    user_info = _presence_user(current_user)
+    q: asyncio.Queue = asyncio.Queue(maxsize=100)
+    loop = asyncio.get_running_loop()
+
+    with _subs_lock:
+        _collab_subscribers.setdefault(doc_id, set()).add((q, loop))
+    with _presence_lock:
+        _doc_presence.setdefault(doc_id, {})[uid] = {**user_info, "joined_at": time.time()}
+    # 新成员加入，广播最新在线列表
+    publish_collab(doc_id, {"type": "presence", "presence": _presence_snapshot(doc_id)})
+
+    async def gen():
+        yield f"data: {json.dumps({'type': 'connected', 'presence': _presence_snapshot(doc_id)}, ensure_ascii=False)}\n\n"
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(q.get(), timeout=15.0)
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        finally:
+            with _subs_lock:
+                s = _collab_subscribers.get(doc_id)
+                if s:
+                    s.discard((q, loop))
+                    if not s:
+                        _collab_subscribers.pop(doc_id, None)
+            with _presence_lock:
+                pd = _doc_presence.get(doc_id)
+                if pd:
+                    pd.pop(uid, None)
+                    if not pd:
+                        _doc_presence.pop(doc_id, None)
+            publish_collab(doc_id, {"type": "presence", "presence": _presence_snapshot(doc_id)})
 
     return StreamingResponse(
         gen(),

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { renderMarkdown, extractToc, sanitizeHtml, type TocItem } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
-import { updateDocument } from "@/lib/api";
+import { updateDocument, subscribeSSE } from "@/lib/api";
 import type { Doc } from "@/data/docs";
 import type { RecentDoc, Backlink } from "@/lib/api";
 import { RichEditor } from "./RichEditor";
@@ -74,6 +74,8 @@ export function Editor({
   commentCount,
   onOpenWikilink,
   backlinks,
+  currentUserId,
+  onRemoteUpdate,
 }: {
   doc: Doc | null;
   loading?: boolean;
@@ -98,14 +100,20 @@ export function Editor({
   commentCount?: number;
   onOpenWikilink?: (title: string) => void;
   backlinks?: Backlink[];
+  currentUserId?: string;
+  onRemoteUpdate?: () => void;
 }) {
   const [mode, setMode] = useState<Mode>("preview");
+  const modeRef = useRef<Mode>("preview");
+  modeRef.current = mode;
   const [draftTitle, setDraftTitle] = useState("");
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
   const [htmlPreview, setHtmlPreview] = useState("");
   const [copied, setCopied] = useState(false);
+  const [collabPresence, setCollabPresence] = useState<{ id: string; nickname: string; avatar?: string | null }[]>([]);
+  const [collabNotice, setCollabNotice] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const { width: tocWidth, onMouseDown: onTocResize } = useResizable(224, 180, 400, "toc_width", -1);
 
@@ -196,6 +204,34 @@ export function Editor({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc?.key, doc?.type]);
+
+  // 多人协作：订阅文档 SSE（presence 在线列表 + 他人保存事件）
+  useEffect(() => {
+    if (!doc?.key) return;
+    setCollabPresence([]);
+    setCollabNotice(null);
+    const sub = subscribeSSE(`/events/collab/${doc.key}`, (event) => {
+      const t = event.type as string;
+      if (t === "presence" && Array.isArray(event.presence)) {
+        const list = (event.presence as { id: string; nickname: string; avatar?: string | null }[]).filter(
+          (p) => p.id !== currentUserId,
+        );
+        setCollabPresence(list);
+      } else if (t === "doc_updated") {
+        // 他人在别的标签页/设备保存：预览态自动刷新，编辑态提示避免覆盖
+        if (modeRef.current === "preview") {
+          onRemoteUpdate?.();
+        } else {
+          const who = (event.updated_by as { nickname?: string } | undefined)?.nickname || "其他用户";
+          setCollabNotice(`${who} 更新了本文档`);
+        }
+      } else if (t === "doc_deleted") {
+        setCollabNotice("文档已被删除");
+      }
+    });
+    return () => sub.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc?.key, currentUserId, onRemoteUpdate]);
 
   // Ctrl/Cmd+S 保存
   useEffect(() => {
@@ -308,7 +344,35 @@ export function Editor({
       <div className="flex min-w-0 flex-1 flex-col bg-background">
         {/* 操作栏（始终显示）：复制 / 分享 / 收藏 / 编辑 卡片按钮，右侧一排 */}
         <div className="flex h-12 shrink-0 items-center border-b border-line bg-surface px-4">
-          <div className="flex-1" />
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            {/* 协作提示 */}
+            {collabNotice && (
+              <span className="truncate rounded-full bg-accent-soft px-2.5 py-0.5 text-[12px] text-accent">
+                {collabNotice}
+              </span>
+            )}
+            {/* 在线协作者 */}
+            {collabPresence.length > 0 && (
+              <span className="flex items-center gap-1" title={`${collabPresence.length} 人在线协作`}>
+                <span className="flex -space-x-1.5">
+                  {collabPresence.slice(0, 3).map((p) => (
+                    <span
+                      key={p.id}
+                      className="grid h-6 w-6 place-items-center rounded-full border border-background bg-accent text-[11px] font-medium text-white"
+                      title={p.nickname}
+                    >
+                      {p.avatar ? (
+                        <img src={p.avatar} alt={p.nickname} className="h-full w-full rounded-full object-cover" />
+                      ) : (
+                        (p.nickname || "?").slice(0, 1)
+                      )}
+                    </span>
+                  ))}
+                </span>
+                <span className="text-[12px] text-muted">{collabPresence.length} 人在线</span>
+              </span>
+            )}
+          </div>
           <div className="flex min-w-0 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <Tooltip content={copied ? "已复制" : "复制 Markdown"}>
               <button

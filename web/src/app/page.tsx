@@ -548,6 +548,29 @@ export default function Home() {
     [refreshList],
   );
 
+  // 多人协作：他人保存后重拉文档内容（供 Editor 收到 doc_updated 事件时调用）
+  const refreshDoc = useCallback(async (docId: string) => {
+    try {
+      const detail = await getDocument(docId);
+      setDocs((prev) => {
+        const existing = prev[docId];
+        if (!existing) return prev;
+        return {
+          ...prev,
+          [docId]: {
+            ...existing,
+            title: detail.title,
+            body: detail.text,
+            type: detail.type ?? "doc",
+            updated: formatTime(detail.created_at),
+          },
+        };
+      });
+    } catch {
+      /* 拉取失败静默忽略 */
+    }
+  }, []);
+
   // 删除文档
   const handleDelete = useCallback(
     async (key: string) => {
@@ -1095,6 +1118,10 @@ export default function Home() {
               }
               onOpenWikilink={handleOpenWikilink}
               backlinks={activeKey ? backlinks : []}
+              currentUserId={user?.id}
+              onRemoteUpdate={
+                activeKey ? () => refreshDoc(activeKey) : undefined
+              }
             />
           </div>
 
