@@ -680,16 +680,14 @@ export function FlowchartEditor({
   const [strokeOpen, setStrokeOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [themeIndex, setThemeIndex] = useState(0);
-  const [themeOpen, setThemeOpen] = useState(false);
-  const [shapeLibOpen, setShapeLibOpen] = useState(false);
-  // 模板库下拉开关
-  const [tplOpen, setTplOpen] = useState(false);
   // 网格吸附开关
   const [snap, setSnap] = useState(false);
   // 自定义编辑对话框（替代 window.prompt，支持多行、样式统一）
   const [editTarget, setEditTarget] = useState<{ type: "node" | "edge"; id: string; draft: string; cur: string } | null>(null);
   // 快捷键提示面板开关
   const [helpOpen, setHelpOpen] = useState(false);
+  // 左侧侧栏 tab：图形库 / 风格
+  const [leftTab, setLeftTab] = useState<"shapes" | "style">("shapes");
   // 右键上下文菜单（fixed 定位到鼠标位置）
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; type: "node" | "edge" | "pane"; id?: string } | null>(null);
 
@@ -1647,118 +1645,6 @@ export function FlowchartEditor({
     <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
       {/* 工具栏 */}
       <div className="relative z-20 flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
-        <span className="mx-1 h-4 w-px bg-line" />
-
-        {/* 形状库：分类下拉 */}
-        <div className="relative shrink-0">
-          <button
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              setShapeLibOpen((v) => !v);
-              setThemeOpen(false);
-              setFillOpen(false);
-              setStrokeOpen(false);
-              setTplOpen(false);
-              setHelpOpen(false);
-            }}
-            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
-              shapeLibOpen ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"
-            }`}
-            title="选择形状"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="7" height="7" rx="1" />
-              <circle cx="17.5" cy="6.5" r="3.5" />
-              <path d="M6.5 14l4 7 4-7" />
-            </svg>
-            形状库
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${shapeLibOpen ? "rotate-180" : ""}`}>
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </button>
-          {shapeLibOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setShapeLibOpen(false)} />
-              <div className="menu-panel absolute left-0 top-full z-40 mt-1 max-h-[60vh] w-72 overflow-y-auto p-2">
-                {SHAPE_GROUPS.map((g) => (
-                  <div key={g.cat} className="mb-2 last:mb-0">
-                    <div className="mb-1 px-1 text-[10px] font-medium text-faint">{g.cat}</div>
-                    <div className="grid grid-cols-4 gap-1">
-                      {g.items.map((s) => (
-                        <button
-                          key={s.kind}
-                          onClick={() => {
-                            addNode(s.kind);
-                            setShapeLibOpen(false);
-                          }}
-                          className="flex flex-col items-center gap-1 rounded-md px-1 py-1.5 text-[10px] text-muted transition-colors hover:bg-hover hover:text-text"
-                          title={`添加 ${s.label}`}
-                        >
-                          <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                            <path d={s.icon} />
-                          </svg>
-                          <span className="leading-none">{s.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* 模板库 */}
-        <div className="relative shrink-0">
-          <button
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              setTplOpen((v) => !v);
-              setShapeLibOpen(false);
-              setThemeOpen(false);
-              setFillOpen(false);
-              setStrokeOpen(false);
-              setHelpOpen(false);
-            }}
-            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
-              tplOpen ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"
-            }`}
-            title="套用流程图模板"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="7" height="7" rx="1" />
-              <rect x="14" y="3" width="7" height="7" rx="1" />
-              <rect x="3" y="14" width="7" height="7" rx="1" />
-              <rect x="14" y="14" width="7" height="7" rx="1" />
-            </svg>
-            模板
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${tplOpen ? "rotate-180" : ""}`}>
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </button>
-          {tplOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setTplOpen(false)} />
-              <div className="menu-panel absolute left-0 top-full z-40 mt-1 flex w-40 flex-col gap-0.5 p-1.5">
-                {FLOW_TEMPLATES.map((t) => (
-                  <button
-                    key={t.name}
-                    onClick={() => {
-                      applyTemplate(t);
-                      setTplOpen(false);
-                    }}
-                    className="rounded-md px-2 py-1.5 text-left text-xs text-muted transition-colors hover:bg-hover hover:text-text"
-                  >
-                    {t.name}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-
-        <span className="mx-1 h-4 w-px bg-line" />
-
         <span className="text-[11px] text-faint">连线</span>
         {EDGE_KINDS.map((k) => (
           <button
@@ -1785,58 +1671,6 @@ export function FlowchartEditor({
           </svg>
           网格
         </button>
-
-        {/* 整图主题：一键换色 */}
-        <span className="mx-1 h-4 w-px bg-line" />
-        <div className="relative shrink-0">
-          <button
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              setThemeOpen((v) => !v);
-              setFillOpen(false);
-              setStrokeOpen(false);
-              setShapeLibOpen(false);
-              setTplOpen(false);
-              setHelpOpen(false);
-            }}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
-            title="切换整图配色主题"
-          >
-            <span
-              className="h-3.5 w-3.5 rounded-sm"
-              style={{ backgroundColor: THEMES[themeIndex].nodeFill, border: `1.5px solid ${THEMES[themeIndex].nodeStroke}` }}
-            />
-            主题
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${themeOpen ? "rotate-180" : ""}`}>
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </button>
-          {themeOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setThemeOpen(false)} />
-              <div className="menu-panel absolute left-0 top-full z-40 mt-1 flex w-32 flex-col gap-0.5 p-1.5">
-                {THEMES.map((t, i) => (
-                  <button
-                    key={t.name}
-                    onClick={() => {
-                      setThemeIndex(i);
-                      setThemeOpen(false);
-                    }}
-                    className={`flex items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors ${
-                      i === themeIndex ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
-                    }`}
-                  >
-                    <span
-                      className="h-4 w-4 shrink-0 rounded-sm"
-                      style={{ backgroundColor: t.nodeFill, border: `1.5px solid ${t.nodeStroke}` }}
-                    />
-                    {t.name}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
 
         {/* 选中连线时：样式编辑 */}
         {selectedEdge && (
@@ -1919,9 +1753,6 @@ export function FlowchartEditor({
                 onClick={() => {
                   setFillOpen((v) => !v);
                   setStrokeOpen(false);
-                  setThemeOpen(false);
-                  setShapeLibOpen(false);
-                  setTplOpen(false);
                   setHelpOpen(false);
                 }}
                 className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
@@ -1968,9 +1799,6 @@ export function FlowchartEditor({
                 onClick={() => {
                   setStrokeOpen((v) => !v);
                   setFillOpen(false);
-                  setThemeOpen(false);
-                  setShapeLibOpen(false);
-                  setTplOpen(false);
                   setHelpOpen(false);
                 }}
                 className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
@@ -2158,9 +1986,6 @@ export function FlowchartEditor({
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 setHelpOpen((v) => !v);
-                setShapeLibOpen(false);
-                setTplOpen(false);
-                setThemeOpen(false);
                 setFillOpen(false);
                 setStrokeOpen(false);
               }}
@@ -2307,17 +2132,85 @@ export function FlowchartEditor({
         </div>
       )}
 
-      {/* 画布 */}
-      <div
-        ref={containerRef}
-        tabIndex={0}
-        onKeyDown={onKeyDown}
-        onKeyUp={() => {
-          arrowMovedRef.current = false;
-        }}
-        className="relative outline-none"
-        style={{ height: "60vh", minHeight: 400 }}
-      >
+      {/* 主体：左侧栏 + 画布 */}
+      <div className="flex min-h-0 flex-1">
+        {/* 左侧侧栏：图形库 / 风格 */}
+        <div className="flex w-44 shrink-0 flex-col border-r border-line bg-background">
+          <div className="flex border-b border-line">
+            <button
+              onClick={() => setLeftTab("shapes")}
+              className={`flex-1 py-2 text-xs transition-colors ${leftTab === "shapes" ? "bg-accent-soft font-medium text-accent" : "text-muted hover:text-text"}`}
+            >
+              图形库
+            </button>
+            <button
+              onClick={() => setLeftTab("style")}
+              className={`flex-1 py-2 text-xs transition-colors ${leftTab === "style" ? "bg-accent-soft font-medium text-accent" : "text-muted hover:text-text"}`}
+            >
+              风格
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2">
+            {leftTab === "shapes" ? (
+              SHAPE_GROUPS.map((g) => (
+                <div key={g.cat} className="mb-3 last:mb-0">
+                  <div className="mb-1.5 px-1 text-[10px] font-medium text-faint">{g.cat}</div>
+                  <div className="grid grid-cols-2 gap-1">
+                    {g.items.map((s) => (
+                      <button
+                        key={s.kind}
+                        onClick={() => addNode(s.kind)}
+                        className="flex flex-col items-center gap-1 rounded-md px-1 py-2 text-[10px] text-muted transition-colors hover:bg-hover hover:text-text"
+                        title={`添加 ${s.label}`}
+                      >
+                        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                          <path d={s.icon} />
+                        </svg>
+                        <span className="leading-none">{s.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div>
+                <div className="mb-1.5 px-1 text-[10px] font-medium text-faint">主题</div>
+                {THEMES.map((t, i) => (
+                  <button
+                    key={t.name}
+                    onClick={() => setThemeIndex(i)}
+                    className={`mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${themeIndex === i ? "bg-accent-soft font-medium text-accent" : "text-text hover:bg-hover"}`}
+                  >
+                    <span className="h-4 w-4 shrink-0 rounded-sm" style={{ backgroundColor: t.nodeFill, border: `1.5px solid ${t.nodeStroke}` }} />
+                    {t.name}
+                  </button>
+                ))}
+                <div className="mb-1.5 mt-3 px-1 text-[10px] font-medium text-faint">模板</div>
+                {FLOW_TEMPLATES.map((t) => (
+                  <button
+                    key={t.name}
+                    onClick={() => applyTemplate(t)}
+                    className="mb-1 w-full rounded-md px-2 py-1.5 text-left text-xs text-muted transition-colors hover:bg-hover hover:text-text"
+                  >
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 画布 */}
+        <div
+          ref={containerRef}
+          tabIndex={0}
+          onKeyDown={onKeyDown}
+          onKeyUp={() => {
+            arrowMovedRef.current = false;
+          }}
+          className="relative min-w-0 flex-1 outline-none"
+          style={{ height: "100%", minHeight: 400 }}
+        >
         {/* 自定义菱形箭头 marker（颜色用 context-stroke 跟随连线描边） */}
         <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden>
           <defs>
@@ -2439,9 +2332,10 @@ export function FlowchartEditor({
         {nodes.length === 0 && (
           <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 text-center">
             <div className="text-sm text-faint">画布是空的</div>
-            <div className="text-xs text-faint">从左上角形状库添加形状，或点击 ✨AI 生成 一键生成</div>
+            <div className="text-xs text-faint">从左侧图形库添加形状，或点击 ✨AI 生成 一键生成</div>
           </div>
         )}
+        </div>
       </div>
 
       {/* 右键上下文菜单：fixed 定位到鼠标位置，点遮罩关闭 */}
