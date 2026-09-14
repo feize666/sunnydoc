@@ -1075,17 +1075,25 @@ class DocStore:
         ]
         recs = sorted(recs, key=lambda r: r.get("viewed_at", 0), reverse=True)
         out: list[dict[str, Any]] = []
-        for r in recs[:limit]:
-            doc = next((d for d in self._docs if d["id"] == r["doc_id"]), None)
+        for r in recs:
+            doc = next(
+                (d for d in self._docs if d["id"] == r["doc_id"] and not d.get("deleted_at")),
+                None,
+            )
+            if doc is None:
+                # 已删除（软删除/彻底删除）的文档不再出现在最近浏览
+                continue
             out.append(
                 {
                     "doc_id": r["doc_id"],
                     "kb_id": r.get("kb_id"),
                     "viewed_at": r["viewed_at"],
-                    "title": doc["title"] if doc else None,
-                    "source": doc["source"] if doc else None,
+                    "title": doc["title"],
+                    "source": doc["source"],
                 }
             )
+            if len(out) >= limit:
+                break
         return out
 
     # ---------- 用户 ----------

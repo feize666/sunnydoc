@@ -560,12 +560,13 @@ export default function Home() {
         });
         closeDoc(key);
         refreshList();
+        refreshRecent();
         toast.success("文档已删除");
       } catch (e) {
         toast.error(`删除失败：${e instanceof Error ? e.message : "未知错误"}`);
       }
     },
-    [closeDoc, refreshList, toast],
+    [closeDoc, refreshList, refreshRecent, toast],
   );
 
   // 删除文件夹

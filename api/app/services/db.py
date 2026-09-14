@@ -475,7 +475,7 @@ def update_document(doc_id: str, doc: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def delete_document(doc_id: str) -> bool:
-    """软删除：标记 deleted_at，进入回收站。"""
+    """软删除：标记 deleted_at，进入回收站；同时清理最近浏览记录。"""
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
@@ -483,6 +483,8 @@ def delete_document(doc_id: str) -> bool:
             (time.time(), doc_id),
         )
         deleted = cur.rowcount > 0
+        # 删除后立即从最近浏览中移除，避免残留已删除文档
+        cur.execute("DELETE FROM recent_views WHERE doc_id = %s", (doc_id,))
     conn.commit()
     return deleted
 
@@ -501,11 +503,12 @@ def restore_document(doc_id: str) -> bool:
 
 
 def purge_document(doc_id: str) -> bool:
-    """彻底删除（物理删除文档及其 chunks）。"""
+    """彻底删除（物理删除文档及其 chunks）；同时清理最近浏览记录。"""
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute("DELETE FROM documents WHERE id = %s", (doc_id,))
         deleted = cur.rowcount > 0
+        cur.execute("DELETE FROM recent_views WHERE doc_id = %s", (doc_id,))
     conn.commit()
     return deleted
 
@@ -1215,7 +1218,10 @@ def record_recent(doc_id: str, kb_id: str | None, user_id: str | None) -> dict[s
 
 
 def list_recent(limit: int = 20, user_id: str | None = None) -> list[dict[str, Any]]:
-    """按 viewed_at 倒序返回最近浏览（join documents 取 title/source）。"""
+    """按 viewed_at 倒序返回最近浏览（join documents 取 title/source）。
+
+    用 INNER JOIN + deleted_at IS NULL 过滤：软删除/彻底删除的文档不再出现在最近浏览。
+    """
     conn = _connect()
     with conn.cursor() as cur:
         if user_id is None:
@@ -1223,7 +1229,7 @@ def list_recent(limit: int = 20, user_id: str | None = None) -> list[dict[str, A
                 """
                 SELECT r.doc_id, r.kb_id, r.viewed_at, d.title, d.source
                 FROM recent_views r
-                LEFT JOIN documents d ON d.id = r.doc_id
+                INNER JOIN documents d ON d.id = r.doc_id AND d.deleted_at IS NULL
                 ORDER BY r.viewed_at DESC
                 LIMIT %s
                 """,
@@ -1234,7 +1240,7 @@ def list_recent(limit: int = 20, user_id: str | None = None) -> list[dict[str, A
                 """
                 SELECT r.doc_id, r.kb_id, r.viewed_at, d.title, d.source
                 FROM recent_views r
-                LEFT JOIN documents d ON d.id = r.doc_id
+                INNER JOIN documents d ON d.id = r.doc_id AND d.deleted_at IS NULL
                 WHERE r.user_id = %s
                 ORDER BY r.viewed_at DESC
                 LIMIT %s
