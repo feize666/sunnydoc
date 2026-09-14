@@ -24,6 +24,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { toPng, toSvg } from "html-to-image";
 import { generateDiagram } from "@/lib/api";
+import { DiagramTemplateDialog } from "./DiagramTemplateDialog";
 
 // —— 数据结构 ——
 type ShapeKind =
@@ -690,6 +691,7 @@ export function FlowchartEditor({
   const [aiText, setAiText] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
   const [themeIndex, setThemeIndex] = useState(0);
   // 网格吸附开关
   const [snap, setSnap] = useState(false);
@@ -867,8 +869,8 @@ export function FlowchartEditor({
     [edges, themeIndex],
   );
 
-  const commit = useCallback(() => {
-    const stored: StoredFlow = {
+  const buildStored = useCallback((): StoredFlow => {
+    return {
       nodes: nodes.map((n) => {
         const d = n.data as unknown as FlowData;
         return {
@@ -899,8 +901,52 @@ export function FlowchartEditor({
         };
       }),
     };
-    onChange(JSON.stringify(stored));
-  }, [nodes, edges, onChange]);
+  }, [nodes, edges]);
+
+  const commit = useCallback(() => {
+    onChange(JSON.stringify(buildStored()));
+  }, [buildStored, onChange]);
+
+  // 应用本地模板：解析模板数据并替换当前画布
+  const applyLocalTemplate = useCallback(
+    (data: string) => {
+      try {
+        const p = parseFlow(data);
+        pushHistory();
+        setNodes(
+          p.nodes.map((n) => ({
+            id: n.id,
+            type: "shape",
+            parentId: n.parentId,
+            position: { x: n.x, y: n.y },
+            data: {
+              label: n.label,
+              shape: n.shape,
+              fill: n.fill,
+              stroke: n.stroke,
+              width: n.width,
+              height: n.height,
+              fontSize: n.fontSize,
+              bold: n.bold,
+              textAlign: n.textAlign,
+            },
+          })),
+        );
+        setEdges(
+          p.edges.map((e) => ({
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            label: e.label || undefined,
+            data: { arrowStart: e.markerStart ?? "none", arrowEnd: e.markerEnd ?? "solid" },
+          })),
+        );
+      } catch {
+        /* 模板数据损坏时静默忽略 */
+      }
+    },
+    [setNodes, setEdges, pushHistory],
+  );
 
   useEffect(() => {
     if (!mounted) return;
@@ -1813,6 +1859,13 @@ export function FlowchartEditor({
             导出 SVG
           </button>
           <button
+            onClick={() => setTemplateOpen(true)}
+            className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover"
+            title="保存为模板 / 我的模板"
+          >
+            模板
+          </button>
+          <button
             onClick={() => setAiOpen(true)}
             className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
           >
@@ -2496,6 +2549,14 @@ export function FlowchartEditor({
           </div>
         </>
       )}
+
+      <DiagramTemplateDialog
+        open={templateOpen}
+        onClose={() => setTemplateOpen(false)}
+        type="flowchart"
+        currentData={JSON.stringify(buildStored())}
+        onApply={applyLocalTemplate}
+      />
     </div>
   );
 }

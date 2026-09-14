@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useMemo } from "react";
 import { toPng, toSvg } from "html-to-image";
 import JSZip from "jszip";
 import { generateDiagram } from "@/lib/api";
+import { DiagramTemplateDialog } from "./DiagramTemplateDialog";
 
 // —— 数据结构：扁平节点 + parent 引用 ——
 interface MindNode {
@@ -703,6 +704,7 @@ export function MindMapEditor({
   const [noteDraft, setNoteDraft] = useState("");
   const [exporting, setExporting] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
   // 快捷键提示面板（与主题/图标/导出下拉互斥）
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -740,6 +742,41 @@ export function MindMapEditor({
       onChange(JSON.stringify({ nodes: next, links: ls }));
     },
     [onChange, pushHistory],
+  );
+
+  // 应用模板：解析并重映射 id，替换当前导图
+  const applyTemplate = useCallback(
+    (data: string) => {
+      try {
+        const p = JSON.parse(data);
+        const srcNodes: MindNode[] = Array.isArray(p.nodes) ? p.nodes : [];
+        const srcLinks: LinkPair[] = Array.isArray(p.links) ? p.links : [];
+        if (srcNodes.length === 0) return;
+        const idMap = new Map<string, string>();
+        const remapped = srcNodes.map((n) => {
+          const nid = genId();
+          idMap.set(n.id, nid);
+          return { ...n, id: nid };
+        });
+        const finalNodes = remapped.map((n) => {
+          if (n.parent) {
+            const np = idMap.get(n.parent);
+            return { ...n, parent: np ?? null };
+          }
+          return n;
+        });
+        const finalLinks = srcLinks.map((l) => ({
+          from: idMap.get(l.from) ?? l.from,
+          to: idMap.get(l.to) ?? l.to,
+        }));
+        commit(finalNodes, finalLinks);
+        setView(null);
+        setSelected(null);
+      } catch {
+        /* 模板数据损坏时静默忽略 */
+      }
+    },
+    [commit],
   );
 
   const undo = useCallback(() => {
@@ -1675,6 +1712,13 @@ export function MindMapEditor({
         </button>
         <input ref={fileRef} type="file" accept=".xmind" onChange={onFileChange} className="hidden" />
 
+        <button
+          onClick={() => setTemplateOpen(true)}
+          className="rounded-md px-2 py-1.5 text-[13px] text-text transition-colors hover:bg-hover"
+          title="保存为模板 / 我的模板"
+        >
+          模板
+        </button>
         <button onClick={() => setAiOpen(true)} className="rounded-md bg-accent px-2.5 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90">
           ✨ AI 生成
         </button>
@@ -2401,6 +2445,14 @@ export function MindMapEditor({
         </div>
         )}
       </div>
+
+      <DiagramTemplateDialog
+        open={templateOpen}
+        onClose={() => setTemplateOpen(false)}
+        type="mindmap"
+        currentData={JSON.stringify({ nodes, links })}
+        onApply={applyTemplate}
+      />
     </div>
   );
 }
