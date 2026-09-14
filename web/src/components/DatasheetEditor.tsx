@@ -46,9 +46,11 @@ function parseData(value: string): DatasheetData {
 export function DatasheetEditor({
   value,
   onChange,
+  readOnly = false,
 }: {
   value: string;
   onChange: (json: string) => void;
+  readOnly?: boolean;
 }) {
   const [data, setData] = useState<DatasheetData>(() => parseData(value));
   const [filter, setFilter] = useState<Record<number, string>>({});
@@ -133,6 +135,46 @@ export function DatasheetEditor({
     }
     return <span className="text-[14px] text-text">{v}</span>;
   };
+
+  // 只读预览：静态表格（无编辑/筛选/增删）
+  if (readOnly) {
+    return (
+      <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
+        <div className="flex items-center border-b border-line px-3 py-2">
+          <span className="text-[12px] text-faint">
+            {data.columns.length} 字段 × {data.rows.length} 记录
+          </span>
+        </div>
+        <div className="flex-1 overflow-auto p-3">
+          <table className="border-collapse">
+            <thead>
+              <tr>
+                {data.columns.map((col, c) => (
+                  <th key={c} className="border border-line bg-surface px-3 py-2 text-left text-[14px] font-semibold text-text">
+                    {col.name}
+                    <span className="ml-1 text-[11px] font-normal text-faint">
+                      {FIELD_TYPES.find((t) => t.value === col.type)?.label ?? col.type}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.rows.map((row, r) => (
+                <tr key={r}>
+                  {data.columns.map((_, c) => (
+                    <td key={c} className="border border-line px-3 py-1.5">
+                      {renderCell(row, c)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">

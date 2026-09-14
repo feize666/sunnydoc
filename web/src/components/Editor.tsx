@@ -546,6 +546,14 @@ export function Editor({
                 <div className="mt-6 overflow-hidden rounded-lg border border-line">
                   <MindMapEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly />
                 </div>
+              ) : doc.type === "board" ? (
+                <div className="mt-6 overflow-hidden rounded-lg border border-line">
+                  <BoardEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly />
+                </div>
+              ) : doc.type === "datasheet" ? (
+                <div className="mt-6 overflow-hidden rounded-lg border border-line">
+                  <DatasheetEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly />
+                </div>
               ) : doc.type === "html" ? (
                 <div
                   ref={contentRef}
@@ -633,9 +641,9 @@ export function Editor({
                 ) : doc.type === "table" ? (
                   <TableEditor value={draft} onChange={setDraft} />
                 ) : doc.type === "board" ? (
-                  <BoardEditor value={draft} onChange={setDraft} />
+                  <BoardEditor key={doc.key} value={draft} onChange={setDraft} />
                 ) : doc.type === "datasheet" ? (
-                  <DatasheetEditor value={draft} onChange={setDraft} />
+                  <DatasheetEditor key={doc.key} value={draft} onChange={setDraft} />
                 ) : doc.type === "flowchart" ? (
                   <FlowchartEditor key={doc.key} value={draft} onChange={setDraft} />
                 ) : doc.type === "mindmap" ? (

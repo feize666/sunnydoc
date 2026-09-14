@@ -35,9 +35,11 @@ const COLORS = ["#111827", "#ef4444", "#f97316", "#22c55e", "#3b82f6", "#a855f7"
 export function BoardEditor({
   value,
   onChange,
+  readOnly = false,
 }: {
   value: string;
   onChange: (json: string) => void;
+  readOnly?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [shapes, setShapes] = useState<Shape[]>(() => parseShapes(value));
@@ -187,6 +189,7 @@ export function BoardEditor({
   return (
     <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
       {/* 工具栏 */}
+      {!readOnly && (
       <div className="flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
         {TOOLS.map((t) => (
           <button
@@ -230,15 +233,16 @@ export function BoardEditor({
           </button>
         </span>
       </div>
+      )}
 
       <canvas
         ref={canvasRef}
-        className="flex-1 w-full cursor-crosshair"
+        className={`flex-1 w-full ${readOnly ? "pointer-events-none select-none" : "cursor-crosshair"}`}
         style={{ touchAction: "none" }}
-        onMouseDown={onMouseDown}
-        onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
-        onMouseLeave={onMouseUp}
+        onMouseDown={readOnly ? undefined : onMouseDown}
+        onMouseMove={readOnly ? undefined : onMouseMove}
+        onMouseUp={readOnly ? undefined : onMouseUp}
+        onMouseLeave={readOnly ? undefined : onMouseUp}
       />
     </div>
   );
