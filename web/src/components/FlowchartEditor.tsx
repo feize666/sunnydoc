@@ -1642,7 +1642,7 @@ export function FlowchartEditor({
   const canRedo = future.length > 0;
 
   return (
-    <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
+    <div className="flex h-[calc(100vh-300px)] min-h-[400px] flex-col rounded-lg border border-line bg-background">
       {/* 工具栏 */}
       <div className="relative z-20 flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
         <span className="text-[11px] text-faint">连线</span>
