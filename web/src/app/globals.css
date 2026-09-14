@@ -329,6 +329,7 @@ body {
   background: rgba(2, 6, 23, 0.4);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
+  animation: overlay-in 0.16s ease;
 }
 .dialog-panel {
   background: var(--background);
@@ -336,6 +337,50 @@ body {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
+  animation: panel-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 入场动画：遮罩淡入 + 面板缩放上浮 */
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes panel-in {
+  from { opacity: 0; transform: scale(0.96) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* 通用入场工具类：淡入 / 缩放 / 下拉 */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes slide-down-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.anim-fade-in { animation: fade-in 0.14s ease; }
+.anim-scale-in { animation: scale-in 0.16s cubic-bezier(0.16, 1, 0.3, 1); }
+.anim-slide-down-in { animation: slide-down-in 0.14s ease; }
+
+/* 侧栏宽度过渡（折叠/展开） */
+.sidebar-transition { transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* 尊重系统减弱动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .dialog-overlay,
+  .dialog-panel,
+  .anim-fade-in,
+  .anim-scale-in,
+  .anim-slide-down-in,
+  .sidebar-transition {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
 /* 次要按钮（描边） */

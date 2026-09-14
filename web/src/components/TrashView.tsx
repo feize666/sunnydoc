@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   listTrash,
   restoreTrash,
@@ -11,6 +11,7 @@ import {
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Tooltip } from "./Tooltip";
 import { EmptyState } from "./EmptyState";
+import { useToast } from "./Toast";
 
 function BackIcon({ size = 15 }: { size?: number }) {
   return (
@@ -20,14 +21,60 @@ function BackIcon({ size = 15 }: { size?: number }) {
   );
 }
 
+/** 自定义复选框：checked = true / false / "indeterminate" */
+function Checkbox({
+  checked,
+  onChange,
+  title,
+}: {
+  checked: boolean | "indeterminate";
+  onChange: () => void;
+  title?: string;
+}) {
+  const isOn = checked === true;
+  const isPartial = checked === "indeterminate";
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange();
+      }}
+      title={title}
+      aria-checked={isPartial ? "mixed" : isOn}
+      role="checkbox"
+      className={`grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors ${
+        isOn || isPartial
+          ? "border-accent bg-accent text-white"
+          : "border-line bg-background text-transparent hover:border-accent/50"
+      }`}
+    >
+      {isOn ? (
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M20 6L9 17l-5-5" />
+        </svg>
+      ) : isPartial ? (
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+          <path d="M5 12h14" />
+        </svg>
+      ) : null}
+    </button>
+  );
+}
+
 export function TrashView({ onBack }: { onBack: () => void }) {
+  const toast = useToast();
   const [data, setData] = useState<{
     documents: TrashItem[];
     folders: TrashItem[];
     kbs: TrashItem[];
   }>({ documents: [], folders: [], kbs: [] });
   const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pendingPurge, setPendingPurge] = useState<{ kind: TrashKind; item: TrashItem } | null>(null);
+  const [pendingBatchPurge, setPendingBatchPurge] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const keyOf = (kind: TrashKind, id: string) => `${kind}:${id}`;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -44,12 +91,67 @@ export function TrashView({ onBack }: { onBack: () => void }) {
     load();
   }, [load]);
 
+  const allItems = useMemo(() => {
+    const map = (kind: TrashKind) => (i: TrashItem) => ({ kind, item: i });
+    return [
+      ...data.documents.map(map("document")),
+      ...data.folders.map(map("folder")),
+      ...data.kbs.map(map("kb")),
+    ];
+  }, [data]);
+
+  const total = allItems.length;
+
+  // 全选状态
+  const allKeys = useMemo(() => allItems.map(({ kind, item }) => keyOf(kind, item.id)), [allItems]);
+  const selectedCount = useMemo(
+    () => allKeys.filter((k) => selected.has(k)).length,
+    [allKeys, selected],
+  );
+  const isAllSelected = total > 0 && selectedCount === total;
+  const isSomeSelected = selectedCount > 0 && !isAllSelected;
+
+  const toggleAll = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (isAllSelected) {
+        allKeys.forEach((k) => next.delete(k));
+      } else {
+        allKeys.forEach((k) => next.add(k));
+      }
+      return next;
+    });
+  };
+
+  const toggleSection = (kind: TrashKind, items: TrashItem[]) => {
+    const keys = items.map((i) => keyOf(kind, i.id));
+    const allOn = keys.every((k) => selected.has(k));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      keys.forEach((k) => (allOn ? next.delete(k) : next.add(k)));
+      return next;
+    });
+  };
+
+  const toggleItem = (kind: TrashKind, id: string) => {
+    const k = keyOf(kind, id);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelected(new Set());
+
   const handleRestore = async (kind: TrashKind, id: string) => {
     try {
       await restoreTrash(kind, id);
+      toast.success("已恢复");
       load();
     } catch (e) {
-      alert(`恢复失败：${e instanceof Error ? e.message : "未知错误"}`);
+      toast.error(`恢复失败：${e instanceof Error ? e.message : "未知错误"}`);
     }
   };
 
@@ -57,15 +159,57 @@ export function TrashView({ onBack }: { onBack: () => void }) {
     if (!pendingPurge) return;
     try {
       await purgeTrash(pendingPurge.kind, pendingPurge.item.id);
+      toast.success("已彻底删除");
       setPendingPurge(null);
       load();
     } catch (e) {
-      alert(`彻底删除失败：${e instanceof Error ? e.message : "未知错误"}`);
+      toast.error(`彻底删除失败：${e instanceof Error ? e.message : "未知错误"}`);
       setPendingPurge(null);
     }
   };
 
-  const total = data.documents.length + data.folders.length + data.kbs.length;
+  // 批量恢复
+  const handleBatchRestore = async () => {
+    setBusy(true);
+    let ok = 0;
+    let fail = 0;
+    for (const { kind, item } of allItems) {
+      if (!selected.has(keyOf(kind, item.id))) continue;
+      try {
+        await restoreTrash(kind, item.id);
+        ok++;
+      } catch {
+        fail++;
+      }
+    }
+    setBusy(false);
+    clearSelection();
+    load();
+    if (fail === 0) toast.success(`已恢复 ${ok} 项`);
+    else toast.warning(`恢复完成：成功 ${ok} 项，失败 ${fail} 项`);
+  };
+
+  // 批量彻底删除
+  const handleBatchPurge = async () => {
+    setBusy(true);
+    let ok = 0;
+    let fail = 0;
+    for (const { kind, item } of allItems) {
+      if (!selected.has(keyOf(kind, item.id))) continue;
+      try {
+        await purgeTrash(kind, item.id);
+        ok++;
+      } catch {
+        fail++;
+      }
+    }
+    setBusy(false);
+    setPendingBatchPurge(false);
+    clearSelection();
+    load();
+    if (fail === 0) toast.success(`已彻底删除 ${ok} 项`);
+    else toast.warning(`删除完成：成功 ${ok} 项，失败 ${fail} 项`);
+  };
 
   const renderSection = (
     title: string,
@@ -73,36 +217,62 @@ export function TrashView({ onBack }: { onBack: () => void }) {
     kind: TrashKind,
   ) => {
     if (items.length === 0) return null;
+    const keys = items.map((i) => keyOf(kind, i.id));
+    const sectionSelected = keys.filter((k) => selected.has(k)).length;
+    const sectionAll = sectionSelected === items.length;
+    const sectionPartial = sectionSelected > 0 && !sectionAll;
     return (
       <section className="mt-6">
-        <h2 className="mb-2 text-[14px] font-semibold text-muted">{title}</h2>
+        <div className="mb-2 flex items-center gap-2">
+          <Checkbox
+            checked={sectionAll ? true : sectionPartial ? "indeterminate" : false}
+            onChange={() => toggleSection(kind, items)}
+            title={sectionAll ? "取消选择" : "全选"}
+          />
+          <h2 className="text-[14px] font-semibold text-muted">{title}</h2>
+          <span className="text-[12px] text-faint">({items.length})</span>
+        </div>
         <ul className="overflow-hidden rounded-xl border border-line bg-surface">
-          {items.map((item, i) => (
-            <li key={item.id}>
-              <div className="flex items-center gap-3 px-4 py-2.5">
-                <span className="min-w-0 flex-1 truncate text-[15px] text-text">
-                  {item.title ?? item.name}
-                </span>
-                <button
-                  onClick={() => handleRestore(kind, item.id)}
-                  className="rounded-md border border-line px-2.5 py-1 text-xs text-muted transition-colors hover:border-accent/40 hover:text-accent"
+          {items.map((item, i) => {
+            const k = keyOf(kind, item.id);
+            const on = selected.has(k);
+            return (
+              <li key={item.id}>
+                <div
+                  className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${on ? "bg-accent/5" : ""}`}
                 >
-                  恢复
-                </button>
-                <Tooltip content="彻底删除（不可恢复）">
-                  <button
-                    onClick={() => setPendingPurge({ kind, item })}
-                    className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-danger-soft hover:text-danger"
+                  <Checkbox
+                    checked={on}
+                    onChange={() => toggleItem(kind, item.id)}
+                    title={on ? "取消选择" : "选择"}
+                  />
+                  <span
+                    className="min-w-0 flex-1 cursor-pointer truncate text-[15px] text-text"
+                    onClick={() => toggleItem(kind, item.id)}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                    </svg>
+                    {item.title ?? item.name}
+                  </span>
+                  <button
+                    onClick={() => handleRestore(kind, item.id)}
+                    className="rounded-md border border-line px-2.5 py-1 text-xs text-muted transition-colors hover:border-accent/40 hover:text-accent"
+                  >
+                    恢复
                   </button>
-                </Tooltip>
-              </div>
-              {i < items.length - 1 && <div className="border-b border-line" />}
-            </li>
-          ))}
+                  <Tooltip content="彻底删除（不可恢复）">
+                    <button
+                      onClick={() => setPendingPurge({ kind, item })}
+                      className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-danger-soft hover:text-danger"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      </svg>
+                    </button>
+                  </Tooltip>
+                </div>
+                {i < items.length - 1 && <div className="border-b border-line" />}
+              </li>
+            );
+          })}
         </ul>
       </section>
     );
@@ -125,7 +295,51 @@ export function TrashView({ onBack }: { onBack: () => void }) {
             {loading ? "加载中…" : `共 ${total} 项，删除后可在此恢复`}
           </div>
         </div>
+        {!loading && total > 0 && (
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={toggleAll}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text"
+            >
+              <Checkbox
+                checked={isAllSelected ? true : isSomeSelected ? "indeterminate" : false}
+                onChange={toggleAll}
+                title={isAllSelected ? "取消全选" : "全选"}
+              />
+              <span>{isAllSelected ? "取消全选" : "全选"}</span>
+            </button>
+          </div>
+        )}
       </header>
+
+      {/* 批量操作栏 */}
+      {selectedCount > 0 && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-line bg-accent/5 px-4 py-2">
+          <span className="text-[13px] text-text">已选 {selectedCount} 项</span>
+          <button
+            onClick={clearSelection}
+            className="rounded-md px-2 py-1 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text"
+          >
+            取消选择
+          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={handleBatchRestore}
+              disabled={busy}
+              className="rounded-md border border-line px-2.5 py-1 text-[13px] text-muted transition-colors hover:border-accent/40 hover:text-accent disabled:opacity-50"
+            >
+              批量恢复
+            </button>
+            <button
+              onClick={() => setPendingBatchPurge(true)}
+              disabled={busy}
+              className="rounded-md border border-danger/40 px-2.5 py-1 text-[13px] text-danger transition-colors hover:bg-danger-soft disabled:opacity-50"
+            >
+              彻底删除
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-3xl px-6 py-6">
@@ -154,6 +368,16 @@ export function TrashView({ onBack }: { onBack: () => void }) {
         cancelText="取消"
         onConfirm={handlePurge}
         onCancel={() => setPendingPurge(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingBatchPurge}
+        title="彻底删除"
+        message={`确定要彻底删除选中的 ${selectedCount} 项吗？此操作不可恢复。`}
+        confirmText="彻底删除"
+        cancelText="取消"
+        onConfirm={handleBatchPurge}
+        onCancel={() => setPendingBatchPurge(false)}
       />
     </div>
   );

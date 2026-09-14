@@ -8,6 +8,7 @@ import { AiPanel } from "@/components/AiPanel";
 import { StatusBar } from "@/components/StatusBar";
 import { useToast } from "@/components/Toast";
 import { CommandPalette, type Command } from "@/components/CommandPalette";
+import { ShortcutPanel } from "@/components/ShortcutPanel";
 import { ImportDialog } from "@/components/ImportDialog";
 import { NewDocDialog } from "@/components/NewDocDialog";
 import { NewFolderDialog } from "@/components/NewFolderDialog";
@@ -83,6 +84,21 @@ function formatTime(ts: number): string {
 }
 
 const SESSION_KEY = "sunnydoc.currentKbId";
+const SIDEBAR_KEY = "sunnydoc.sidebarCollapsed";
+function loadSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function saveSidebarCollapsed(collapsed: boolean) {
+  try {
+    localStorage.setItem(SIDEBAR_KEY, collapsed ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
 function loadSessionKbId(): string | null {
   try {
     return sessionStorage.getItem(SESSION_KEY);
@@ -112,10 +128,11 @@ export default function Home() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [openKeys, setOpenKeys] = useState<string[]>([]);
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => loadSidebarCollapsed());
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [dragFiles, setDragFiles] = useState<File[] | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -178,6 +195,11 @@ export default function Home() {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
+  // 侧栏折叠状态持久化
+  useEffect(() => {
+    saveSidebarCollapsed(sidebarCollapsed);
+  }, [sidebarCollapsed]);
+
   // 启动时校验登录态：有 token 则拉取当前用户，失败则清除
   useEffect(() => {
     (async () => {
@@ -234,9 +256,21 @@ export default function Home() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      const mod = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
+      if (mod && key === "k") {
         e.preventDefault();
         setPaletteOpen((v) => !v);
+        return;
+      }
+      // 全局快捷键面板：⌘/ 或 ?（Shift+/）
+      if ((mod && e.key === "/") || (!mod && e.key === "?")) {
+        // 输入框聚焦时不抢占（如搜索框、编辑器）
+        const el = e.target as HTMLElement | null;
+        const tag = el?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || el?.isContentEditable) return;
+        e.preventDefault();
+        setShortcutsOpen((v) => !v);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -1117,6 +1151,8 @@ export default function Home() {
           openDoc(docId);
         }}
       />
+
+      <ShortcutPanel open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
       <ImportDialog
         open={importOpen}
