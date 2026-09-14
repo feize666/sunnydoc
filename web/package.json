@@ -20,7 +20,7 @@
     "dompurify": "^3.4.15",
     "file-saver": "^2.0.5",
     "html-to-image": "^1.11.13",
-    "jszip": "^3.10.1",
+    "jszip": "^3.10.2",
     "markdown-it": "^15.0.1",
     "markdown-it-anchor": "^10.0.0",
     "markdown-it-task-lists": "^2.1.1",

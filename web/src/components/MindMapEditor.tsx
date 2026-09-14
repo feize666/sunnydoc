@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useMemo } from "react";
 import { toPng, toSvg } from "html-to-image";
+import JSZip from "jszip";
 import { generateDiagram } from "@/lib/api";
 
 // —— 数据结构：扁平节点 + parent 引用 ——
@@ -41,6 +42,53 @@ function parseMind(value: string): MindNode[] {
     /* fallthrough */
   }
   return [];
+}
+
+// 解析 Xmind 导出的内容（content.json 新格式 / content.xml 旧格式）
+// 返回扁平 MindNode[]（根节点 parent 为 null），失败返回 null
+function parseXmindContent(raw: string, isXml: boolean): MindNode[] | null {
+  try {
+    let rootTopic: any = null;
+    if (isXml) {
+      // 旧格式：content.xml
+      const doc = new DOMParser().parseFromString(raw, "text/xml");
+      rootTopic = doc.querySelector("sheet > topic");
+      if (!rootTopic) return null;
+    } else {
+      // 新格式：content.json，取第一张画布的 rootTopic
+      const sheets = JSON.parse(raw);
+      if (!Array.isArray(sheets) || !sheets.length) return null;
+      rootTopic = sheets[0]?.rootTopic;
+      if (!rootTopic) return null;
+    }
+
+    const nodes: MindNode[] = [];
+    const titleOf = (t: any): string => {
+      if (typeof t?.title === "string" && t.title) return t.title;
+      if (t?.titleText) return String(t.titleText);
+      return "未命名";
+    };
+    const childrenOf = (t: any): any[] => {
+      if (Array.isArray(t?.children?.attached)) return t.children.attached;
+      if (Array.isArray(t?.children?.topics)) return t.children.topics;
+      // XML 旧格式：<children><topics type="attached"><topic/></topics></children>
+      if (t?.getElementsByTagName) {
+        const attached = Array.from(t.querySelectorAll(":scope > children > topics[type=attached] > topic") as any);
+        if (attached.length) return attached;
+        return Array.from(t.querySelectorAll(":scope > children > topics > topic") as any);
+      }
+      return [];
+    };
+    const walk = (topic: any, parentId: string | null) => {
+      const id = genId();
+      nodes.push({ id, text: titleOf(topic), parent: parentId });
+      for (const kid of childrenOf(topic)) walk(kid, id);
+    };
+    walk(rootTopic, null);
+    return nodes.length ? nodes : null;
+  } catch {
+    return null;
+  }
 }
 
 // 解析顶层 links（旧数据无此字段兜底空数组）
@@ -1227,6 +1275,43 @@ export function MindMapEditor({
     return toSvg(el, { backgroundColor: bg });
   };
 
+  // —— 导入 Xmind ——
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+
+  const importXmind = (file: File) => {
+    setImporting(true);
+    file
+      .arrayBuffer()
+      .then((buf) => JSZip.loadAsync(buf))
+      .then((zip) => {
+        const jsonFile = zip.file("content.json");
+        if (jsonFile) return jsonFile.async("string").then((s) => ({ raw: s, isXml: false }));
+        const xmlFile = zip.file("content.xml");
+        if (xmlFile) return xmlFile.async("string").then((s) => ({ raw: s, isXml: true }));
+        throw new Error("未找到 content.json / content.xml，可能不是有效的 Xmind 文件");
+      })
+      .then(({ raw, isXml }) => {
+        const nodes = parseXmindContent(raw, isXml);
+        if (!nodes || !nodes.length) throw new Error("解析失败或文件内容为空");
+        commit(nodes, []);
+        setLayoutMode("logic");
+        setView(null);
+        setSelected(null);
+        setLinkingFrom(null);
+      })
+      .catch((err) => {
+        alert(`导入失败：${err instanceof Error ? err.message : "未知错误"}`);
+      })
+      .finally(() => setImporting(false));
+  };
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) importXmind(file);
+    e.target.value = "";
+  };
+
   const downloadDataUrl = (dataUrl: string, filename: string) => {
     const a = document.createElement("a");
     a.download = filename;
@@ -1571,6 +1656,17 @@ export function MindMapEditor({
             </>
           )}
         </div>
+
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={importing}
+          className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] text-text transition-colors hover:bg-hover disabled:opacity-50"
+          title="导入 Xmind 文件（.xmind）"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12M7 10l5 5 5-5" /><path d="M3 21h18" /></svg>
+          {importing ? "导入中…" : "导入"}
+        </button>
+        <input ref={fileRef} type="file" accept=".xmind" onChange={onFileChange} className="hidden" />
 
         <button onClick={() => setAiOpen(true)} className="rounded-md bg-accent px-2.5 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90">
           ✨ AI 生成
