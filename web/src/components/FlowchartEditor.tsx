@@ -686,6 +686,13 @@ export function FlowchartEditor({
   const [helpOpen, setHelpOpen] = useState(false);
   // 左侧侧栏 tab：图形库 / 风格
   const [leftTab, setLeftTab] = useState<"shapes" | "style">("shapes");
+  // 左右侧栏折叠开关（扩大画布空间）
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+  // 拖拽对齐辅助线：记录当前吸附的对齐参考线（x/y 位置）
+  const [guides, setGuides] = useState<{ x: number | null; y: number | null }>({ x: null, y: null });
+  // 画布视口（用于把辅助线的世界坐标换算成屏幕坐标）
+  const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
   // 右键上下文菜单（fixed 定位到鼠标位置）
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; type: "node" | "edge" | "pane"; id?: string } | null>(null);
 
@@ -1643,6 +1650,30 @@ export function FlowchartEditor({
     <div className="flex h-[calc(100vh-300px)] min-h-[400px] flex-col rounded-lg border border-line bg-background">
       {/* 工具栏 */}
       <div className="relative z-20 flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
+        {/* 侧栏折叠开关 */}
+        <button
+          onClick={() => setLeftCollapsed((v) => !v)}
+          className={`grid h-7 w-7 place-items-center rounded-md transition-colors ${leftCollapsed ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
+          title={leftCollapsed ? "展开左侧栏" : "折叠左侧栏"}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M9 3v18" />
+          </svg>
+        </button>
+        <button
+          onClick={() => setRightCollapsed((v) => !v)}
+          className={`grid h-7 w-7 place-items-center rounded-md transition-colors ${rightCollapsed ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
+          title={rightCollapsed ? "展开右侧栏" : "折叠右侧栏"}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M15 3v18" />
+          </svg>
+        </button>
+
+        <span className="mx-1 h-4 w-px bg-line" />
+
         <span className="text-[11px] text-faint">连线</span>
         {EDGE_KINDS.map((k) => (
           <button
@@ -1840,17 +1871,18 @@ export function FlowchartEditor({
       {/* 主体：左侧栏 + 画布 */}
       <div className="flex min-h-0 flex-1">
         {/* 左侧侧栏：图形库 / 风格 */}
+        {!leftCollapsed && (
         <div className="flex w-44 shrink-0 flex-col border-r border-line bg-background">
           <div className="flex border-b border-line">
             <button
               onClick={() => setLeftTab("shapes")}
-              className={`flex-1 py-2 text-xs transition-colors ${leftTab === "shapes" ? "bg-accent-soft font-medium text-accent" : "text-muted hover:text-text"}`}
+              className={`flex-1 border-b-2 py-2.5 text-xs transition-colors ${leftTab === "shapes" ? "border-accent font-medium text-accent" : "border-transparent text-muted hover:text-text"}`}
             >
               图形库
             </button>
             <button
               onClick={() => setLeftTab("style")}
-              className={`flex-1 py-2 text-xs transition-colors ${leftTab === "style" ? "bg-accent-soft font-medium text-accent" : "text-muted hover:text-text"}`}
+              className={`flex-1 border-b-2 py-2.5 text-xs transition-colors ${leftTab === "style" ? "border-accent font-medium text-accent" : "border-transparent text-muted hover:text-text"}`}
             >
               风格
             </button>
@@ -1865,7 +1897,7 @@ export function FlowchartEditor({
                       <button
                         key={s.kind}
                         onClick={() => addNode(s.kind)}
-                        className="flex flex-col items-center gap-1 rounded-md px-1 py-2 text-[10px] text-muted transition-colors hover:bg-hover hover:text-text"
+                        className="flex flex-col items-center gap-1 rounded-lg px-1 py-2 text-[10px] text-muted transition-colors hover:bg-hover hover:text-text"
                         title={`添加 ${s.label}`}
                       >
                         <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
@@ -1904,6 +1936,7 @@ export function FlowchartEditor({
             )}
           </div>
         </div>
+        )}
 
         {/* 画布 */}
         <div
@@ -1956,7 +1989,42 @@ export function FlowchartEditor({
           onNodeDragStart={() => {
             dragStartRef.current = snapshot();
           }}
+          onNodeDrag={(_, node) => {
+            // 拖拽对齐辅助线：检测被拖节点与其他节点的左/中/右、上/中/下对齐
+            const byId = new Map(nodes.map((n) => [n.id, n]));
+            const da = absPositionOf(node.id, byId);
+            const d = node.data as unknown as FlowData;
+            const dw = d.width ?? NODE_W;
+            const dh = d.height ?? NODE_H;
+            const dl = da.x;
+            const dcx = da.x + dw / 2;
+            const dr = da.x + dw;
+            const dt = da.y;
+            const dcy = da.y + dh / 2;
+            const db = da.y + dh;
+            const SNAP = 5;
+            let gx: number | null = null;
+            let gy: number | null = null;
+            for (const n of nodes) {
+              if (n.id === node.id) continue;
+              if (n.parentId === node.id) continue; // 跳过自己的子节点
+              const a = absPositionOf(n.id, byId);
+              const nd = n.data as unknown as FlowData;
+              const nw = nd.width ?? NODE_W;
+              const nh = nd.height ?? NODE_H;
+              const oxs = [a.x, a.x + nw / 2, a.x + nw];
+              const oys = [a.y, a.y + nh / 2, a.y + nh];
+              const dxs = [dl, dcx, dr];
+              const dys = [dt, dcy, db];
+              for (const ox of oxs) for (const dx of dxs) if (Math.abs(ox - dx) < SNAP) { gx = ox; break; }
+              if (gx === null) for (const oy of oys) for (const dy of dys) if (Math.abs(oy - dy) < SNAP) { gy = oy; break; }
+              if (gx !== null || gy !== null) break;
+            }
+            setGuides({ x: gx, y: gy });
+          }}
+          onMove={(_, vp) => setViewport(vp)}
           onNodeDragStop={(_, node) => {
+            setGuides({ x: null, y: null });
             const byId = new Map(nodes.map((n) => [n.id, n]));
             // 解析节点画布绝对坐标（沿 parentId 链向上累加）
             const absOf = (n: Node) => {
@@ -2033,6 +2101,19 @@ export function FlowchartEditor({
           <Controls />
           <MiniMap pannable zoomable className="!bg-background" />
         </ReactFlow>
+        {/* 拖拽对齐辅助线（红色参考线，世界坐标换算成屏幕坐标） */}
+        {guides.x !== null && (
+          <div
+            className="pointer-events-none absolute top-0 z-20 h-full"
+            style={{ left: guides.x * viewport.zoom + viewport.x, width: 1, background: "#f43f5e" }}
+          />
+        )}
+        {guides.y !== null && (
+          <div
+            className="pointer-events-none absolute left-0 z-20 w-full"
+            style={{ top: guides.y * viewport.zoom + viewport.y, height: 1, background: "#f43f5e" }}
+          />
+        )}
         {/* 空状态引导：画布无节点时居中提示，pointer-events-none 不挡操作 */}
         {nodes.length === 0 && (
           <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 text-center">
@@ -2043,6 +2124,7 @@ export function FlowchartEditor({
         </div>
 
         {/* 右侧样式侧栏：按选中状态切换内容 */}
+        {!rightCollapsed && (
         <div className="flex w-52 shrink-0 flex-col overflow-y-auto border-l border-line bg-background">
           {selectedEdge ? (
             <div className="space-y-3 p-3">
@@ -2272,6 +2354,7 @@ export function FlowchartEditor({
             </div>
           )}
         </div>
+        )}
       </div>
 
       {/* 右键上下文菜单：fixed 定位到鼠标位置，点遮罩关闭 */}

@@ -644,6 +644,9 @@ export function MindMapEditor({
   const [outline, setOutline] = useState(false);
   // 左侧侧栏 tab：结构 / 风格
   const [leftTab, setLeftTab] = useState<"structure" | "style">("structure");
+  // 左右侧栏折叠开关
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
   // 关联模式：记录「起点」节点 id；点击另一节点建立 link，再次点击按钮或点空白取消
   const [linkingFrom, setLinkingFrom] = useState<string | null>(null);
 
@@ -918,6 +921,57 @@ export function MindMapEditor({
     commit(nodes, []);
   };
 
+  // —— 节点复制 / 粘贴（剪贴板存整棵子树，粘贴时重映射 id）——
+  const clipboardRef = useRef<MindNode[] | null>(null);
+
+  // 深拷贝选中节点为根的一整棵子树到剪贴板
+  const copyNode = (id: string) => {
+    const collect = (nid: string): MindNode[] => {
+      const self = mapNode(nid);
+      if (!self) return [];
+      return [self, ...nodes.filter((n) => n.parent === nid).flatMap((c) => collect(c.id))];
+    };
+    const sub = collect(id);
+    if (sub.length) clipboardRef.current = sub;
+  };
+
+  // 把剪贴板子树克隆为新节点（parent 指向 parentId，子树内部关系用 idMap 重映射）
+  const cloneClipboard = (parentId: string | null): { nodes: MindNode[]; rootId: string } | null => {
+    const clip = clipboardRef.current;
+    if (!clip || !clip.length) return null;
+    const idMap: Record<string, string> = {};
+    for (const n of clip) idMap[n.id] = genId();
+    const newNodes: MindNode[] = clip.map((n) => ({
+      id: idMap[n.id],
+      text: n.text,
+      parent: n.parent ? (idMap[n.parent] ?? parentId) : parentId,
+      color: n.color,
+      collapsed: n.collapsed,
+      icon: n.icon,
+      note: n.note,
+    }));
+    return { nodes: newNodes, rootId: idMap[clip[0].id] };
+  };
+
+  // 粘贴为选中节点的子节点
+  const pasteNode = (parentId: string) => {
+    const cloned = cloneClipboard(parentId);
+    if (!cloned) return;
+    commit([...nodes, ...cloned.nodes], links);
+    setSelected(cloned.rootId);
+  };
+
+  // 快速复制：复制选中节点并粘贴为其兄弟节点
+  const duplicateNode = (id: string) => {
+    const node = mapNode(id);
+    if (!node) return;
+    copyNode(id);
+    const cloned = cloneClipboard(node.parent ?? null);
+    if (!cloned) return;
+    commit([...nodes, ...cloned.nodes], links);
+    setSelected(cloned.rootId);
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "z" && !e.shiftKey) {
@@ -940,6 +994,21 @@ export function MindMapEditor({
       return;
     }
     if (!selected) return;
+    if (mod && e.key.toLowerCase() === "c") {
+      e.preventDefault();
+      copyNode(selected);
+      return;
+    }
+    if (mod && e.key.toLowerCase() === "v") {
+      e.preventDefault();
+      pasteNode(selected);
+      return;
+    }
+    if (mod && e.key.toLowerCase() === "d") {
+      e.preventDefault();
+      duplicateNode(selected);
+      return;
+    }
     if (e.key === "Tab") {
       e.preventDefault();
       addChild(selected);
@@ -1328,7 +1397,31 @@ export function MindMapEditor({
   return (
     <div className="flex h-[calc(100vh-300px)] min-h-[400px] flex-col rounded-lg border border-line bg-background">
       {/* 工具栏（精简，只留高频操作） */}
-      <div className="flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
+      <div className="relative z-20 flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
+        {/* 侧栏折叠开关 */}
+        <button
+          onClick={() => setLeftCollapsed((v) => !v)}
+          className={`grid h-7 w-7 place-items-center rounded-md transition-colors ${leftCollapsed ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
+          title={leftCollapsed ? "展开左侧栏" : "折叠左侧栏"}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M9 3v18" />
+          </svg>
+        </button>
+        <button
+          onClick={() => setRightCollapsed((v) => !v)}
+          className={`grid h-7 w-7 place-items-center rounded-md transition-colors ${rightCollapsed ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
+          title={rightCollapsed ? "展开右侧栏" : "折叠右侧栏"}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M15 3v18" />
+          </svg>
+        </button>
+
+        <span className="mx-1 h-4 w-px bg-line" />
+
         {/* 撤销/重做 */}
         <button onClick={undo} disabled={!canUndo} className={toolBtn(false)} title="撤销 (Ctrl+Z)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>
@@ -1539,17 +1632,18 @@ export function MindMapEditor({
       {/* 主体：左侧栏 + 画布 + 右侧栏 */}
       <div className="flex min-h-0 flex-1">
         {/* 左侧侧栏：结构 / 风格 */}
+        {!leftCollapsed && (
         <div className="flex w-44 shrink-0 flex-col border-r border-line bg-background">
           <div className="flex border-b border-line">
             <button
               onClick={() => setLeftTab("structure")}
-              className={`flex-1 py-2 text-xs transition-colors ${leftTab === "structure" ? "bg-accent-soft font-medium text-accent" : "text-muted hover:text-text"}`}
+              className={`flex-1 border-b-2 py-2.5 text-xs transition-colors ${leftTab === "structure" ? "border-accent font-medium text-accent" : "border-transparent text-muted hover:text-text"}`}
             >
               结构
             </button>
             <button
               onClick={() => setLeftTab("style")}
-              className={`flex-1 py-2 text-xs transition-colors ${leftTab === "style" ? "bg-accent-soft font-medium text-accent" : "text-muted hover:text-text"}`}
+              className={`flex-1 border-b-2 py-2.5 text-xs transition-colors ${leftTab === "style" ? "border-accent font-medium text-accent" : "border-transparent text-muted hover:text-text"}`}
             >
               风格
             </button>
@@ -1608,6 +1702,7 @@ export function MindMapEditor({
             )}
           </div>
         </div>
+        )}
 
         {/* 画布 */}
         <div
@@ -1990,6 +2085,7 @@ export function MindMapEditor({
         </div>
 
         {/* 右侧样式侧栏 */}
+        {!rightCollapsed && (
         <div className="flex w-52 shrink-0 flex-col overflow-y-auto border-l border-line bg-background">
           {selected ? (
             <div className="space-y-3 p-3">
@@ -2072,6 +2168,7 @@ export function MindMapEditor({
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );
