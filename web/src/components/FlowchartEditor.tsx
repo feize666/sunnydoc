@@ -718,6 +718,8 @@ export function FlowchartEditor({
   const edgesRef = useRef(edges);
   nodesRef.current = nodes;
   edgesRef.current = edges;
+  // React Flow 实例 ref（用于状态栏缩放控制）
+  const rfRef = useRef<{ zoomIn: () => void; zoomOut: () => void; fitView: () => void } | null>(null);
   const dragStartRef = useRef<StoredFlow | null>(null);
   const clipboardRef = useRef<StoredNode[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -2007,6 +2009,9 @@ export function FlowchartEditor({
           </defs>
         </svg>
         <ReactFlow
+          ref={(r) => {
+            rfRef.current = r as unknown as { zoomIn: () => void; zoomOut: () => void; fitView: () => void } | null;
+          }}
           nodes={nodes}
           edges={viewEdges}
           onNodesChange={onNodesChange}
@@ -2163,13 +2168,21 @@ export function FlowchartEditor({
             <div className="text-xs text-faint">从左侧图形库添加形状，或点击 ✨AI 生成 一键生成</div>
           </div>
         )}
-        {/* 底部状态栏：节点/连线统计 + 缩放比例 */}
-        <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-full border border-line bg-background/90 px-3.5 py-1.5 text-[11px] text-muted shadow-sm backdrop-blur">
-          <span>{nodes.length} 节点</span>
+        {/* 底部状态栏：节点/连线统计 + 缩放控制 */}
+        <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-background/90 px-2.5 py-1 text-[11px] text-muted shadow-sm backdrop-blur">
+          <span className="px-1">{nodes.length} 节点</span>
           <span className="h-3 w-px bg-line" />
-          <span>{edges.length} 连线</span>
+          <span className="px-1">{edges.length} 连线</span>
           <span className="h-3 w-px bg-line" />
-          <span>{Math.round(viewport.zoom * 100)}%</span>
+          <button onClick={() => rfRef.current?.zoomOut()} className="grid h-5 w-5 place-items-center rounded-full text-text transition-colors hover:bg-hover" title="缩小">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M5 12h14" /></svg>
+          </button>
+          <button onClick={() => rfRef.current?.fitView()} className="min-w-[38px] rounded-full px-1 py-0.5 text-center transition-colors hover:bg-hover" title="自适应视图">
+            {Math.round(viewport.zoom * 100)}%
+          </button>
+          <button onClick={() => rfRef.current?.zoomIn()} className="grid h-5 w-5 place-items-center rounded-full text-text transition-colors hover:bg-hover" title="放大">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+          </button>
         </div>
         </div>
 

@@ -2045,6 +2045,25 @@ export function MindMapEditor({
                       <circle cx={p.w - 8} cy={8} r={2} fill="#fff" />
                     </g>
                   )}
+                  {/* hover/选中时右侧「+」快捷按钮：添加子主题（有子节点时 hover 显示折叠指示器，不显示 +） */}
+                  {(sel || (hovered && !hasChildren(n.id))) && !editing && (
+                    <g
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        addChild(n.id);
+                      }}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <title>添加子主题</title>
+                      <circle cx={p.w + 10} cy={NODE_H / 2} r={9} fill="var(--accent)" stroke="var(--background)" strokeWidth={2} />
+                      <path
+                        d={`M ${p.w + 6} ${NODE_H / 2} H ${p.w + 14} M ${p.w + 10} ${NODE_H / 2 - 4} V ${NODE_H / 2 + 4}`}
+                        stroke="#fff"
+                        strokeWidth={1.8}
+                        strokeLinecap="round"
+                      />
+                    </g>
+                  )}
                 </g>
               );
             })}
@@ -2208,11 +2227,31 @@ export function MindMapEditor({
             </div>
           );
         })()}
-        {/* 底部状态栏：节点统计 + 缩放比例 */}
-        <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-full border border-line bg-background/90 px-3.5 py-1.5 text-[11px] text-muted shadow-sm backdrop-blur">
-          <span>{nodes.length} 节点</span>
+        {/* 底部状态栏：节点统计 + 缩放控制 */}
+        <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-background/90 px-2.5 py-1 text-[11px] text-muted shadow-sm backdrop-blur">
+          <span className="px-1">{nodes.length} 节点</span>
           <span className="h-3 w-px bg-line" />
-          <span>{Math.round(v.k * 100)}%</span>
+          <button
+            onClick={() => setView({ ...v, k: Math.max(0.2, v.k / 1.2) })}
+            className="grid h-5 w-5 place-items-center rounded-full text-text transition-colors hover:bg-hover"
+            title="缩小"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M5 12h14" /></svg>
+          </button>
+          <button
+            onClick={() => setView(null)}
+            className="min-w-[38px] rounded-full px-1 py-0.5 text-center transition-colors hover:bg-hover"
+            title="自适应视图"
+          >
+            {Math.round(v.k * 100)}%
+          </button>
+          <button
+            onClick={() => setView({ ...v, k: Math.min(2.5, v.k * 1.2) })}
+            className="grid h-5 w-5 place-items-center rounded-full text-text transition-colors hover:bg-hover"
+            title="放大"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+          </button>
         </div>
         </div>
 
