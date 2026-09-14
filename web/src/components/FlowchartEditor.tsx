@@ -207,6 +207,11 @@ const SHORTCUTS: { key: string; desc: string }[] = [
   { key: "滚轮", desc: "缩放画布" },
 ];
 
+// 右键菜单项样式（复用 menu-panel 面板）
+const CTX_ITEM = "flex w-full items-center rounded-md px-3 py-1.5 text-left text-xs text-text transition-colors hover:bg-hover";
+const CTX_ITEM_DANGER = "flex w-full items-center rounded-md px-3 py-1.5 text-left text-xs text-danger transition-colors hover:bg-danger-soft";
+const CTX_SEP = "my-1 h-px bg-line";
+
 const FILL_COLORS = ["#ffffff", "#fee2e2", "#fef3c7", "#dcfce7", "#dbeafe", "#f3e8ff", "#e0f2fe", "#ffe4e6"];
 const STROKE_COLORS = ["#78716c", "#ef4444", "#f97316", "#22c55e", "#3b82f6", "#a855f7", "#0ea5e9", "#ec4899"];
 
@@ -505,7 +510,7 @@ function createShapeNode(theme: { nodeFill: string; nodeStroke: string }) {
       const r = 12;
       const titleBarPath = `M ${r} 0 H ${BAR_W} V ${h} H ${r} Q 0 ${h} 0 ${h - r} V ${r} Q 0 0 ${r} 0 Z`;
       return (
-        <div style={{ width: w, height: h }} className="relative">
+        <div style={{ width: w, height: h }} className="relative" title={d.label}>
           <svg width={w} height={h} className="overflow-visible">
             <path d={shapePath(d.shape, w, h)} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.5} />
             <path d={titleBarPath} fill="rgba(100,116,139,0.14)" stroke="none" />
@@ -532,7 +537,7 @@ function createShapeNode(theme: { nodeFill: string; nodeStroke: string }) {
     }
 
     return (
-      <div style={{ width: w, height: h }} className="relative">
+      <div style={{ width: w, height: h }} className="relative" title={d.label}>
         <svg width={w} height={h} className="overflow-visible">
           <path
             d={shapePath(d.shape, w, h)}
@@ -674,6 +679,8 @@ export function FlowchartEditor({
   const [editTarget, setEditTarget] = useState<{ type: "node" | "edge"; id: string; draft: string; cur: string } | null>(null);
   // 快捷键提示面板开关
   const [helpOpen, setHelpOpen] = useState(false);
+  // 右键上下文菜单（fixed 定位到鼠标位置）
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; type: "node" | "edge" | "pane"; id?: string } | null>(null);
 
   // —— 撤销/重做 ——
   const [past, setPast] = useState<StoredFlow[]>([]);
@@ -686,6 +693,8 @@ export function FlowchartEditor({
   const clipboardRef = useRef<StoredNode[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const prevThemeColorRef = useRef(THEMES[0].edgeColor);
+  // 方向键微调：标记「本次方向键序列是否已记历史」，避免连续按污染撤销栈
+  const arrowMovedRef = useRef(false);
 
   const snapshot = useCallback((): StoredFlow => {
     return {
@@ -936,9 +945,9 @@ export function FlowchartEditor({
 
   const closeEdit = () => setEditTarget(null);
 
-  const deleteSelected = () => {
-    const sel = nodes.filter((n) => n.selected);
-    const selEdges = edges.filter((e) => e.selected);
+  const deleteSelected = (onlyNodeIds?: string[], onlyEdgeIds?: string[]) => {
+    const sel = onlyNodeIds ? nodes.filter((n) => onlyNodeIds.includes(n.id)) : nodes.filter((n) => n.selected);
+    const selEdges = onlyEdgeIds ? edges.filter((e) => onlyEdgeIds.includes(e.id)) : edges.filter((e) => e.selected);
     if (sel.length === 0 && selEdges.length === 0) return;
     pushHistory();
     const ids = new Set(sel.map((n) => n.id));
@@ -1081,8 +1090,10 @@ export function FlowchartEditor({
   );
 
   // —— 复制 / 粘贴 / 全选 ——
-  const copySelected = useCallback(() => {
-    const sel = nodesRef.current.filter((n) => n.selected);
+  const copySelected = useCallback((onlyIds?: string[]) => {
+    const sel = onlyIds
+      ? nodesRef.current.filter((n) => onlyIds.includes(n.id))
+      : nodesRef.current.filter((n) => n.selected);
     if (sel.length === 0) return;
     clipboardRef.current = sel.map((n) => {
       const d = n.data as unknown as FlowData;
@@ -1594,9 +1605,26 @@ export function FlowchartEditor({
       } else if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
         deleteSelected();
+      } else if (!mod && (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+        // 方向键微调选中节点：1px，Shift+方向键 10px。连续按记一次历史。
+        const sel = nodesRef.current.filter((n) => n.selected);
+        if (sel.length === 0) return;
+        e.preventDefault();
+        if (!arrowMovedRef.current) {
+          pushHistory();
+          arrowMovedRef.current = true;
+        }
+        const step = e.shiftKey ? 10 : 1;
+        const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+        const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+        setNodes((nds) =>
+          nds.map((n) =>
+            n.selected ? { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } } : n,
+          ),
+        );
       }
     },
-    [undo, redo, copySelected, pasteClipboard, duplicateSelected, selectAll, deleteSelected],
+    [undo, redo, copySelected, pasteClipboard, duplicateSelected, selectAll, deleteSelected, pushHistory, setNodes],
   );
 
   if (!mounted) return <div className="flex-1" />;
@@ -2103,7 +2131,7 @@ export function FlowchartEditor({
         <button onClick={redo} disabled={!canRedo} className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed" title="重做 (Ctrl+Y)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 15-6.7L21 13" /></svg>
         </button>
-        <button onClick={deleteSelected} className="rounded-md px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger-soft" title="删除选中 (Delete)">
+        <button onClick={() => deleteSelected()} className="rounded-md px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger-soft" title="删除选中 (Delete)">
           删除
         </button>
         <button onClick={clearAll} className="rounded-md px-2.5 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text">
@@ -2269,7 +2297,16 @@ export function FlowchartEditor({
       )}
 
       {/* 画布 */}
-      <div ref={containerRef} tabIndex={0} onKeyDown={onKeyDown} className="relative outline-none" style={{ height: "60vh", minHeight: 400 }}>
+      <div
+        ref={containerRef}
+        tabIndex={0}
+        onKeyDown={onKeyDown}
+        onKeyUp={() => {
+          arrowMovedRef.current = false;
+        }}
+        className="relative outline-none"
+        style={{ height: "60vh", minHeight: 400 }}
+      >
         {/* 自定义菱形箭头 marker（颜色用 context-stroke 跟随连线描边） */}
         <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden>
           <defs>
@@ -2295,6 +2332,18 @@ export function FlowchartEditor({
           onConnect={onConnect}
           onNodeDoubleClick={(_, node) => editLabel(node.id)}
           onEdgeDoubleClick={(_, edge) => editEdgeLabel(edge.id)}
+          onNodeContextMenu={(e, node) => {
+            e.preventDefault();
+            setCtxMenu({ x: e.clientX, y: e.clientY, type: "node", id: node.id });
+          }}
+          onEdgeContextMenu={(e, edge) => {
+            e.preventDefault();
+            setCtxMenu({ x: e.clientX, y: e.clientY, type: "edge", id: edge.id });
+          }}
+          onPaneContextMenu={(e) => {
+            e.preventDefault();
+            setCtxMenu({ x: e.clientX, y: e.clientY, type: "pane" });
+          }}
           onNodeDragStart={() => {
             dragStartRef.current = snapshot();
           }}
@@ -2365,6 +2414,7 @@ export function FlowchartEditor({
           nodeTypes={nodeTypes}
           defaultEdgeOptions={defaultEdgeOptions}
           deleteKeyCode={null}
+          disableKeyboardA11y
           snapToGrid={snap}
           snapGrid={[15, 15] as [number, number]}
           fitView
@@ -2382,6 +2432,72 @@ export function FlowchartEditor({
           </div>
         )}
       </div>
+
+      {/* 右键上下文菜单：fixed 定位到鼠标位置，点遮罩关闭 */}
+      {ctxMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setCtxMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setCtxMenu(null);
+            }}
+          />
+          <div
+            className="menu-panel fixed z-50 min-w-[150px] overflow-hidden p-1"
+            style={{
+              top: Math.min(ctxMenu.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 160),
+              left: Math.min(ctxMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 170),
+            }}
+          >
+            {ctxMenu.type === "node" && (
+              <>
+                <button className={CTX_ITEM} onClick={() => { const id = ctxMenu.id!; setCtxMenu(null); editLabel(id); }}>
+                  编辑文字
+                </button>
+                <button className={CTX_ITEM} onClick={() => { const id = ctxMenu.id!; setCtxMenu(null); copySelected([id]); }}>
+                  复制
+                </button>
+                <div className={CTX_SEP} />
+                <button className={CTX_ITEM_DANGER} onClick={() => { const id = ctxMenu.id!; setCtxMenu(null); deleteSelected([id]); }}>
+                  删除
+                </button>
+              </>
+            )}
+            {ctxMenu.type === "edge" && (
+              <>
+                <button className={CTX_ITEM} onClick={() => { const id = ctxMenu.id!; setCtxMenu(null); editEdgeLabel(id); }}>
+                  编辑文字
+                </button>
+                <div className={CTX_SEP} />
+                <button className={CTX_ITEM_DANGER} onClick={() => { const id = ctxMenu.id!; setCtxMenu(null); deleteSelected(undefined, [id]); }}>
+                  删除
+                </button>
+              </>
+            )}
+            {ctxMenu.type === "pane" && (
+              <>
+                <button
+                  className={`${CTX_ITEM} ${clipboardRef.current.length === 0 ? "cursor-not-allowed opacity-40" : ""}`}
+                  disabled={clipboardRef.current.length === 0}
+                  onClick={() => {
+                    if (clipboardRef.current.length === 0) return;
+                    setCtxMenu(null);
+                    pasteClipboard();
+                  }}
+                >
+                  粘贴
+                </button>
+                <div className={CTX_SEP} />
+                <button className={CTX_ITEM} onClick={() => { setCtxMenu(null); selectAll(); }}>
+                  全选
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

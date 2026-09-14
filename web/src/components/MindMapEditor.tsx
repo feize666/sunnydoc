@@ -607,6 +607,8 @@ export function MindMapEditor({
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("logic");
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  // hover 高亮：记录当前鼠标悬停的节点 id（selected 优先级更高，编辑/拖拽中不响应）
+  const [hoverId, setHoverId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [view, setView] = useState<{ x: number; y: number; k: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -719,6 +721,31 @@ export function MindMapEditor({
 
   const hasChildren = (id: string): boolean => nodes.some((n) => n.parent === id);
 
+  // 方向键导航：只改 selected，不改数据/历史。语义 ←父 →首个子 ↑上个兄弟 ↓下个兄弟。
+  // 兄弟顺序按 visibleNodes（即 nodes 顺序，仅剔除被折叠隐藏的节点），保证选中的都是可见节点。
+  const navigate = (dir: "left" | "right" | "up" | "down") => {
+    if (!selected) return;
+    const cur = mapNode(selected);
+    if (!cur) return;
+    if (dir === "left") {
+      // 跳到父节点（选中节点可见 ⇒ 父链可见，parent 必可见）
+      if (cur.parent) setSelected(cur.parent);
+      return;
+    }
+    if (dir === "right") {
+      // 跳到第一个可见子节点
+      const child = visibleNodes.find((n) => n.parent === selected);
+      if (child) setSelected(child.id);
+      return;
+    }
+    // 上下：同 parent 的兄弟，按 visibleNodes 顺序
+    const siblings = visibleNodes.filter((n) => n.parent === cur.parent);
+    const idx = siblings.findIndex((n) => n.id === selected);
+    if (idx < 0) return;
+    if (dir === "up" && idx > 0) setSelected(siblings[idx - 1].id);
+    else if (dir === "down" && idx < siblings.length - 1) setSelected(siblings[idx + 1].id);
+  };
+
   const pos = useMemo(() => layout(visibleNodes, layoutMode), [visibleNodes, layoutMode]);
   const bb = useMemo(() => bounds(visibleNodes, pos), [visibleNodes, pos]);
 
@@ -730,6 +757,7 @@ export function MindMapEditor({
   const startEdit = (id: string, text: string) => {
     setEditing(id);
     setEditText(text);
+    setHoverId(null); // 编辑态不保留 hover 高亮
   };
 
   const finishEdit = () => {
@@ -925,6 +953,18 @@ export function MindMapEditor({
       e.preventDefault();
       const n = mapNode(selected);
       if (n) startEdit(n.id, n.text);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      navigate("left");
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      navigate("right");
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      navigate("up");
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      navigate("down");
     }
   };
 
@@ -1031,8 +1071,18 @@ export function MindMapEditor({
   };
 
   const onWheel = (e: React.WheelEvent) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    // 鼠标在容器内的屏幕坐标
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setView({ ...v, k: Math.max(0.2, Math.min(2.5, v.k * delta)) });
+    // 以鼠标位置为锚点：保持鼠标下的世界坐标点在缩放后仍在屏幕同一位置
+    const nk = Math.max(0.2, Math.min(2.5, v.k * delta));
+    const ratio = nk / v.k;
+    const nx = mx - (mx - v.x) * ratio;
+    const ny = my - (my - v.y) * ratio;
+    setView({ x: nx, y: ny, k: nk });
   };
 
   const runAi = async () => {
@@ -1764,6 +1814,7 @@ export function MindMapEditor({
               if (!p) return null;
               const color = isRoot(n.id) ? "var(--accent)" : levelColor(n.id);
               const sel = selected === n.id;
+              const hovered = hoverId === n.id && !sel; // hover 不覆盖选中态
               return (
                 <g
                   key={n.id}
@@ -1780,6 +1831,13 @@ export function MindMapEditor({
                     setSelected(n.id);
                   }}
                   onDoubleClick={() => startEdit(n.id, n.text)}
+                  onMouseEnter={() => {
+                    // 编辑中 / 拖拽中不触发 hover 高亮
+                    if (!dragNode && editing !== n.id) setHoverId(n.id);
+                  }}
+                  onMouseLeave={() => {
+                    if (hoverId === n.id) setHoverId(null);
+                  }}
                   style={{ cursor: "pointer" }}
                 >
                   <rect
@@ -1787,8 +1845,18 @@ export function MindMapEditor({
                     height={NODE_H}
                     rx={isRoot(n.id) ? 20 : 8}
                     fill={isRoot(n.id) ? color : "var(--background)"}
-                    stroke={color}
-                    strokeWidth={isRoot(n.id) ? 0 : sel ? 2.5 : linkingFrom === n.id ? 3 : 1.5}
+                    stroke={isRoot(n.id) ? color : hovered ? "var(--accent)" : color}
+                    strokeWidth={
+                      isRoot(n.id)
+                        ? hovered
+                          ? 2
+                          : 0
+                        : sel || hovered
+                          ? 2.5
+                          : linkingFrom === n.id
+                            ? 3
+                            : 1.5
+                    }
                   />
                   {/* 节点图标（位于文字左侧，文字相应右移） */}
                   {n.icon && (
