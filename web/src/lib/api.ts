@@ -257,44 +257,63 @@ export async function importDocumentAsync(
   if (kbId) form.append("kb_id", kbId);
   if (folderId) form.append("folder_id", folderId);
 
-  return new Promise<{ task_id: string; status: string }>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${BASE}/documents/import`);
+  const doUpload = (): Promise<{ task_id: string; status: string }> =>
+    new Promise<{ task_id: string; status: string }>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${BASE}/documents/import`);
 
-    // 关键：XHR 不会自动带 cookie/authorization，需手动附加 token
-    const token = getToken();
-    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      // 关键：XHR 不会自动带 cookie/authorization，需手动附加 token
+      const token = getToken();
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
 
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && e.total > 0) {
-        const percent = (e.loaded / e.total) * 100;
-        onUploadProgress?.(Math.max(0, Math.min(100, percent)));
-      }
-    };
-
-    xhr.onload = () => {
-      let data: { task_id?: string; status?: string; detail?: string };
-      try {
-        data = JSON.parse(xhr.responseText);
-      } catch {
-        reject(new Error(`请求失败（${xhr.status}）`));
-        return;
-      }
-
-      if (xhr.status >= 200 && xhr.status < 300) {
-        if (data.task_id) {
-          resolve({ task_id: data.task_id, status: data.status ?? "" });
-        } else {
-          reject(new Error("服务器未返回 task_id"));
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && e.total > 0) {
+          const percent = (e.loaded / e.total) * 100;
+          onUploadProgress?.(Math.max(0, Math.min(100, percent)));
         }
-      } else {
-        reject(new Error(data.detail || `请求失败（${xhr.status}）`));
-      }
-    };
+      };
 
-    xhr.onerror = () => reject(new Error("上传失败"));
-    xhr.send(form);
-  });
+      xhr.onload = () => {
+        let data: { task_id?: string; status?: string; detail?: string };
+        try {
+          data = JSON.parse(xhr.responseText);
+        } catch {
+          reject(Object.assign(new Error(`请求失败（${xhr.status}）`), { status: xhr.status }));
+          return;
+        }
+
+        if (xhr.status >= 200 && xhr.status < 300) {
+          if (data.task_id) {
+            resolve({ task_id: data.task_id, status: data.status ?? "" });
+          } else {
+            reject(new Error("服务器未返回 task_id"));
+          }
+        } else {
+          reject(Object.assign(new Error(data.detail || `请求失败（${xhr.status}）`), { status: xhr.status }));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error("上传失败，请检查网络后重试"));
+      xhr.send(form);
+    });
+
+  // 网关错误（502/503/504）或网络错误时自动重试（服务重启窗口 / 瞬时抖动）
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await doUpload();
+    } catch (e) {
+      const status = (e as { status?: number }).status;
+      const retriable = status ? status >= 500 : true; // 无 status 的网络错误也可重试
+      if (retriable && attempt < 2) {
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+        continue;
+      }
+      if (status === 502 || status === 503 || status === 504) {
+        throw new Error("服务暂时繁忙，请稍后重试");
+      }
+      throw e;
+    }
+  }
 }
 
 export async function getImportTask(taskId: string): Promise<ImportTaskStatus> {

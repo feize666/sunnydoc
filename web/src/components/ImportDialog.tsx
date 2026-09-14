@@ -72,9 +72,11 @@ export function ImportDialog({
       try {
         const { task_id } = await importDocumentAsync(file, kbId, (p) => setProgress(p), folderId);
         setPhase("parsing");
+        let failCount = 0; // 连续查询失败计数（服务重启窗口时短暂容错）
         pollRef.current = window.setInterval(async () => {
           try {
             const s = await getImportTask(task_id);
+            failCount = 0;
             setProgress(Math.max(0, Math.min(100, s.progress)));
             if (s.current) setCurrent(s.current);
             if (s.status === "done") {
@@ -93,6 +95,9 @@ export function ImportDialog({
               setErrorMsg(s.message || "导入失败");
             }
           } catch (e) {
+            // 网络/网关抖动（如服务重启）：连续失败 ≤3 次时继续轮询，不立即报错
+            failCount += 1;
+            if (failCount <= 3) return;
             stopPolling();
             setPhase("failed");
             setErrorMsg(e instanceof Error ? e.message : "查询任务状态失败");

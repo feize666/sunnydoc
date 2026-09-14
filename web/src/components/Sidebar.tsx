@@ -403,7 +403,7 @@ export function Sidebar({
             只读模式
           </div>
         ) : (
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <div className="relative" ref={menuRef}>
             <button
               onClick={() => setMenuOpen((v) => !v)}
