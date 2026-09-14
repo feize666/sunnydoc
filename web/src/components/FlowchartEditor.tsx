@@ -676,8 +676,6 @@ export function FlowchartEditor({
   const [aiOpen, setAiOpen] = useState(false);
   const [aiText, setAiText] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
-  const [fillOpen, setFillOpen] = useState(false);
-  const [strokeOpen, setStrokeOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [themeIndex, setThemeIndex] = useState(0);
   // 网格吸附开关
@@ -1672,297 +1670,6 @@ export function FlowchartEditor({
           网格
         </button>
 
-        {/* 选中连线时：样式编辑 */}
-        {selectedEdge && (
-          <>
-            <span className="mx-1 h-4 w-px bg-line" />
-            <span className="text-[11px] text-faint">连线样式</span>
-            {STROKE_COLORS.map((c) => (
-              <button
-                key={c}
-                onClick={() => setEdgeColor(c)}
-                className={`h-5 w-5 rounded-full border border-line transition-transform hover:scale-110 ${
-                  (selectedEdge.style?.stroke || "#78716c") === c ? "ring-2 ring-accent ring-offset-1" : ""
-                }`}
-                style={{ backgroundColor: c }}
-                title={`连线颜色 ${c}`}
-              />
-            ))}
-            <span className="mx-1 h-4 w-px bg-line" />
-            {[1, 2, 3].map((w) => (
-              <button
-                key={w}
-                onClick={() => setEdgeWidth(w)}
-                className={`flex h-6 w-6 items-center justify-center rounded-md border border-line transition-colors hover:bg-hover ${
-                  (selectedEdge.style?.strokeWidth || 1.5) === w ? "bg-accent-soft text-accent" : "text-muted"
-                }`}
-                title={`线宽 ${w}`}
-              >
-                <span style={{ height: w === 1 ? 1 : w === 2 ? 2 : 3, width: 12, backgroundColor: "currentColor" }} />
-              </button>
-            ))}
-            <button
-              onClick={toggleEdgeDash}
-              className={`rounded-md px-2 py-1 text-xs transition-colors ${
-                selectedEdge.style?.strokeDasharray ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
-              }`}
-              title="虚线"
-            >
-              虚线
-            </button>
-            <span className="mx-1 h-4 w-px bg-line" />
-            <span className="text-[11px] text-faint">起点</span>
-            {ARROW_OPTIONS.map((o) => {
-              const cur = ((selectedEdge.data as EdgeArrowData)?.arrowStart ?? "none") === o.type;
-              return (
-                <button
-                  key={o.type}
-                  onClick={() => setEdgeArrow("start", o.type)}
-                  className={`h-6 min-w-6 rounded-md px-1 text-[11px] transition-colors ${cur ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
-                  title={`起点箭头：${o.label}`}
-                >
-                  {o.label}
-                </button>
-              );
-            })}
-            <span className="mx-1 h-4 w-px bg-line" />
-            <span className="text-[11px] text-faint">终点</span>
-            {ARROW_OPTIONS.map((o) => {
-              const cur = ((selectedEdge.data as EdgeArrowData)?.arrowEnd ?? "solid") === o.type;
-              return (
-                <button
-                  key={o.type}
-                  onClick={() => setEdgeArrow("end", o.type)}
-                  className={`h-6 min-w-6 rounded-md px-1 text-[11px] transition-colors ${cur ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
-                  title={`终点箭头：${o.label}`}
-                >
-                  {o.label}
-                </button>
-              );
-            })}
-          </>
-        )}
-
-        {selectedNode && (
-          <>
-            <span className="mx-1 h-4 w-px bg-line" />
-            {/* 填充下拉 */}
-            <div className="relative shrink-0">
-              <button
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setFillOpen((v) => !v);
-                  setStrokeOpen(false);
-                  setHelpOpen(false);
-                }}
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
-              >
-                <span className="h-3.5 w-3.5 rounded-sm border border-line" style={{ backgroundColor: curFill || "transparent" }} />
-                填充
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${fillOpen ? "rotate-180" : ""}`}>
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
-              </button>
-              {fillOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setFillOpen(false)} />
-                  <div className="menu-panel absolute left-0 top-full z-40 mt-1 flex items-center gap-1 p-1.5">
-                    {FILL_COLORS.map((c) => (
-                      <button
-                        key={c}
-                        onClick={() => {
-                          setFill(c);
-                          setFillOpen(false);
-                        }}
-                        className={`h-6 w-6 rounded border border-line transition-transform hover:scale-110 ${curFill === c ? "ring-2 ring-accent ring-offset-1" : ""}`}
-                        style={{ backgroundColor: c }}
-                      />
-                    ))}
-                    <button
-                      onClick={() => {
-                        setFill("");
-                        setFillOpen(false);
-                      }}
-                      className="grid h-6 w-6 place-items-center rounded border border-dashed border-line text-faint hover:text-text"
-                      title="无填充"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-            {/* 边框下拉 */}
-            <div className="relative shrink-0">
-              <button
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setStrokeOpen((v) => !v);
-                  setFillOpen(false);
-                  setHelpOpen(false);
-                }}
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
-              >
-                <span className="h-3.5 w-3.5 rounded-full border border-line" style={{ backgroundColor: curStroke || "transparent" }} />
-                边框
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${strokeOpen ? "rotate-180" : ""}`}>
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
-              </button>
-              {strokeOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setStrokeOpen(false)} />
-                  <div className="menu-panel absolute left-0 top-full z-40 mt-1 flex items-center gap-1 p-1.5">
-                    {STROKE_COLORS.map((c) => (
-                      <button
-                        key={c}
-                        onClick={() => {
-                          setStroke(c);
-                          setStrokeOpen(false);
-                        }}
-                        className={`h-6 w-6 rounded-full border border-line transition-transform hover:scale-110 ${curStroke === c ? "ring-2 ring-accent ring-offset-1" : ""}`}
-                        style={{ backgroundColor: c }}
-                      />
-                    ))}
-                    <button
-                      onClick={() => {
-                        setStroke("");
-                        setStrokeOpen(false);
-                      }}
-                      className="grid h-6 w-6 place-items-center rounded-full border border-dashed border-line text-faint hover:text-text"
-                      title="默认边框"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* 文字样式 */}
-            <span className="mx-1 h-4 w-px bg-line" />
-            <span className="text-[11px] text-faint">文字</span>
-            <div className="flex items-center gap-0.5">
-              {[12, 13, 14, 16, 18, 20].map((sz) => (
-                <button
-                  key={sz}
-                  onClick={() => setNodeFontSize(sz)}
-                  className={`h-6 min-w-6 rounded-md px-1 text-[11px] transition-colors ${
-                    curFontSize === sz ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
-                  }`}
-                  title={`字号 ${sz}`}
-                >
-                  {sz}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={setNodeBold}
-              className={`grid h-6 w-6 place-items-center rounded-md text-xs font-bold transition-colors ${
-                curBold ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
-              }`}
-              title="加粗"
-            >
-              B
-            </button>
-            <div className="flex items-center gap-0.5">
-              {(
-                [
-                  ["left", "M4 6h12M4 12h8M4 18h12", "左对齐"],
-                  ["center", "M3 6h14M5 12h10M3 18h14", "居中"],
-                  ["right", "M4 6h12M8 12h8M4 18h12", "右对齐"],
-                ] as [TextAlign, string, string][]
-              ).map(([al, d, t]) => (
-                <button
-                  key={al}
-                  onClick={() => setNodeAlign(al)}
-                  className={`grid h-6 w-6 place-items-center rounded-md transition-colors ${
-                    curAlign === al ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
-                  }`}
-                  title={t}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <path d={d} />
-                  </svg>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* 多选对齐/分布 */}
-        {selectedNodes.length >= 2 && (
-          <>
-            <span className="mx-1 h-4 w-px bg-line" />
-            <span className="text-[11px] text-faint">对齐</span>
-            {(
-              [
-                ["left", "M3 6h11M3 12h7M3 18h11"],
-                ["centerH", "M3 6h11M6 12h5M3 18h11"],
-                ["right", "M3 6h11M9 12h5M3 18h11"],
-                ["top", "M6 3v11M12 3v7M18 3v11"],
-                ["centerV", "M6 3v11M12 6v5M18 3v11"],
-                ["bottom", "M6 3v11M12 9v5M18 3v11"],
-              ] as [string, string][]
-            ).map(([mode, d]) => (
-              <button
-                key={mode}
-                onClick={() => alignNodes(mode as any)}
-                className="grid h-7 w-7 place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-text"
-                title={mode === "left" ? "左对齐" : mode === "centerH" ? "水平居中" : mode === "right" ? "右对齐" : mode === "top" ? "顶对齐" : mode === "centerV" ? "垂直居中" : "底对齐"}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d={d} />
-                </svg>
-              </button>
-            ))}
-            <span className="mx-1 h-4 w-px bg-line" />
-            <span className="text-[11px] text-faint">匹配</span>
-            <button onClick={() => matchSize("h")} className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="等高（以最大高度为基准）">
-              等高
-            </button>
-            <button onClick={() => matchSize("w")} className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="等宽（以最大宽度为基准）">
-              等宽
-            </button>
-            <button onClick={() => matchSize("both")} className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="等高且等宽">
-              等高宽
-            </button>
-            <span className="mx-1 h-4 w-px bg-line" />
-            <button onClick={() => distributeNodes("h")} className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="水平等距分布">
-              水平分布
-            </button>
-            <button onClick={() => distributeNodes("v")} className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="垂直等距分布">
-              垂直分布
-            </button>
-          </>
-        )}
-
-        {/* 组合 / 取消组合 */}
-        {selectedNodes.length >= 2 && (
-          <>
-            <span className="mx-1 h-4 w-px bg-line" />
-            <button
-              onClick={groupSelected}
-              className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover"
-              title="将选中节点组合为一个分组（整体拖动）"
-            >
-              组合
-            </button>
-          </>
-        )}
-        {selectedNode && nodes.some((n) => n.parentId === selectedNode.id) && (
-          <>
-            <span className="mx-1 h-4 w-px bg-line" />
-            <button
-              onClick={ungroupSelected}
-              className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover"
-              title="取消分组，子节点恢复为独立节点"
-            >
-              取消组合
-            </button>
-          </>
-        )}
-
         <span className="mx-1 h-4 w-px bg-line" />
         <button onClick={undo} disabled={!canUndo} className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed" title="撤销 (Ctrl+Z)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>
@@ -1986,8 +1693,6 @@ export function FlowchartEditor({
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 setHelpOpen((v) => !v);
-                setFillOpen(false);
-                setStrokeOpen(false);
               }}
               className={`flex h-7 w-7 items-center justify-center rounded-md text-sm font-semibold transition-colors ${
                 helpOpen ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
@@ -2335,6 +2040,237 @@ export function FlowchartEditor({
             <div className="text-xs text-faint">从左侧图形库添加形状，或点击 ✨AI 生成 一键生成</div>
           </div>
         )}
+        </div>
+
+        {/* 右侧样式侧栏：按选中状态切换内容 */}
+        <div className="flex w-52 shrink-0 flex-col overflow-y-auto border-l border-line bg-background">
+          {selectedEdge ? (
+            <div className="space-y-3 p-3">
+              <div>
+                <div className="mb-1.5 text-[11px] font-medium text-faint">连线颜色</div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {STROKE_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setEdgeColor(c)}
+                      className={`h-7 w-7 rounded-full border border-line transition-transform hover:scale-110 ${(selectedEdge.style?.stroke || "#78716c") === c ? "ring-2 ring-accent ring-offset-1" : ""}`}
+                      style={{ backgroundColor: c }}
+                      title={c}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="mb-1.5 text-[11px] font-medium text-faint">线宽</div>
+                <div className="flex gap-1.5">
+                  {[1, 2, 3].map((w) => (
+                    <button
+                      key={w}
+                      onClick={() => setEdgeWidth(w)}
+                      className={`flex h-8 flex-1 items-center justify-center rounded-md border border-line transition-colors hover:bg-hover ${(selectedEdge.style?.strokeWidth || 1.5) === w ? "bg-accent-soft text-accent" : "text-muted"}`}
+                      title={`线宽 ${w}`}
+                    >
+                      <span style={{ height: w === 1 ? 1 : w === 2 ? 2 : 3, width: 16, backgroundColor: "currentColor" }} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="mb-1.5 text-[11px] font-medium text-faint">样式</div>
+                <button
+                  onClick={toggleEdgeDash}
+                  className={`w-full rounded-md px-2 py-1.5 text-xs transition-colors ${selectedEdge.style?.strokeDasharray ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
+                >
+                  虚线
+                </button>
+              </div>
+              <div>
+                <div className="mb-1.5 text-[11px] font-medium text-faint">起点箭头</div>
+                <div className="grid grid-cols-4 gap-1">
+                  {ARROW_OPTIONS.map((o) => {
+                    const cur = ((selectedEdge.data as EdgeArrowData)?.arrowStart ?? "none") === o.type;
+                    return (
+                      <button
+                        key={o.type}
+                        onClick={() => setEdgeArrow("start", o.type)}
+                        className={`rounded-md py-1 text-[11px] transition-colors ${cur ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
+                        title={`起点箭头：${o.label}`}
+                      >
+                        {o.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <div className="mb-1.5 text-[11px] font-medium text-faint">终点箭头</div>
+                <div className="grid grid-cols-4 gap-1">
+                  {ARROW_OPTIONS.map((o) => {
+                    const cur = ((selectedEdge.data as EdgeArrowData)?.arrowEnd ?? "solid") === o.type;
+                    return (
+                      <button
+                        key={o.type}
+                        onClick={() => setEdgeArrow("end", o.type)}
+                        className={`rounded-md py-1 text-[11px] transition-colors ${cur ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
+                        title={`终点箭头：${o.label}`}
+                      >
+                        {o.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : selectedNode ? (
+            <div className="space-y-3 p-3">
+              <div>
+                <div className="mb-1.5 text-[11px] font-medium text-faint">字号</div>
+                <div className="grid grid-cols-6 gap-1">
+                  {[12, 13, 14, 16, 18, 20].map((sz) => (
+                    <button
+                      key={sz}
+                      onClick={() => setNodeFontSize(sz)}
+                      className={`rounded-md py-1 text-[11px] transition-colors ${curFontSize === sz ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
+                      title={`字号 ${sz}`}
+                    >
+                      {sz}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={setNodeBold}
+                  className={`flex-1 rounded-md py-1.5 text-xs font-bold transition-colors ${curBold ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
+                  title="加粗"
+                >
+                  B 加粗
+                </button>
+                <div className="flex flex-1 gap-1">
+                  {(
+                    [
+                      ["left", "M4 6h12M4 12h8M4 18h12", "左对齐"],
+                      ["center", "M3 6h14M5 12h10M3 18h14", "居中"],
+                      ["right", "M4 6h12M8 12h8M4 18h12", "右对齐"],
+                    ] as [TextAlign, string, string][]
+                  ).map(([al, d, t]) => (
+                    <button
+                      key={al}
+                      onClick={() => setNodeAlign(al)}
+                      className={`grid flex-1 place-items-center rounded-md py-1.5 transition-colors ${curAlign === al ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
+                      title={t}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <path d={d} />
+                      </svg>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="mb-1.5 text-[11px] font-medium text-faint">填充</div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {FILL_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setFill(c)}
+                      className={`h-7 w-7 rounded border border-line transition-transform hover:scale-110 ${curFill === c ? "ring-2 ring-accent ring-offset-1" : ""}`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                  <button
+                    onClick={() => setFill("")}
+                    className="grid h-7 w-7 place-items-center rounded border border-dashed border-line text-faint hover:text-text"
+                    title="无填充"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                  </button>
+                </div>
+              </div>
+              <div>
+                <div className="mb-1.5 text-[11px] font-medium text-faint">边框</div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {STROKE_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setStroke(c)}
+                      className={`h-7 w-7 rounded-full border border-line transition-transform hover:scale-110 ${curStroke === c ? "ring-2 ring-accent ring-offset-1" : ""}`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                  <button
+                    onClick={() => setStroke("")}
+                    className="grid h-7 w-7 place-items-center rounded-full border border-dashed border-line text-faint hover:text-text"
+                    title="默认边框"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                  </button>
+                </div>
+              </div>
+              {nodes.some((n) => n.parentId === selectedNode.id) && (
+                <button
+                  onClick={ungroupSelected}
+                  className="w-full rounded-md px-2 py-1.5 text-xs text-text transition-colors hover:bg-hover"
+                  title="取消分组，子节点恢复为独立节点"
+                >
+                  取消组合
+                </button>
+              )}
+            </div>
+          ) : selectedNodes.length >= 2 ? (
+            <div className="space-y-3 p-3">
+              <div>
+                <div className="mb-1.5 text-[11px] font-medium text-faint">对齐</div>
+                <div className="grid grid-cols-3 gap-1">
+                  {(
+                    [
+                      ["left", "M3 6h11M3 12h7M3 18h11", "左对齐"],
+                      ["centerH", "M3 6h11M6 12h5M3 18h11", "水平居中"],
+                      ["right", "M3 6h11M9 12h5M3 18h11", "右对齐"],
+                      ["top", "M6 3v11M12 3v7M18 3v11", "顶对齐"],
+                      ["centerV", "M6 3v11M12 6v5M18 3v11", "垂直居中"],
+                      ["bottom", "M6 3v11M12 9v5M18 3v11", "底对齐"],
+                    ] as [string, string, string][]
+                  ).map(([mode, d, t]) => (
+                    <button
+                      key={mode}
+                      onClick={() => alignNodes(mode as any)}
+                      className="grid h-8 place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-text"
+                      title={t}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <path d={d} />
+                      </svg>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="mb-1.5 text-[11px] font-medium text-faint">匹配大小</div>
+                <div className="grid grid-cols-3 gap-1">
+                  <button onClick={() => matchSize("h")} className="rounded-md py-1.5 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="等高（以最大高度为基准）">等高</button>
+                  <button onClick={() => matchSize("w")} className="rounded-md py-1.5 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="等宽（以最大宽度为基准）">等宽</button>
+                  <button onClick={() => matchSize("both")} className="rounded-md py-1.5 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="等高且等宽">等高宽</button>
+                </div>
+              </div>
+              <div>
+                <div className="mb-1.5 text-[11px] font-medium text-faint">分布</div>
+                <div className="grid grid-cols-2 gap-1">
+                  <button onClick={() => distributeNodes("h")} className="rounded-md py-1.5 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="水平等距分布">水平分布</button>
+                  <button onClick={() => distributeNodes("v")} className="rounded-md py-1.5 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="垂直等距分布">垂直分布</button>
+                </div>
+              </div>
+              <button onClick={groupSelected} className="w-full rounded-md px-2 py-1.5 text-xs text-text transition-colors hover:bg-hover" title="将选中节点组合为一个分组（整体拖动）">
+                组合
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-1 items-center justify-center p-4 text-center text-xs leading-relaxed text-faint">
+              选中节点或连线
+              <br />
+              以编辑样式
+            </div>
+          )}
         </div>
       </div>
 
