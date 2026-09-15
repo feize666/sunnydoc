@@ -74,6 +74,7 @@ export function TrashView({ onBack }: { onBack: () => void }) {
   const [pendingPurge, setPendingPurge] = useState<{ kind: TrashKind; item: TrashItem } | null>(null);
   const [pendingBatchPurge, setPendingBatchPurge] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [exiting, setExiting] = useState<Set<string>>(new Set());
 
   const keyOf = (kind: TrashKind, id: string) => `${kind}:${id}`;
 
@@ -102,7 +103,26 @@ export function TrashView({ onBack }: { onBack: () => void }) {
   }, [data]);
 
   const total = allItems.length;
-  const listRef = useFlipList(allItems);
+  const listRef = useFlipList<HTMLDivElement>(allItems);
+
+  // 退出动画：标记项 → 播放缩小淡出 → 动画结束后从数据移除（触发剩余项 FLIP 上移）
+  const addExiting = (keys: string[]) =>
+    setExiting((prev) => {
+      const n = new Set(prev);
+      keys.forEach((k) => n.add(k));
+      return n;
+    });
+  const removeExiting = (keys: string[]) =>
+    setExiting((prev) => {
+      const n = new Set(prev);
+      keys.forEach((k) => n.delete(k));
+      return n;
+    });
+  const reloadAfterExit = (keys: string[]) =>
+    setTimeout(() => {
+      removeExiting(keys);
+      load();
+    }, 200);
 
   // 全选状态
   const allKeys = useMemo(() => allItems.map(({ kind, item }) => keyOf(kind, item.id)), [allItems]);
@@ -148,33 +168,44 @@ export function TrashView({ onBack }: { onBack: () => void }) {
   const clearSelection = () => setSelected(new Set());
 
   const handleRestore = async (kind: TrashKind, id: string) => {
+    const k = keyOf(kind, id);
+    addExiting([k]);
     try {
       await restoreTrash(kind, id);
       toast.success("已恢复");
-      load();
+      reloadAfterExit([k]);
     } catch (e) {
       toast.error(`恢复失败：${e instanceof Error ? e.message : "未知错误"}`);
+      removeExiting([k]);
     }
   };
 
   const handlePurge = async () => {
     if (!pendingPurge) return;
+    const k = keyOf(pendingPurge.kind, pendingPurge.item.id);
+    setPendingPurge(null);
+    addExiting([k]);
     try {
       await purgeTrash(pendingPurge.kind, pendingPurge.item.id);
       toast.success("已彻底删除");
-      setPendingPurge(null);
-      load();
+      reloadAfterExit([k]);
     } catch (e) {
       toast.error(`彻底删除失败：${e instanceof Error ? e.message : "未知错误"}`);
-      setPendingPurge(null);
+      removeExiting([k]);
     }
   };
 
   // 批量恢复
   const handleBatchRestore = async () => {
     setBusy(true);
+    const targetKeys: string[] = [];
     let ok = 0;
     let fail = 0;
+    for (const { kind, item } of allItems) {
+      if (!selected.has(keyOf(kind, item.id))) continue;
+      targetKeys.push(keyOf(kind, item.id));
+    }
+    addExiting(targetKeys);
     for (const { kind, item } of allItems) {
       if (!selected.has(keyOf(kind, item.id))) continue;
       try {
@@ -186,7 +217,7 @@ export function TrashView({ onBack }: { onBack: () => void }) {
     }
     setBusy(false);
     clearSelection();
-    load();
+    reloadAfterExit(targetKeys);
     if (fail === 0) toast.success(`已恢复 ${ok} 项`);
     else toast.warning(`恢复完成：成功 ${ok} 项，失败 ${fail} 项`);
   };
@@ -194,8 +225,14 @@ export function TrashView({ onBack }: { onBack: () => void }) {
   // 批量彻底删除
   const handleBatchPurge = async () => {
     setBusy(true);
+    const targetKeys: string[] = [];
     let ok = 0;
     let fail = 0;
+    for (const { kind, item } of allItems) {
+      if (!selected.has(keyOf(kind, item.id))) continue;
+      targetKeys.push(keyOf(kind, item.id));
+    }
+    addExiting(targetKeys);
     for (const { kind, item } of allItems) {
       if (!selected.has(keyOf(kind, item.id))) continue;
       try {
@@ -208,7 +245,7 @@ export function TrashView({ onBack }: { onBack: () => void }) {
     setBusy(false);
     setPendingBatchPurge(false);
     clearSelection();
-    load();
+    reloadAfterExit(targetKeys);
     if (fail === 0) toast.success(`已彻底删除 ${ok} 项`);
     else toast.warning(`删除完成：成功 ${ok} 项，失败 ${fail} 项`);
   };
@@ -239,7 +276,11 @@ export function TrashView({ onBack }: { onBack: () => void }) {
             const k = keyOf(kind, item.id);
             const on = selected.has(k);
             return (
-              <li key={item.id} data-flip-key={keyOf(kind, item.id)}>
+              <li
+                key={item.id}
+                data-flip-key={keyOf(kind, item.id)}
+                className={exiting.has(keyOf(kind, item.id)) ? "anim-exit" : undefined}
+              >
                 <div
                   className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${on ? "bg-accent/5" : ""}`}
                 >

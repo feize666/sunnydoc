@@ -13,8 +13,8 @@ import { useLayoutEffect, useRef } from "react";
  * （列表数据更新、项被增删）后，对比新旧位置，对仍在列表中的元素做
  * translateY 反转 → 下一帧 transition 归零，实现「剩余项平滑上移/下移」。
  */
-export function useFlipList(deps: unknown) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+export function useFlipList<T extends HTMLElement = HTMLElement>(deps: unknown) {
+  const containerRef = useRef<T | null>(null);
   const positionsRef = useRef<Map<string, number>>(new Map());
 
   useLayoutEffect(() => {

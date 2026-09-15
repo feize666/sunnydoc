@@ -8,6 +8,7 @@ import { UserMenu } from "./UserMenu";
 import { ThemeToggle } from "./ThemeToggle";
 import { PlusIcon, TrashIcon, HistoryIcon, FolderIcon, EditIcon, FileIcon } from "./icons";
 import { EmptyState } from "./EmptyState";
+import { useFlipList } from "@/hooks/useFlipList";
 
 function ShareIcon({ size = 14 }: { size?: number }) {
   return (
@@ -175,6 +176,10 @@ export function HomeView({
   onOpenSettings?: () => void;
 }) {
   const [pendingDelete, setPendingDelete] = useState<Kb | null>(null);
+
+  // FLIP 动画：最近浏览/收藏列表项增删、重排时平滑移动
+  const recentListRef = useFlipList<HTMLUListElement>(recent);
+  const favListRef = useFlipList<HTMLUListElement>(favorites);
 
   const kbNameOf = (kbId: string | null) =>
     kbId ? kbs.find((k) => k.id === kbId)?.name ?? "未知知识库" : "全部文档";
@@ -446,9 +451,9 @@ export function HomeView({
                 description="打开过的文档会显示在这里，方便快速回看"
               />
             ) : (
-              <ul className="overflow-hidden rounded-lg border border-line bg-background">
+              <ul ref={recentListRef} className="overflow-hidden rounded-lg border border-line bg-background">
                 {recent.map((r, i) => (
-                  <li key={`${r.doc_id}-${i}`}>
+                  <li key={r.doc_id} data-flip-key={`recent:${r.doc_id}`}>
                     <button
                       onClick={() => onOpenRecent(r.doc_id, r.kb_id)}
                       className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-hover"
@@ -498,9 +503,9 @@ export function HomeView({
                 description="在文档右上角点击「收藏」即可加入"
               />
             ) : (
-              <ul className="overflow-hidden rounded-lg border border-line bg-background">
+              <ul ref={favListRef} className="overflow-hidden rounded-lg border border-line bg-background">
                 {favorites.map((d, i) => (
-                  <li key={d.id}>
+                  <li key={d.id} data-flip-key={`fav:${d.id}`}>
                     <button
                       onClick={() => onOpenFavorite(d)}
                       className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-hover"
