@@ -30,7 +30,7 @@
   --accent-hover: #1d4ed8;
   --accent-active: #1e4fd6;
   --accent-deep: #2b5ce6;
-  --accent-grad: linear-gradient(135deg, #5b8dff 0%, #2f6bff 50%, #2b5ce6 100%);
+  --accent-grad: linear-gradient(135deg, #6ea0ff 0%, #2f6bff 48%, #2451d8 100%);
 
   /* 渐变：蓝 → 靛（科技感点缀，用于装饰线/强调） */
   --grad-blue-indigo: linear-gradient(135deg, #4f8bff 0%, #2f6bff 45%, #6d5cff 100%);
@@ -49,10 +49,10 @@
   --radius-md: 8px;
   --radius-lg: 12px;
 
-  /* 阴影（冷调，偏蓝） */
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(47, 107, 255, 0.06);
-  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(47, 107, 255, 0.06);
-  --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12), 0 4px 12px rgba(47, 107, 255, 0.08);
+  /* 阴影（冷调，偏蓝，层级由浅入深） */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(47, 107, 255, 0.04);
+  --shadow-md: 0 4px 16px rgba(15, 23, 42, 0.07), 0 2px 6px rgba(47, 107, 255, 0.05);
+  --shadow-lg: 0 16px 40px rgba(15, 23, 42, 0.14), 0 6px 18px rgba(47, 107, 255, 0.1);
   /* 微光：蓝色光晕（用于 hover / 主按钮 / 命令面板等强调层级） */
   --shadow-glow: 0 0 0 1px rgba(47, 107, 255, 0.22), 0 8px 24px rgba(47, 107, 255, 0.18);
 
