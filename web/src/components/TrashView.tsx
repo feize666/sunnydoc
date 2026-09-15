@@ -120,8 +120,7 @@ export function TrashView({ onBack }: { onBack: () => void }) {
     });
   const reloadAfterExit = (keys: string[]) =>
     setTimeout(() => {
-      removeExiting(keys);
-      load();
+      load().finally(() => removeExiting(keys));
     }, 200);
 
   // 全选状态
