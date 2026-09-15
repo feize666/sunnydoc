@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CloseIcon, PlusIcon } from "./icons";
+import { useToast } from "./Toast";
 import { AuditLogView } from "./AuditLogView";
 import { PasswordInput } from "./PasswordInput";
 
@@ -34,6 +35,7 @@ export function UserManagementView({
   currentUserId: string;
   onBack: () => void;
 }) {
+  const toast = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -240,7 +242,7 @@ export function UserManagementView({
             setDeleteTarget(null);
             refresh();
           } catch (e) {
-            alert(`删除失败：${e instanceof Error ? e.message : "未知错误"}`);
+            toast.error(`删除失败：${e instanceof Error ? e.message : "未知错误"}`);
           }
         }}
         onCancel={() => setDeleteTarget(null)}

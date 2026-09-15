@@ -22,6 +22,7 @@ import {
 import { renderMarkdown } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
+import { useToast } from "./Toast";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useResizable } from "@/hooks/useResizable";
 import { chatStream, uploadChatAttachment, importChatAttachment, type Citation, type ChatMessage, type WebSource, type ChatAttachment, type Kb } from "@/lib/api";
@@ -122,6 +123,7 @@ export function AiPanel({
   onOpenCitation?: (docId: string, snippet: string) => void;
   kbs?: Kb[];
 }) {
+  const toast = useToast();
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -499,7 +501,7 @@ export function AiPanel({
       try {
         next.push(await uploadChatAttachment(file));
       } catch (e) {
-        alert(`附件「${file.name}」上传失败：${e instanceof Error ? e.message : "未知错误"}`);
+        toast.error(`附件「${file.name}」上传失败：${e instanceof Error ? e.message : "未知错误"}`);
       }
     }
     setAttachments(next);

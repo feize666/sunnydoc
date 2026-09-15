@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { listDocVersions, rollbackDocument, type DocVersion } from "@/lib/api";
 import { renderMarkdown } from "@/lib/markdown";
 import { CloseIcon } from "./icons";
+import { useToast } from "./Toast";
 
 function formatTime(ts: number): string {
   const d = new Date(ts * 1000);
@@ -67,6 +68,7 @@ export function VersionHistoryDialog({
   onClose: () => void;
   onRolledBack: () => void;
 }) {
+  const toast = useToast();
   const [versions, setVersions] = useState<DocVersion[]>([]);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -105,7 +107,7 @@ export function VersionHistoryDialog({
       onRolledBack();
       onClose();
     } catch (e) {
-      alert(`回滚失败：${e instanceof Error ? e.message : "未知错误"}`);
+      toast.error(`回滚失败：${e instanceof Error ? e.message : "未知错误"}`);
     } finally {
       setBusyId(null);
     }

@@ -5,6 +5,7 @@ import { toPng, toSvg } from "html-to-image";
 import JSZip from "jszip";
 import { generateDiagram } from "@/lib/api";
 import { DiagramTemplateDialog } from "./DiagramTemplateDialog";
+import { useToast } from "./Toast";
 
 // —— 数据结构：扁平节点 + parent 引用 ——
 interface MindNode {
@@ -671,6 +672,7 @@ export function MindMapEditor({
   onChange: (json: string) => void;
   readOnly?: boolean;
 }) {
+  const toast = useToast();
   const [nodes, setNodes] = useState<MindNode[]>(() => {
     const p = parseMind(value);
     return p.length ? p : [{ id: genId(), text: "中心主题", parent: null }];
@@ -1287,7 +1289,7 @@ export function MindMapEditor({
       setAiOpen(false);
       setAiText("");
     } catch (e) {
-      alert(`AI 生成失败：${e instanceof Error ? e.message : "未知错误"}`);
+      toast.error(`AI 生成失败：${e instanceof Error ? e.message : "未知错误"}`);
     } finally {
       setAiBusy(false);
     }
@@ -1350,7 +1352,7 @@ export function MindMapEditor({
         setLinkingFrom(null);
       })
       .catch((err) => {
-        alert(`导入失败：${err instanceof Error ? err.message : "未知错误"}`);
+        toast.error(`导入失败：${err instanceof Error ? err.message : "未知错误"}`);
       })
       .finally(() => setImporting(false));
   };
@@ -1374,7 +1376,7 @@ export function MindMapEditor({
       const dataUrl = await withFitView(() => captureDataUrl("png"));
       downloadDataUrl(dataUrl, "思维导图.png");
     } catch (err) {
-      alert(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
+      toast.error(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
     } finally {
       setExporting(false);
     }
@@ -1386,7 +1388,7 @@ export function MindMapEditor({
       const dataUrl = await withFitView(() => captureDataUrl("svg"));
       downloadDataUrl(dataUrl, "思维导图.svg");
     } catch (err) {
-      alert(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
+      toast.error(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
     } finally {
       setExporting(false);
     }
@@ -1401,7 +1403,7 @@ export function MindMapEditor({
       const w = window.open("", "_blank");
       if (!w) {
         downloadDataUrl(dataUrl, "思维导图.png");
-        alert("浏览器拦截了打印窗口，已为您下载 PNG，可在打印对话框选择另存为 PDF");
+        toast.info("浏览器拦截了打印窗口，已为您下载 PNG，可在打印对话框选择另存为 PDF");
         return;
       }
       try {
@@ -1414,11 +1416,11 @@ export function MindMapEditor({
       } catch {
         // 写窗口失败：退化下载 PNG
         downloadDataUrl(dataUrl, "思维导图.png");
-        alert("打印窗口打开失败，已为您下载 PNG，可在打印对话框选择另存为 PDF");
+        toast.info("打印窗口打开失败，已为您下载 PNG，可在打印对话框选择另存为 PDF");
         w.close();
       }
     } catch (err) {
-      alert(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
+      toast.error(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
     } finally {
       setExporting(false);
     }

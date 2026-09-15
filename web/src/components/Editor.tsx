@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { renderMarkdown, extractToc, sanitizeHtml, type TocItem } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
+import { useToast } from "./Toast";
 import { updateDocument, subscribeSSE } from "@/lib/api";
 import type { Doc } from "@/data/docs";
 import type { RecentDoc, Backlink } from "@/lib/api";
@@ -103,6 +104,7 @@ export function Editor({
   currentUserId?: string;
   onRemoteUpdate?: () => void;
 }) {
+  const toast = useToast();
   const [mode, setMode] = useState<Mode>("preview");
   const modeRef = useRef<Mode>("preview");
   modeRef.current = mode;
@@ -306,7 +308,7 @@ export function Editor({
     if (!doc) return;
     const title = draftTitle.trim();
     if (!title) {
-      alert("标题不能为空");
+      toast.warning("标题不能为空");
       return;
     }
     setSaving(true);
@@ -315,7 +317,7 @@ export function Editor({
       onSaved?.(doc, title, draft);
       setMode("preview");
     } catch (e) {
-      alert(`保存失败：${e instanceof Error ? e.message : "未知错误"}`);
+      toast.error(`保存失败：${e instanceof Error ? e.message : "未知错误"}`);
     } finally {
       setSaving(false);
     }

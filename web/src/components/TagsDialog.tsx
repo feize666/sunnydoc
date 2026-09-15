@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { setDocTags, listTags } from "@/lib/api";
 import { CloseIcon } from "./icons";
+import { useToast } from "./Toast";
 
 export function TagsDialog({
   open,
@@ -17,6 +18,7 @@ export function TagsDialog({
   onClose: () => void;
   onSaved: (tags: string[]) => void;
 }) {
+  const toast = useToast();
   const [tags, setTags] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [saving, setSaving] = useState(false);
@@ -68,7 +70,7 @@ export function TagsDialog({
       onSaved(tags);
       onClose();
     } catch (e) {
-      alert(`保存标签失败：${e instanceof Error ? e.message : "未知错误"}`);
+      toast.error(`保存标签失败：${e instanceof Error ? e.message : "未知错误"}`);
     } finally {
       setSaving(false);
     }

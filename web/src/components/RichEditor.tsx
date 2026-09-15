@@ -10,6 +10,7 @@ import Image from "@tiptap/extension-image";
 import { Markdown } from "tiptap-markdown";
 import { uploadImage, aiAssist, type AIAssistAction } from "@/lib/api";
 import { Tooltip } from "./Tooltip";
+import { useToast } from "./Toast";
 import {
   CodeIcon,
   CodeBlockIcon,
@@ -340,6 +341,7 @@ export function RichEditor({
   onChange: (markdown: string) => void;
   placeholder?: string;
 }) {
+  const toast = useToast();
   const [colorOpen, setColorOpen] = useState(false);
   // 背景色（填充）
   const [bgColorOpen, setBgColorOpen] = useState(false);
@@ -830,7 +832,7 @@ export function RichEditor({
     const { from, to } = editor.state.selection;
     setAiMenuOpen(false);
     if (from === to) {
-      alert("请先选中要处理的文字");
+      toast.warning("请先选中要处理的文字");
       return;
     }
     const text = editor.state.doc.textBetween(from, to, " ");
@@ -840,7 +842,7 @@ export function RichEditor({
       const result = await aiAssist(action, text);
       editor.chain().focus().insertContentAt({ from, to }, result).run();
     } catch (e) {
-      alert(`AI 处理失败：${e instanceof Error ? e.message : "未知错误"}`);
+      toast.error(`AI 处理失败：${e instanceof Error ? e.message : "未知错误"}`);
     } finally {
       setAiBusy(null);
     }

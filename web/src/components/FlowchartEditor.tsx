@@ -26,6 +26,7 @@ import { toPng, toSvg } from "html-to-image";
 import JSZip from "jszip";
 import { generateDiagram } from "@/lib/api";
 import { DiagramTemplateDialog } from "./DiagramTemplateDialog";
+import { useToast } from "./Toast";
 
 // —— 数据结构 ——
 type ShapeKind =
@@ -904,6 +905,7 @@ export function FlowchartEditor({
   onChange: (json: string) => void;
   readOnly?: boolean;
 }) {
+  const toast = useToast();
   const initial = useMemo(() => parseFlow(value), []);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>(
     initial.nodes.map((n) => ({
@@ -1732,7 +1734,7 @@ export function FlowchartEditor({
         applyFlow({ nodes, edges });
       })
       .catch((err) => {
-        alert(`导入失败：${err instanceof Error ? err.message : "未知错误"}`);
+        toast.error(`导入失败：${err instanceof Error ? err.message : "未知错误"}`);
       })
       .finally(() => setImportingVisio(false));
   };
@@ -1766,7 +1768,7 @@ export function FlowchartEditor({
       a.href = dataUrl;
       a.click();
     } catch (err) {
-      alert(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
+      toast.error(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
     } finally {
       setExporting(false);
     }
@@ -1794,7 +1796,7 @@ export function FlowchartEditor({
       a.href = dataUrl;
       a.click();
     } catch (err) {
-      alert(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
+      toast.error(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
     } finally {
       setExporting(false);
     }
@@ -1938,7 +1940,7 @@ export function FlowchartEditor({
       setAiOpen(false);
       setAiText("");
     } catch (e) {
-      alert(`AI 生成失败：${e instanceof Error ? e.message : "未知错误"}`);
+      toast.error(`AI 生成失败：${e instanceof Error ? e.message : "未知错误"}`);
     } finally {
       setAiBusy(false);
     }
