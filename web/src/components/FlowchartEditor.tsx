@@ -23,6 +23,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { toPng, toSvg } from "html-to-image";
+import JSZip from "jszip";
 import { generateDiagram } from "@/lib/api";
 import { DiagramTemplateDialog } from "./DiagramTemplateDialog";
 
@@ -142,6 +143,97 @@ function parseFlow(value: string): StoredFlow {
     /* fallthrough */
   }
   return { nodes: [], edges: [] };
+}
+
+// —— VISIO 导入：解析 .vsdx（zip + visio/pages/*.xml）——
+const VSDX_SCALE = 96; // 1 英寸 -> 96 像素
+
+// 从 VISIO 的 Cell 元素提取数值（优先 V 属性，其次文本节点里的数字）
+function vsdxCellValue(cells: Element[], name: string): number | null {
+  const c = cells.find((x) => x.getAttribute("N") === name);
+  if (!c) return null;
+  const v = c.getAttribute("V");
+  if (v && v.trim() !== "") {
+    const num = parseFloat(v);
+    if (Number.isFinite(num)) return num;
+  }
+  const txt = (c.textContent || "").trim();
+  const m = txt.match(/-?\d+\.?\d*(?:[eE][+-]?\d+)?/);
+  return m ? parseFloat(m[0]) : null;
+}
+
+function vsdxText(el: Element | undefined): string {
+  if (!el) return "";
+  return (el.textContent || "").replace(/\s+/g, " ").trim();
+}
+
+// 依据形状名（NameU/Name）启发式映射到我们的 ShapeKind
+function vsdxShapeKind(nameU: string): ShapeKind {
+  const n = (nameU || "").toLowerCase();
+  if (/decision|diamond|gateway|判断/.test(n)) return "diamond";
+  if (/start|end|terminator|begin|finish|起止|开始|结束/.test(n)) return "ellipse";
+  if (/document|文档/.test(n)) return "rounded";
+  if (/database|datastore|data store|数据|存储/.test(n)) return "database";
+  if (/manual|input|output|输入|输出/.test(n)) return "parallelogram";
+  if (/predefined|subprocess|preparation|准备/.test(n)) return "rounded";
+  if (/note|annotation|注释/.test(n)) return "note";
+  if (/process|流程|处理/.test(n)) return "rect";
+  return "rect";
+}
+
+function parseVsdxPage(xmlText: string): { nodes: StoredNode[]; edges: StoredEdge[] } {
+  const doc = new DOMParser().parseFromString(xmlText, "text/xml");
+  const shapeEls = Array.from(doc.getElementsByTagNameNS("*", "Shape"));
+  const nodes: StoredNode[] = [];
+  const edges: StoredEdge[] = [];
+  const byId = new Map<string, StoredNode>();
+
+  // 1. 解析 2D 形状（有 PinX/PinY/Width/Height）
+  for (const s of shapeEls) {
+    const id = s.getAttribute("ID") || "";
+    const cells = Array.from(s.getElementsByTagNameNS("*", "Cell"));
+    const pinX = vsdxCellValue(cells, "PinX");
+    const pinY = vsdxCellValue(cells, "PinY");
+    const width = vsdxCellValue(cells, "Width");
+    const height = vsdxCellValue(cells, "Height");
+    if (pinX == null || pinY == null) continue; // 非 2D 形状（连线等）
+    const nameU = s.getAttribute("NameU") || s.getAttribute("Name") || "";
+    const textEl = s.getElementsByTagNameNS("*", "Text")[0] as Element | undefined;
+    const label = vsdxText(textEl) || nameU || "形状";
+    const w = (width ?? 1.5) * VSDX_SCALE;
+    const h = (height ?? 0.75) * VSDX_SCALE;
+    const node: StoredNode = {
+      id,
+      label,
+      shape: vsdxShapeKind(nameU),
+      x: pinX * VSDX_SCALE - w / 2,
+      y: pinY * VSDX_SCALE - h / 2,
+      width: w,
+      height: h,
+    };
+    nodes.push(node);
+    byId.set(id, node);
+  }
+
+  // 2. 解析连线（Connect 元素：1D 连线 FromSheet -> 2D 形状 ToSheet）
+  const connects = Array.from(doc.getElementsByTagNameNS("*", "Connect"));
+  const lineTargets = new Map<string, string[]>();
+  for (const c of connects) {
+    const from = c.getAttribute("FromSheet");
+    const to = c.getAttribute("ToSheet");
+    if (from && to && byId.has(to) && !byId.has(from)) {
+      if (!lineTargets.has(from)) lineTargets.set(from, []);
+      const arr = lineTargets.get(from)!;
+      if (!arr.includes(to)) arr.push(to);
+    }
+  }
+  for (const [lineId, targets] of lineTargets) {
+    if (targets.length >= 2 && byId.has(targets[0]) && byId.has(targets[1])) {
+      edges.push({ id: lineId, source: targets[0], target: targets[1] });
+    }
+  }
+
+  return { nodes, edges };
 }
 
 // 形状库（分类组织）。容器类/备注类默认尺寸更大，由 addNode 处理。
@@ -1619,6 +1711,38 @@ export function FlowchartEditor({
     return { viewportEl, W, H, viewport, bg };
   };
 
+  // —— 导入 VISIO（.vsdx = zip + visio/pages/*.xml）——
+  const visioFileRef = useRef<HTMLInputElement>(null);
+  const [importingVisio, setImportingVisio] = useState(false);
+
+  const importVisio = (file: File) => {
+    setImportingVisio(true);
+    file
+      .arrayBuffer()
+      .then((buf) => JSZip.loadAsync(buf))
+      .then(async (zip) => {
+        const pageFiles = Object.keys(zip.files)
+          .filter((p) => /^visio\/pages\/[^/]+\.xml$/i.test(p))
+          .sort();
+        if (pageFiles.length === 0) throw new Error("未找到 visio/pages/*.xml，可能不是有效的 .vsdx 文件");
+        const xml = await zip.file(pageFiles[0])!.async("string");
+        const { nodes, edges } = parseVsdxPage(xml);
+        if (!nodes.length) throw new Error("解析失败或页面为空");
+        pushHistory();
+        applyFlow({ nodes, edges });
+      })
+      .catch((err) => {
+        alert(`导入失败：${err instanceof Error ? err.message : "未知错误"}`);
+      })
+      .finally(() => setImportingVisio(false));
+  };
+
+  const onVisioFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) importVisio(file);
+    e.target.value = "";
+  };
+
   // —— 导出 PNG ——
   const exportPng = async () => {
     const meta = computeExportMeta();
@@ -2021,6 +2145,15 @@ export function FlowchartEditor({
           >
             导出 SVG
           </button>
+          <button
+            onClick={() => visioFileRef.current?.click()}
+            disabled={importingVisio}
+            className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-50"
+            title="导入 Visio 文件（.vsdx）"
+          >
+            {importingVisio ? "导入中…" : "导入"}
+          </button>
+          <input ref={visioFileRef} type="file" accept=".vsdx" onChange={onVisioFileChange} className="hidden" />
           <button
             onClick={() => setTemplateOpen(true)}
             className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover"
