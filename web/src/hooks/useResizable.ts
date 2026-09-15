@@ -28,6 +28,8 @@ export function useResizable(
     return initial;
   });
 
+  const [dragging, setDragging] = useState(false);
+
   const widthRef = useRef(width);
   widthRef.current = width;
 
@@ -37,12 +39,14 @@ export function useResizable(
       e.stopPropagation();
       const startX = e.clientX;
       const startW = widthRef.current;
+      setDragging(true);
 
       const onMove = (ev: MouseEvent) => {
         const delta = (ev.clientX - startX) * direction;
         setWidth(Math.min(max, Math.max(min, startW + delta)));
       };
       const onUp = () => {
+        setDragging(false);
         if (storageKey) {
           try {
             window.localStorage.setItem(storageKey, String(widthRef.current));
@@ -64,5 +68,5 @@ export function useResizable(
     [min, max, storageKey],
   );
 
-  return { width, onMouseDown };
+  return { width, onMouseDown, dragging };
 }

@@ -220,7 +220,7 @@ export function Sidebar({
     }
   };
 
-  const { width: sidebarWidth, onMouseDown: onResize } = useResizable(260, 220, 480, "sidebar_width");
+  const { width: sidebarWidth, onMouseDown: onResize, dragging } = useResizable(260, 220, 480, "sidebar_width");
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -238,51 +238,7 @@ export function Sidebar({
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
-  // 折叠态：渲染窄竖条，点击展开
-  if (collapsed && !mobile) {
-    return (
-      <aside className="hidden w-10 shrink-0 flex-col items-center border-r border-line bg-surface md:flex">
-        <Tooltip content="展开侧栏">
-          <button
-            onClick={onToggleCollapse}
-            className="mt-2.5 grid h-8 w-8 place-items-center rounded-md border border-line text-faint transition-colors hover:bg-hover hover:text-text"
-          >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M9 18l6-6-6-6" />
-            </svg>
-          </button>
-        </Tooltip>
-        <Tooltip content="展开侧栏">
-          <button
-            onClick={onToggleCollapse}
-            className="mt-3 grid h-8 w-8 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-accent"
-          >
-            <svg
-              width="17"
-              height="17"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.75"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M2 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H2zM14 7h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-6z" />
-            </svg>
-          </button>
-        </Tooltip>
-      </aside>
-    );
-  }
+  // 折叠态：aside 宽度平滑过渡到 40px，内容淡出（见下方 return）
 
   const sortOptions: { value: SortBy; label: string }[] = [
     { value: "numeric", label: "按数字" },
@@ -297,17 +253,54 @@ export function Sidebar({
 
   return (
     <aside
-      style={{ width: sidebarWidth }}
-      className={`relative flex shrink-0 flex-col border-r border-line bg-surface ${
-        mobile
-          ? "fixed inset-y-0 left-0 z-40 md:hidden"
-          : "hidden md:flex"
-      }`}
+      style={{ width: collapsed && !mobile ? 40 : sidebarWidth }}
+      className={`relative flex shrink-0 flex-col overflow-hidden border-r border-line bg-surface ${
+        dragging ? "" : "sidebar-transition"
+      } ${mobile ? "fixed inset-y-0 left-0 z-40 md:hidden" : "hidden md:flex"}`}
     >
+      {/* 折叠态：仅显示展开按钮 */}
+      {collapsed && !mobile && (
+        <div className="flex justify-center pt-2.5">
+          <Tooltip content="展开侧栏">
+            <button
+              onClick={onToggleCollapse}
+              className="grid h-8 w-8 place-items-center rounded-md border border-line text-faint transition-colors hover:bg-hover hover:text-text"
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+            </button>
+          </Tooltip>
+        </div>
+      )}
+
+      {!(collapsed && !mobile) && (
+        <div
+          onMouseDown={onResize}
+          className="absolute right-0 bottom-0 top-0 z-10 w-2 cursor-col-resize transition-colors hover:bg-accent/25"
+        />
+      )}
+
+      {/* 内容层：固定宽度，折叠时淡出 */}
       <div
-        onMouseDown={onResize}
-        className="absolute -right-1 bottom-0 top-0 z-10 w-2 cursor-col-resize transition-colors hover:bg-accent/25"
-      />
+        className="flex min-h-0 flex-1 flex-col"
+        style={{
+          width: sidebarWidth,
+          opacity: collapsed && !mobile ? 0 : 1,
+          transition:
+            collapsed && !mobile ? "opacity 0.15s ease" : "opacity 0.15s ease 0.05s",
+          pointerEvents: collapsed && !mobile ? "none" : "auto",
+        }}
+      >
       <div className="border-b border-line px-3 pb-2.5 pt-2.5">
         <div className="mb-2 flex items-center justify-between">
           <div className="flex min-w-0 items-center gap-1.5">
@@ -746,6 +739,7 @@ export function Sidebar({
           </button>
         </div>
       )}
+      </div>
     </aside>
   );
 }
