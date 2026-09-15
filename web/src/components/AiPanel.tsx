@@ -759,6 +759,9 @@ export function AiPanel({
           >
             {msg.role === "ai" && (
               <div className="flex items-center gap-1.5">
+                <span className="logo-mark grid h-5 w-5 place-items-center rounded-md text-[10px] font-bold">
+                  知
+                </span>
                 <span className="text-[12px] text-faint">知库助手</span>
                 {msg.content && !msg.error && (
                   <Tooltip content={copiedIndex === i ? "已复制" : "复制回答"}>
@@ -781,7 +784,7 @@ export function AiPanel({
               className={
                 msg.role === "user"
                   ? "bubble-accent max-w-[90%] rounded-xl rounded-br-sm px-3 py-2 text-white"
-                  : `max-w-full rounded-xl rounded-bl-sm border px-3 py-2.5 ${
+                  : `max-w-full rounded-xl rounded-bl-sm border px-3 py-2.5 shadow-sm ${
                       msg.error ? "border-danger/40 bg-danger-soft text-danger" : "border-line bg-background"
                     }`
               }

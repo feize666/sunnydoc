@@ -356,10 +356,16 @@ function FileTreeNode({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`group relative flex w-full cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-left text-[16px] transition-colors ${
-        active ? "bg-active text-accent" : "text-text hover:bg-hover"
+        active ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"
       } ${dropClass}`}
       style={{ paddingLeft: 8 + depth * 12 + 18 }}
     >
+      {active && (
+        <span
+          className="absolute top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-accent"
+          style={{ left: 8 + depth * 12 + 2 }}
+        />
+      )}
       <FileIcon size={16} className={`shrink-0 ${active ? "text-accent" : "text-faint"}`} />
       <span className="min-w-0 flex-1 truncate">{node.name}</span>
 

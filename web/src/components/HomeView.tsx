@@ -312,10 +312,7 @@ export function HomeView({
             {loadingKbs ? (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {[0, 1, 2].map((i) => (
-                  <div
-                    key={i}
-                    className="h-32 animate-pulse rounded-lg border border-line bg-surface"
-                  />
+                  <div key={i} className="skeleton h-32 rounded-lg" />
                 ))}
               </div>
             ) : kbs.length === 0 ? (
