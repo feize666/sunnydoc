@@ -89,7 +89,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           return (
             <div
               key={t.id}
-              className="pointer-events-auto flex items-center gap-2.5 overflow-hidden rounded-lg border border-line bg-background py-2.5 pl-3 pr-4 shadow-lg"
+              className="anim-slide-in-right pointer-events-auto flex items-center gap-2.5 overflow-hidden rounded-lg border border-line bg-background py-2.5 pl-3 pr-4 shadow-lg"
               style={{ minWidth: 200, maxWidth: 360 }}
             >
               <span

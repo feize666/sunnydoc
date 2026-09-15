@@ -85,7 +85,7 @@ export function NewNodeMenu({
   if (typeof document === "undefined") return null;
 
   const menu = (
-    <div className="menu-panel fixed z-50 w-[320px] max-h-[70vh] rounded-xl p-1.5" style={{ ...(pos ?? {}), overflowY: "auto", overflowX: "hidden" }}>
+    <div className="anim-fade-in menu-panel fixed z-50 w-[320px] max-h-[70vh] rounded-xl p-1.5" style={{ ...(pos ?? {}), overflowY: "auto", overflowX: "hidden" }}>
       <div className="grid grid-cols-2 gap-0.5">
         {TYPES.map((t) => (
           <button

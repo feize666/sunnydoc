@@ -555,8 +555,8 @@ export function Editor({
           </div>
         </div>
 
-        {/* 正文 */}
-        <div className="flex-1 overflow-y-auto py-8">
+        {/* 正文（key 按文档变化：切换文档时重新挂载 + 淡入） */}
+        <div key={doc.key} className="anim-fade-in flex-1 overflow-y-auto py-8">
           {mode === "preview" ? (
             <div className="mx-auto max-w-[1080px] px-10">
               <h1 className="text-[32px] font-bold leading-[1.25] tracking-[-0.01em] text-text">
