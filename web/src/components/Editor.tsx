@@ -20,6 +20,31 @@ import { useResizable } from "@/hooks/useResizable";
 
 type Mode = "preview" | "edit" | "source";
 
+/** 复制文本到剪贴板：clipboard API 优先，execCommand 兜底（兼容 http 非安全上下文）。 */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fallthrough */
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 function parseTableData(value: string): string[][] {
   try {
     const parsed = JSON.parse(value);
@@ -638,9 +663,10 @@ export function Editor({
                     if (anchor) {
                       e.preventDefault();
                       const href = anchor.getAttribute("href") || "";
-                      navigator.clipboard
-                        .writeText(`${window.location.origin}${window.location.pathname}${href}`)
-                        .then(() => toast.success("已复制章节链接"));
+                      const url = `${window.location.origin}${window.location.pathname}${href}`;
+                      copyText(url).then((ok) =>
+                        ok ? toast.success("已复制章节链接") : toast.info("复制失败，请手动复制"),
+                      );
                       return;
                     }
                     const t = target.closest(".wikilink") as HTMLElement | null;
