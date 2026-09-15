@@ -6,7 +6,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { Tooltip } from "./Tooltip";
 import { UserMenu } from "./UserMenu";
 import { ThemeToggle } from "./ThemeToggle";
-import { PlusIcon, TrashIcon, HistoryIcon, FolderIcon, EditIcon } from "./icons";
+import { PlusIcon, TrashIcon, HistoryIcon, FolderIcon, EditIcon, FileIcon } from "./icons";
 
 function ShareIcon({ size = 14 }: { size?: number }) {
   return (
@@ -15,6 +15,14 @@ function ShareIcon({ size = 14 }: { size?: number }) {
       <circle cx="6" cy="12" r="3" />
       <circle cx="18" cy="19" r="3" />
       <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
+    </svg>
+  );
+}
+
+function StarIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
     </svg>
   );
 }
@@ -205,6 +213,15 @@ export function HomeView({
             </kbd>
           </button>
 
+          <button
+            onClick={onCreateKb}
+            className="btn btn-accent btn-sm text-white"
+            title="新建知识库"
+          >
+            <PlusIcon size={14} />
+            新建知识库
+          </button>
+
           <ThemeToggle theme={theme} onToggle={onToggleTheme} className="h-8 w-8" />
 
           {user && onLogout && (
@@ -225,20 +242,30 @@ export function HomeView({
           {stats && (
             <section className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[
-                { label: "文档", value: stats.total_docs, icon: "📄" },
-                { label: "知识库", value: stats.total_kbs, icon: "📚" },
-                { label: "收藏", value: stats.total_favorites, icon: "⭐" },
-                { label: "最近浏览", value: stats.recent_count, icon: "🕘" },
+                { label: "文档", value: stats.total_docs, icon: <FileIcon size={20} /> },
+                { label: "知识库", value: stats.total_kbs, icon: <FolderIcon size={20} /> },
+                { label: "收藏", value: stats.total_favorites, icon: <StarIcon size={20} /> },
+                { label: "最近浏览", value: stats.recent_count, icon: <HistoryIcon size={20} /> },
               ].map((s) => (
                 <div
                   key={s.label}
-                  className="flex items-center gap-3 rounded-xl border border-line bg-background px-4 py-3.5 shadow-sm"
+                  className="flex items-center gap-3 rounded-xl border border-line bg-background px-4 py-3.5 shadow-sm transition-shadow hover:shadow-md"
                 >
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-accent-soft text-lg">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
                     {s.icon}
                   </span>
                   <div className="min-w-0 leading-tight">
-                    <div className="text-xl font-semibold text-text">{s.value}</div>
+                    <div
+                      className="text-xl font-semibold"
+                      style={{
+                        backgroundImage: "var(--accent-grad)",
+                        WebkitBackgroundClip: "text",
+                        backgroundClip: "text",
+                        color: "transparent",
+                      }}
+                    >
+                      {s.value}
+                    </div>
                     <div className="text-[12px] text-faint">{s.label}</div>
                   </div>
                 </div>
