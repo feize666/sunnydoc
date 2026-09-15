@@ -12,6 +12,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { Tooltip } from "./Tooltip";
 import { EmptyState } from "./EmptyState";
 import { useToast } from "./Toast";
+import { useFlipList } from "@/hooks/useFlipList";
 
 function BackIcon({ size = 15 }: { size?: number }) {
   return (
@@ -101,6 +102,7 @@ export function TrashView({ onBack }: { onBack: () => void }) {
   }, [data]);
 
   const total = allItems.length;
+  const listRef = useFlipList(allItems);
 
   // 全选状态
   const allKeys = useMemo(() => allItems.map(({ kind, item }) => keyOf(kind, item.id)), [allItems]);
@@ -237,7 +239,7 @@ export function TrashView({ onBack }: { onBack: () => void }) {
             const k = keyOf(kind, item.id);
             const on = selected.has(k);
             return (
-              <li key={item.id}>
+              <li key={item.id} data-flip-key={keyOf(kind, item.id)}>
                 <div
                   className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${on ? "bg-accent/5" : ""}`}
                 >
@@ -342,7 +344,7 @@ export function TrashView({ onBack }: { onBack: () => void }) {
       )}
 
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl px-6 py-6">
+        <div ref={listRef} className="mx-auto max-w-3xl px-6 py-6">
           {!loading && total === 0 && (
             <EmptyState
               icon={
