@@ -187,10 +187,13 @@ export function CommandPalette({
                     data-index={i}
                     onClick={() => run(item)}
                     onMouseEnter={() => setActiveIndex(i)}
-                    className={`flex w-full flex-col gap-0.5 rounded-lg px-3 py-2 text-left ${
-                      active ? "bg-active text-accent" : "text-text"
+                    className={`relative flex w-full flex-col gap-0.5 rounded-lg px-3 py-2 text-left ${
+                      active ? "bg-accent-soft text-accent" : "text-text"
                     }`}
                   >
+                    {active && (
+                      <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-accent" />
+                    )}
                     <span className="truncate text-[14px]">{r.title}</span>
                     <span className="line-clamp-1 text-[12px] text-faint">{r.snippet}</span>
                   </button>
@@ -202,10 +205,13 @@ export function CommandPalette({
                   data-index={i}
                   onClick={() => run(item)}
                   onMouseEnter={() => setActiveIndex(i)}
-                  className={`group flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[14px] ${
-                    active ? "bg-active text-accent" : "text-text"
+                  className={`group relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[14px] ${
+                    active ? "bg-accent-soft text-accent" : "text-text"
                   }`}
                 >
+                  {active && (
+                    <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-accent" />
+                  )}
                   <span>{item.command?.icon}</span>
                   <span className="flex-1">{item.command?.label}</span>
                   {item.command?.hint && (

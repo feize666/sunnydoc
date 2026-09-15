@@ -49,6 +49,20 @@ for (const instance of [md, mdSafe]) {
   instance.use(wikilink);
 }
 
+// 标题锚点「#」链接：hover 标题时浮现，点击复制锚点 URL（分享/定位到章节）
+for (const instance of [md, mdSafe]) {
+  const defaultHeadingOpen = instance.renderer.rules.heading_open;
+  instance.renderer.rules.heading_open = (tokens, idx, options, env, self) => {
+    const id = tokens[idx].attrGet("id");
+    const rendered = defaultHeadingOpen
+      ? defaultHeadingOpen(tokens, idx, options, env, self)
+      : self.renderToken(tokens, idx, options);
+    return id
+      ? `${rendered}<a class="md-anchor" href="#${id}" title="复制链接">#</a>`
+      : rendered;
+  };
+}
+
 // —— 语雀 markdown 兼容 ——
 // 提示块：:::type [标题] ... :::
 // 折叠块：#+BEGIN_NOTE ... #+END_NOTE

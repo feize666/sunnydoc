@@ -633,7 +633,17 @@ export function Editor({
                   className="md-body mt-6"
                   onClick={(e) => {
                     handleCodeBlockCopy(e);
-                    const t = (e.target as HTMLElement).closest(".wikilink") as HTMLElement | null;
+                    const target = e.target as HTMLElement;
+                    const anchor = target.closest(".md-anchor") as HTMLElement | null;
+                    if (anchor) {
+                      e.preventDefault();
+                      const href = anchor.getAttribute("href") || "";
+                      navigator.clipboard
+                        .writeText(`${window.location.origin}${window.location.pathname}${href}`)
+                        .then(() => toast.success("已复制章节链接"));
+                      return;
+                    }
+                    const t = target.closest(".wikilink") as HTMLElement | null;
                     if (t?.dataset.wikilink && onOpenWikilink) {
                       onOpenWikilink(t.dataset.wikilink);
                     }
