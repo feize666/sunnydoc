@@ -327,6 +327,14 @@ class AddShareRequest(BaseModel):
     permission: str  # read / write
 
 
+class PublishTemplateRequest(BaseModel):
+    name: str
+    type: str  # flowchart / mindmap
+    data: str
+    description: str = ""
+    category: str = ""
+
+
 def _kb_permission(kb_id: str, user: dict) -> str:
     """返回用户对知识库的权限（owner/read/write），无权限或不存在时抛异常。"""
     kb = store.get_kb(kb_id)
@@ -2545,6 +2553,68 @@ async def collab_stream(doc_id: str, request: Request, current_user: dict = Depe
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
+
+
+# ---------- 社区模板 ----------
+
+@router.get("/templates")
+def list_templates(
+    type: str | None = None,
+    category: str | None = None,
+    q: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    current_user: dict = Depends(get_current_user),
+):
+    """社区模板列表（type/category/q 筛选，按使用次数 + 时间排序）。"""
+    items = store.list_templates(type, category, q, limit, offset)
+    return {"templates": items}
+
+
+@router.post("/templates")
+def publish_template(req: PublishTemplateRequest, current_user: dict = Depends(get_current_user)):
+    """发布一个社区模板（把当前流程图/思维导图共享给全站）。"""
+    name = (req.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="模板名称不能为空")
+    if req.type not in ("flowchart", "mindmap"):
+        raise HTTPException(status_code=400, detail="不支持的模板类型")
+    if not (req.data or "").strip():
+        raise HTTPException(status_code=400, detail="模板内容不能为空")
+    author_name = current_user.get("nickname") or current_user.get("username") or "用户"
+    tpl = store.add_template(
+        name=name,
+        type_=req.type,
+        data=req.data,
+        author_id=current_user["id"],
+        author_name=author_name,
+        description=(req.description or "").strip(),
+        category=(req.category or "").strip(),
+    )
+    _audit(current_user, "create", "template", tpl["id"], f"发布模板「{name}」")
+    return tpl
+
+
+@router.post("/templates/{tpl_id}/use")
+def use_template(tpl_id: str, current_user: dict = Depends(get_current_user)):
+    """记录一次模板使用（use_count + 1）。"""
+    if store.get_template(tpl_id) is None:
+        raise HTTPException(status_code=404, detail="模板不存在")
+    store.bump_template_use(tpl_id)
+    return {"used": tpl_id}
+
+
+@router.delete("/templates/{tpl_id}")
+def delete_template(tpl_id: str, current_user: dict = Depends(get_current_user)):
+    """删除社区模板（作者或管理员）。"""
+    tpl = store.get_template(tpl_id)
+    if tpl is None:
+        raise HTTPException(status_code=404, detail="模板不存在")
+    is_admin = current_user.get("role") == "admin"
+    if tpl.get("author_id") != current_user["id"] and not is_admin:
+        raise HTTPException(status_code=403, detail="只能删除自己发布的模板")
+    store.delete_template(tpl_id)
+    return {"deleted": tpl_id}
 
 
 @router.get("/notifications")

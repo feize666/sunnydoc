@@ -278,6 +278,24 @@ def init() -> None:
             """
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs (created_at)")
+        # 社区模板（流程图/思维导图，全局共享）
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS templates (
+                id varchar PRIMARY KEY,
+                name varchar,
+                type varchar,
+                data text,
+                description varchar,
+                category varchar,
+                author_id varchar,
+                author_name varchar,
+                use_count integer DEFAULT 0,
+                created_at double precision
+            )
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_templates_type ON templates (type)")
     conn.commit()
 
 
@@ -1873,3 +1891,123 @@ def list_audit_logs(limit: int = 200, offset: int = 0) -> list[dict[str, Any]]:
             (limit, offset),
         )
         return [_audit_from_row(r) for r in cur.fetchall()]
+
+
+# ---------- 社区模板（流程图/思维导图，全局共享） ----------
+
+def add_template(
+    name: str,
+    type_: str,
+    data: str,
+    author_id: str,
+    author_name: str,
+    description: str = "",
+    category: str = "",
+) -> dict[str, Any]:
+    tpl_id = uuid.uuid4().hex
+    created_at = time.time()
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO templates (id, name, type, data, description, category, author_id, author_name, use_count, created_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, %s)",
+            (tpl_id, name, type_, data, description, category, author_id, author_name, created_at),
+        )
+    conn.commit()
+    return {
+        "id": tpl_id,
+        "name": name,
+        "type": type_,
+        "data": data,
+        "description": description,
+        "category": category,
+        "author_id": author_id,
+        "author_name": author_name,
+        "use_count": 0,
+        "created_at": created_at,
+    }
+
+
+def list_templates(
+    type_: str | None = None,
+    category: str | None = None,
+    q: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    sql = "SELECT id, name, type, data, description, category, author_id, author_name, use_count, created_at FROM templates"
+    conds: list[str] = []
+    args: list[Any] = []
+    if type_:
+        conds.append("type = %s")
+        args.append(type_)
+    if category:
+        conds.append("category = %s")
+        args.append(category)
+    if q:
+        conds.append("name ILIKE %s")
+        args.append(f"%{q}%")
+    if conds:
+        sql += " WHERE " + " AND ".join(conds)
+    sql += " ORDER BY use_count DESC, created_at DESC LIMIT %s OFFSET %s"
+    args.extend([limit, offset])
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(sql, args)
+        return [
+            {
+                "id": r[0],
+                "name": r[1],
+                "type": r[2],
+                "data": r[3],
+                "description": r[4],
+                "category": r[5],
+                "author_id": r[6],
+                "author_name": r[7],
+                "use_count": r[8],
+                "created_at": r[9],
+            }
+            for r in cur.fetchall()
+        ]
+
+
+def get_template(tpl_id: str) -> dict[str, Any] | None:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, name, type, data, description, category, author_id, author_name, use_count, created_at FROM templates WHERE id = %s",
+            (tpl_id,),
+        )
+        r = cur.fetchone()
+        if r is None:
+            return None
+        return {
+            "id": r[0],
+            "name": r[1],
+            "type": r[2],
+            "data": r[3],
+            "description": r[4],
+            "category": r[5],
+            "author_id": r[6],
+            "author_name": r[7],
+            "use_count": r[8],
+            "created_at": r[9],
+        }
+
+
+def delete_template(tpl_id: str) -> bool:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM templates WHERE id = %s", (tpl_id,))
+        deleted = cur.rowcount > 0
+    conn.commit()
+    return deleted
+
+
+def bump_template_use(tpl_id: str) -> bool:
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute("UPDATE templates SET use_count = use_count + 1 WHERE id = %s", (tpl_id,))
+        updated = cur.rowcount > 0
+    conn.commit()
+    return updated

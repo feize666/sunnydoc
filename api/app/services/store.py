@@ -60,6 +60,7 @@ class DocStore:
         self._comments: list[dict[str, Any]] = []
         self._notifications: list[dict[str, Any]] = []
         self._audit_logs: list[dict[str, Any]] = []
+        self._templates: list[dict[str, Any]] = []
         # 启动时判定存储后端：PostgreSQL 可用则用库，否则 JSON 降级
         if db.available():
             self._backend = "db"
@@ -96,6 +97,7 @@ class DocStore:
                 self._comments = data.get("comments", [])
                 self._notifications = data.get("notifications", [])
                 self._audit_logs = data.get("audit_logs", [])
+                self._templates = data.get("templates", [])
         # 补齐旧数据缺失的字段，保证 all() 返回结构一致
         for d in self._docs:
             d.setdefault("folder_id", None)
@@ -141,6 +143,7 @@ class DocStore:
                     "comments": self._comments,
                     "notifications": self._notifications,
                     "audit_logs": self._audit_logs,
+                    "templates": self._templates,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -259,6 +262,78 @@ class DocStore:
         if self._backend == "db":
             return db.list_shares(kb_id)
         return [dict(s) for s in self._shares if s["kb_id"] == kb_id]
+
+    # ---------- 社区模板（流程图/思维导图，全局共享） ----------
+
+    def add_template(
+        self,
+        name: str,
+        type_: str,
+        data: str,
+        author_id: str,
+        author_name: str,
+        description: str = "",
+        category: str = "",
+    ) -> dict[str, Any]:
+        if self._backend == "db":
+            return db.add_template(name, type_, data, author_id, author_name, description, category)
+        tpl = {
+            "id": uuid.uuid4().hex,
+            "name": name,
+            "type": type_,
+            "data": data,
+            "description": description,
+            "category": category,
+            "author_id": author_id,
+            "author_name": author_name,
+            "use_count": 0,
+            "created_at": time.time(),
+        }
+        self._templates.insert(0, tpl)
+        self._save()
+        return tpl
+
+    def list_templates(
+        self,
+        type_: str | None = None,
+        category: str | None = None,
+        q: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        if self._backend == "db":
+            return db.list_templates(type_, category, q, limit, offset)
+        out = [dict(t) for t in self._templates if (not type_ or t["type"] == type_) and (not category or t.get("category") == category)]
+        if q:
+            ql = q.lower()
+            out = [t for t in out if ql in t["name"].lower()]
+        out.sort(key=lambda t: (-t.get("use_count", 0), -t.get("created_at", 0)))
+        return out[offset : offset + limit]
+
+    def get_template(self, tpl_id: str) -> dict[str, Any] | None:
+        if self._backend == "db":
+            return db.get_template(tpl_id)
+        return next((t for t in self._templates if t["id"] == tpl_id), None)
+
+    def delete_template(self, tpl_id: str) -> bool:
+        if self._backend == "db":
+            return db.delete_template(tpl_id)
+        before = len(self._templates)
+        self._templates = [t for t in self._templates if t["id"] != tpl_id]
+        if len(self._templates) != before:
+            self._save()
+            return True
+        return False
+
+    def bump_template_use(self, tpl_id: str) -> bool:
+        if self._backend == "db":
+            return db.bump_template_use(tpl_id)
+        for t in self._templates:
+            if t["id"] == tpl_id:
+                t["use_count"] = t.get("use_count", 0) + 1
+                self._save()
+                return True
+        return False
 
     # ---------- 文档收藏 ----------
 

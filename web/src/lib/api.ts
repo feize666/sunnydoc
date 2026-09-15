@@ -1258,3 +1258,52 @@ export function subscribeSSE(
   };
 }
 
+// ---------- 社区模板 ----------
+
+export interface CommunityTemplate {
+  id: string;
+  name: string;
+  type: string;
+  data: string;
+  description?: string;
+  category?: string;
+  author_id?: string;
+  author_name?: string;
+  use_count?: number;
+  created_at?: number;
+}
+
+export async function listCommunityTemplates(
+  type?: string,
+  q?: string,
+): Promise<CommunityTemplate[]> {
+  const params = new URLSearchParams();
+  if (type) params.set("type", type);
+  if (q) params.set("q", q);
+  const qs = params.toString();
+  const res = await request<{ templates: CommunityTemplate[] }>(`/templates${qs ? `?${qs}` : ""}`);
+  return res.templates ?? [];
+}
+
+export async function publishCommunityTemplate(input: {
+  name: string;
+  type: string;
+  data: string;
+  description?: string;
+  category?: string;
+}): Promise<CommunityTemplate> {
+  return request<CommunityTemplate>("/templates", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteCommunityTemplate(id: string): Promise<void> {
+  await request(`/templates/${id}`, { method: "DELETE" });
+}
+
+export async function useCommunityTemplate(id: string): Promise<void> {
+  await request(`/templates/${id}/use`, { method: "POST" });
+}
+
