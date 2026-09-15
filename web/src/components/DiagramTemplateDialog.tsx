@@ -63,6 +63,12 @@ export function DiagramTemplateDialog({
       .finally(() => setCommunityLoading(false));
   }, [open, tab, type, version]);
 
+  const filteredCommunity = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return community;
+    return community.filter((t) => t.name.toLowerCase().includes(q));
+  }, [community, search]);
+
   if (!open) return null;
 
   const label = type === "flowchart" ? "流程图" : "思维导图";
@@ -117,12 +123,6 @@ export function DiagramTemplateDialog({
     }
     handleApply(t.data, t.name);
   };
-
-  const filteredCommunity = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return community;
-    return community.filter((t) => t.name.toLowerCase().includes(q));
-  }, [community, search]);
 
   return (
     <div className="dialog-overlay" onClick={onClose}>
