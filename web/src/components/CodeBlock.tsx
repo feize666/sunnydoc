@@ -1,6 +1,7 @@
 "use client";
 
 import type { MouseEvent } from "react";
+import { copyText } from "@/lib/clipboard";
 
 /**
  * 代码块「复制」按钮的交互逻辑。
@@ -27,15 +28,4 @@ export function handleCodeBlockCopy(e: MouseEvent<Element>): void {
       btn.classList.remove("codeblock-copied");
     }, 2000);
   });
-}
-
-async function copyText(text: string): Promise<boolean> {
-  try {
-    if (!navigator.clipboard) return false;
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    // 剪贴板不可用时静默降级
-    return false;
-  }
 }

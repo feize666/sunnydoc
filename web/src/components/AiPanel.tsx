@@ -25,6 +25,7 @@ import { Tooltip } from "./Tooltip";
 import { useToast } from "./Toast";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useResizable } from "@/hooks/useResizable";
+import { copyText } from "@/lib/clipboard";
 import { chatStream, uploadChatAttachment, importChatAttachment, type Citation, type ChatMessage, type WebSource, type ChatAttachment, type Kb } from "@/lib/api";
 import {
   createSession,
@@ -262,12 +263,10 @@ export function AiPanel({
   const copyMessage = async (index: number) => {
     const msg = messages[index];
     if (!msg || !msg.content) return;
-    try {
-      await navigator.clipboard.writeText(msg.content);
+    const ok = await copyText(msg.content);
+    if (ok) {
       setCopiedIndex(index);
       setTimeout(() => setCopiedIndex((c) => (c === index ? null : c)), 2000);
-    } catch {
-      // 剪贴板不可用时静默降级
     }
   };
 

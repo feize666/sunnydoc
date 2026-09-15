@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createShare, revokeShare } from "@/lib/api";
+import { copyText } from "@/lib/clipboard";
 import { CloseIcon, CheckIcon } from "./icons";
 import { PasswordInput } from "./PasswordInput";
 
@@ -62,12 +63,10 @@ export function ShareDocDialog({
 
   const copyLink = async () => {
     if (!url) return;
-    try {
-      await navigator.clipboard.writeText(url);
+    const ok = await copyText(url);
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* ignore */
     }
   };
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { aiAssist, type AIAssistAction } from "@/lib/api";
+import { copyText } from "@/lib/clipboard";
 
 const ACTIONS: { key: AIAssistAction; label: string; icon: string }[] = [
   { key: "polish", label: "润色", icon: "✨" },
@@ -44,12 +45,10 @@ export function AiAssistPopover({
 
   const copy = async () => {
     if (!result) return;
-    try {
-      await navigator.clipboard.writeText(result);
+    const ok = await copyText(result);
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* ignore */
     }
   };
 

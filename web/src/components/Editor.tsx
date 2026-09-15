@@ -6,6 +6,7 @@ import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
 import { useToast } from "./Toast";
 import { updateDocument, subscribeSSE } from "@/lib/api";
+import { copyText } from "@/lib/clipboard";
 import type { Doc } from "@/data/docs";
 import type { RecentDoc, Backlink } from "@/lib/api";
 import { RichEditor } from "./RichEditor";
@@ -19,31 +20,6 @@ import { CopyIcon, CheckIcon, EditIcon, CodeIcon } from "./icons";
 import { useResizable } from "@/hooks/useResizable";
 
 type Mode = "preview" | "edit" | "source";
-
-/** 复制文本到剪贴板：clipboard API 优先，execCommand 兜底（兼容 http 非安全上下文）。 */
-async function copyText(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    /* fallthrough */
-  }
-  try {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    const ok = document.execCommand("copy");
-    document.body.removeChild(ta);
-    return ok;
-  } catch {
-    return false;
-  }
-}
 
 function parseTableData(value: string): string[][] {
   try {
@@ -350,12 +326,10 @@ export function Editor({
 
   const copyMarkdown = async () => {
     if (!doc) return;
-    try {
-      await navigator.clipboard.writeText(doc.body);
+    const ok = await copyText(doc.body);
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* 剪贴板不可用时静默降级 */
     }
   };
 
