@@ -1035,7 +1035,8 @@ export default function Home() {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      {view === "kb" ? (
+      <div key={view} className="anim-fade-in flex min-h-0 flex-1 flex-col">
+        {view === "kb" ? (
         <>
           <TitleBar
             openDocs={openKeys
@@ -1182,7 +1183,8 @@ export default function Home() {
           onLogout={handleLogout}
           onOpenSettings={() => setSettingsOpen(true)}
         />
-      )}
+        )}
+      </div>
 
       <CommandPalette
         open={paletteOpen}

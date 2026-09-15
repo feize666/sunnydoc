@@ -247,7 +247,11 @@ body {
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    transform 0.1s ease;
+}
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 .btn:disabled {
   opacity: 0.5;
@@ -267,7 +271,10 @@ body {
   width: 32px;
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+.icon-btn:active:not(:disabled) {
+  transform: scale(0.9);
 }
 /* 输入框：h-9 36px */
 .input {
@@ -432,7 +439,7 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 .btn-accent:active {
-  transform: translateY(0.5px);
+  transform: scale(0.97);
   filter: brightness(0.97);
 }
 .btn-accent:focus-visible {
