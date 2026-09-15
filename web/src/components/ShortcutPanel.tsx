@@ -70,7 +70,7 @@ export function ShortcutPanel({ open, onClose }: { open: boolean; onClose: () =>
   return (
     <>
       <div className="fixed inset-0 z-50 bg-black/30" onClick={onClose} />
-      <div className="glass anim-scale-in fixed left-1/2 top-[14%] z-50 w-[600px] max-w-[92vw] -translate-x-1/2 overflow-hidden rounded-xl shadow-lg">
+      <div className="panel anim-scale-in fixed left-1/2 top-[14%] z-50 w-[600px] max-w-[92vw] -translate-x-1/2 overflow-hidden rounded-xl">
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
           <div className="text-[15px] font-semibold text-text">快捷键</div>
           <button

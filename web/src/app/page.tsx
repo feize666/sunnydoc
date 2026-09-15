@@ -1338,7 +1338,7 @@ export default function Home() {
 
       {/* 全局拖拽导入遮罩 */}
       {dragOver && (
-        <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-accent/10 backdrop-blur-[2px]">
+        <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-accent/10">
           <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-accent bg-background px-12 py-10 shadow-xl">
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-accent">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />

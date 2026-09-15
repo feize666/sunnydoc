@@ -59,11 +59,6 @@
   /* 聚焦环 */
   --focus-ring: 0 0 0 3px rgba(47, 107, 255, 0.25);
 
-  /* 玻璃拟态 */
-  --glass-bg: rgba(255, 255, 255, 0.72);
-  --glass-blur: 12px;
-  --glass-border: rgba(255, 255, 255, 0.6);
-
   /* 滚动条 */
   --scrollbar: #cbd5e1;
   --scrollbar-hover: #94a3b8;
@@ -88,7 +83,7 @@
   --accent-hover: #6ea0ff;
   --accent-active: #3b82f6;
   --accent-deep: #3b82f6;
-  --accent-grad: linear-gradient(135deg, #7aa7ff 0%, #4f8bff 50%, #3b82f6 100%);
+  --accent-grad: linear-gradient(135deg, #8ab5ff 0%, #4f8bff 48%, #3b82f6 100%);
 
   --grad-blue-indigo: linear-gradient(135deg, #6ea0ff 0%, #4f8bff 45%, #8b7bff 100%);
 
@@ -110,10 +105,6 @@
   --shadow-glow: 0 0 0 1px rgba(79, 139, 255, 0.3), 0 10px 30px rgba(79, 139, 255, 0.28);
 
   --focus-ring: 0 0 0 3px rgba(79, 139, 255, 0.35);
-
-  --glass-bg: rgba(17, 24, 39, 0.72);
-  --glass-blur: 12px;
-  --glass-border: rgba(255, 255, 255, 0.08);
 
   --scrollbar: #334155;
   --scrollbar-hover: #475569;
@@ -221,12 +212,11 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
-/* 玻璃拟态（半透明 + backdrop-blur） */
-.glass {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
-  border: 1px solid var(--glass-border);
+/* 浮层面板（不透明纯色 + 描边 + 阴影，替代原毛玻璃方案） */
+.panel {
+  background: var(--background);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
 }
 
 /* 下拉菜单面板 */
@@ -326,9 +316,7 @@ body {
   z-index: 50;
   display: grid;
   place-items: center;
-  background: rgba(2, 6, 23, 0.4);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  background: rgba(2, 6, 23, 0.5);
   animation: overlay-in 0.16s ease;
 }
 .dialog-panel {
@@ -721,7 +709,7 @@ mark.search-hit {
   --tip-bg: #0f172a;
   --tip-fg: #f1f5f9;
   --tip-border: color-mix(in srgb, var(--accent) 42%, transparent);
-  background: color-mix(in srgb, var(--tip-bg) 96%, transparent);
+  background: var(--tip-bg);
   color: var(--tip-fg);
   border: 1px solid var(--tip-border);
   border-radius: var(--radius-md);
@@ -730,8 +718,6 @@ mark.search-hit {
   line-height: 1.45;
   text-align: center;
   box-shadow: var(--shadow-md);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
 }
 
 /* 箭头已移除：tooltip 改为 portal + fixed 定位，箭头方向随 placement 动态变化，故去掉静态三角 */

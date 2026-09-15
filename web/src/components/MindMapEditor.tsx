@@ -2333,7 +2333,7 @@ export function MindMapEditor({
           );
         })()}
         {/* 底部状态栏：节点统计 + 缩放控制 */}
-        <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-background/90 px-2.5 py-1 text-[11px] text-muted shadow-sm backdrop-blur">
+        <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-background px-2.5 py-1 text-[11px] text-muted shadow-sm">
           <span className="px-1">{nodes.length} 节点</span>
           <span className="h-3 w-px bg-line" />
           <button
