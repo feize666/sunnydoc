@@ -703,15 +703,15 @@ export function Editor({
                     spellCheck={false}
                   />
                 ) : doc.type === "table" ? (
-                  <TableEditor value={draft} onChange={setDraft} />
+                  <TableEditor key={doc.key} value={doc.body} onChange={setDraft} />
                 ) : doc.type === "board" ? (
-                  <BoardEditor key={doc.key} value={draft} onChange={setDraft} />
+                  <BoardEditor key={doc.key} value={doc.body} onChange={setDraft} />
                 ) : doc.type === "datasheet" ? (
-                  <DatasheetEditor key={doc.key} value={draft} onChange={setDraft} />
+                  <DatasheetEditor key={doc.key} value={doc.body} onChange={setDraft} />
                 ) : doc.type === "flowchart" ? (
-                  <FlowchartEditor key={doc.key} value={draft} onChange={setDraft} />
+                  <FlowchartEditor key={doc.key} value={doc.body} onChange={setDraft} />
                 ) : doc.type === "mindmap" ? (
-                  <MindMapEditor key={doc.key} value={draft} onChange={setDraft} />
+                  <MindMapEditor key={doc.key} value={doc.body} onChange={setDraft} />
                 ) : doc.type === "html" ? (
                   <textarea
                     value={draft}
@@ -722,7 +722,8 @@ export function Editor({
                   />
                 ) : (
                   <RichEditor
-                    value={draft}
+                    key={doc.key}
+                    value={doc.body}
                     onChange={setDraft}
                     placeholder="开始输入内容…"
                   />

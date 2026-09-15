@@ -38,7 +38,10 @@ function genId(): string {
 function parseMind(value: string): MindNode[] {
   try {
     const p = JSON.parse(value);
-    if (p && Array.isArray(p.nodes)) return p.nodes as MindNode[];
+    if (p && Array.isArray(p.nodes)) {
+      // 过滤掉缺 text 的节点（如误传入 flowchart 数据），避免渲染 n.text.length 崩溃
+      return (p.nodes as MindNode[]).filter((n) => n && typeof n.text === "string");
+    }
   } catch {
     /* fallthrough */
   }
