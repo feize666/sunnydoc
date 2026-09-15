@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { SearchResult } from "@/lib/api";
 
 export interface Command {
-  icon: string;
+  icon: ReactNode;
   label: string;
   hint?: string;
   action?: () => void;
@@ -212,7 +212,7 @@ export function CommandPalette({
                   {active && (
                     <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-accent" />
                   )}
-                  <span>{item.command?.icon}</span>
+                  <span className="grid w-5 shrink-0 place-items-center text-muted">{item.command?.icon}</span>
                   <span className="flex-1">{item.command?.label}</span>
                   {item.command?.hint && (
                     <span className="font-mono text-[12px] text-faint">{item.command.hint}</span>

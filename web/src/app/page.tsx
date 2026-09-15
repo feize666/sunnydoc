@@ -33,6 +33,7 @@ import type { NodeType } from "@/components/NewNodeMenu";
 import type { Doc, TreeNode, SortBy } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
 import { buildTree } from "@/lib/buildTree";
+import { ImportIcon, FolderIcon, RefreshIcon, SearchIcon, SunIcon, MoonIcon, SettingsIcon } from "@/components/icons";
 import {
   listDocuments,
   listFolders,
@@ -944,31 +945,31 @@ export default function Home() {
 
   const commands: Command[] = [
     {
-      icon: "📥",
+      icon: <ImportIcon size={15} />,
       label: "导入文档",
       hint: "Ctrl+I",
       action: openImport,
     },
     {
-      icon: "📁",
+      icon: <FolderIcon size={15} />,
       label: "新建文件夹",
       hint: "",
       action: () => setNewFolderOpen(true),
     },
     {
-      icon: "🔄",
+      icon: <RefreshIcon size={15} />,
       label: "刷新文档列表",
       hint: "",
       action: () => refreshList(),
     },
-    { icon: "🔍", label: "全文搜索", hint: "Ctrl+F" },
+    { icon: <SearchIcon size={15} />, label: "全文搜索", hint: "Ctrl+F" },
     {
-      icon: theme === "light" ? "🌙" : "☀️",
+      icon: theme === "light" ? <MoonIcon size={15} /> : <SunIcon size={15} />,
       label: "切换主题",
       hint: "Ctrl+Shift+T",
       action: () => setTheme((t) => (t === "light" ? "dark" : "light")),
     },
-    { icon: "⚙️", label: "系统设置", hint: "Ctrl+," },
+    { icon: <SettingsIcon size={15} />, label: "系统设置", hint: "Ctrl+," },
   ];
 
   // 公开分享视图（优先，无需登录）

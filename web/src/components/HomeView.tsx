@@ -7,6 +7,7 @@ import { Tooltip } from "./Tooltip";
 import { UserMenu } from "./UserMenu";
 import { ThemeToggle } from "./ThemeToggle";
 import { PlusIcon, TrashIcon, HistoryIcon, FolderIcon, EditIcon, FileIcon } from "./icons";
+import { EmptyState } from "./EmptyState";
 
 function ShareIcon({ size = 14 }: { size?: number }) {
   return (
@@ -318,18 +319,17 @@ export function HomeView({
                 ))}
               </div>
             ) : kbs.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line py-16">
-                <span className="grid h-14 w-14 place-items-center rounded-2xl bg-accent-soft text-accent">
-                  <FolderIcon size={28} />
-                </span>
-                <div className="text-sm text-muted">还没有知识库</div>
-                <button
-                  onClick={onCreateKb}
-                  className="btn btn-accent mt-1 text-white"
-                >
-                  创建第一个知识库
-                </button>
-              </div>
+              <EmptyState
+                icon={<FolderIcon size={24} />}
+                title="还没有知识库"
+                description="创建一个知识库，开始整理你的文档"
+                action={
+                  <button onClick={onCreateKb} className="btn btn-accent text-white">
+                    <PlusIcon size={14} />
+                    创建第一个知识库
+                  </button>
+                }
+              />
             ) : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {kbs.map((kb) => (
@@ -443,9 +443,11 @@ export function HomeView({
             </h2>
 
             {recent.length === 0 ? (
-              <div className="rounded-lg border border-line bg-surface px-4 py-8 text-center text-xs text-faint">
-                暂无最近浏览
-              </div>
+              <EmptyState
+                icon={<HistoryIcon size={20} />}
+                title="暂无最近浏览"
+                description="打开过的文档会显示在这里，方便快速回看"
+              />
             ) : (
               <ul className="overflow-hidden rounded-lg border border-line bg-background">
                 {recent.map((r, i) => (
@@ -493,9 +495,11 @@ export function HomeView({
             </h2>
 
             {favorites.length === 0 ? (
-              <div className="rounded-lg border border-line bg-surface px-4 py-8 text-center text-xs text-faint">
-                暂无收藏，在文档右上角点击「收藏」即可加入
-              </div>
+              <EmptyState
+                icon={<StarIcon size={20} />}
+                title="暂无收藏"
+                description="在文档右上角点击「收藏」即可加入"
+              />
             ) : (
               <ul className="overflow-hidden rounded-lg border border-line bg-background">
                 {favorites.map((d, i) => (
