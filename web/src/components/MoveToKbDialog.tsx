@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { moveDocumentToKb, type Kb } from "@/lib/api";
+import { useModalFocus } from "@/lib/useModalFocus";
 import { CloseIcon } from "./icons";
 
 export function MoveToKbDialog({
@@ -23,6 +24,8 @@ export function MoveToKbDialog({
 }) {
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const panelRef = useModalFocus<HTMLDivElement>(open, onClose, "移动到知识库");
 
   if (!open) return null;
 
@@ -48,10 +51,10 @@ export function MoveToKbDialog({
 
   return (
     <div className="dialog-overlay" onClick={onClose}>
-      <div className="dialog-panel w-[460px] max-w-[92vw]" onClick={(e) => e.stopPropagation()}>
+      <div ref={panelRef} className="dialog-panel w-[460px] max-w-[92vw]" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
           <span className="text-sm font-semibold">移动到知识库</span>
-          <button onClick={onClose} className="icon-btn text-muted hover:text-text">
+          <button onClick={onClose} aria-label="关闭" className="icon-btn text-muted hover:text-text">
             <CloseIcon size={16} />
           </button>
         </div>

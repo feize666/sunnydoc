@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { importDocumentAsync, getImportTask, importFromUrl } from "@/lib/api";
+import { useModalFocus } from "@/lib/useModalFocus";
 import { CloseIcon } from "./icons";
 
 type Phase = "idle" | "uploading" | "parsing" | "done" | "failed";
@@ -129,6 +130,8 @@ export function ImportDialog({
     }
   }, [urlInput, importingUrl, kbId, folderId, onImported]);
 
+  const panelRef = useModalFocus<HTMLDivElement>(open, onClose, "导入文档");
+
   if (!open) return null;
 
   const reset = () => {
@@ -144,6 +147,7 @@ export function ImportDialog({
   return (
     <div className="dialog-overlay" onClick={onClose}>
       <div
+        ref={panelRef}
         className="dialog-panel w-[560px] max-w-[92vw]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -151,6 +155,7 @@ export function ImportDialog({
           <span className="text-sm font-semibold">导入文档</span>
           <button
             onClick={onClose}
+            aria-label="关闭"
             className="icon-btn text-muted hover:text-text"
           >
             <CloseIcon size={16} />

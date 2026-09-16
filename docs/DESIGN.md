@@ -283,3 +283,40 @@ Tailwind 4 的层级顺序为 `theme < base < components < utilities`。
 - 窄屏收敛冗余文案：副标题 `hidden sm:block`；按钮用 `<span className="hidden sm:inline">完整文案</span>`
   + `<span className="sm:hidden">短文案</span>`。
 - `<480px` 时对话框自动 `width:100%` + `--radius-md`（由 `.dialog-panel` 媒体查询处理，无需业务方关心）。
+
+### 6.3 可访问性约定（WCAG AA）
+
+#### 对比度
+
+- 文本色按 WCAG AA **4.5:1** 校准，非文本（边框 / 图标）按 **3.0:1** 校准。
+- `--faint` 是准文本色（占位符 / 旁白 / 计数），已校准：**亮色 `#64748b` = 4.76:1**、
+  **暗色 `#8494a8` = 6.08:1**。**勿再调浅**——浅于这两个值就不达 AA。
+- 改任何文本 token 后必须重算对比度（公式：相对亮度 `L = 0.2126R + 0.7152G + 0.0722B`，
+  比值 `(L₁+0.05)/(L₂+0.05)`），并同时核对它落在 `--background` / `--surface` / `--surface-2` 上的表现。
+
+#### 图标按钮必须可访问
+
+- **纯图标按钮（无可见文本）必须有可访问名**：优先 `aria-label`（动态场景用 `title` 兜底）。
+- `Tooltip` 组件已内置自动注入：当子元素是「无文本且无 `aria-label` / `aria-labelledby` / `title`」
+  的单个元素时，自动把 `content` 注入为其 `aria-label`，并在气泡打开时用 `aria-describedby` 关联。
+  **因此被 `<Tooltip>` 包裹的图标按钮无需再写 `aria-label`**；含可见文本的按钮不会被覆盖。
+- 新写图标按钮统一用 `.icon-btn`（32px），不要另造 `grid h-6 w-6` / `h-7 w-7` 尺寸。
+
+#### 模态对话框必须可访问
+
+用 `useModalFocus`（`lib/useModalFocus.ts`）接管，它一次性解决四件事：
+
+```tsx
+const panelRef = useModalFocus<HTMLDivElement>(open, onClose, "对话框标题");
+// ...
+<div ref={panelRef} className="dialog-panel …">…</div>
+```
+
+1. **自动补语义**：`role="dialog"` / `aria-modal="true"` / `tabindex="-1"` / `aria-label`（不覆盖已有值）。
+2. **Esc 关闭**：内置**对话框栈**，嵌套时只有最上层响应（内层先关）；若内层已
+   `preventDefault()`（如标签建议下拉）则不误关整个对话框。
+3. **焦点陷阱**：Tab / Shift+Tab 在面板内循环；无可聚焦元素时聚焦面板自身。
+4. **焦点归还**：打开时记住触发元素，关闭后把焦点还回去。
+
+> 嵌套对话框（如设置页内的「另存为预设」）**各自调用一次 hook** 即可，无需手动管理层级。
+> 若 `onClose` / 标题依赖下方才定义的变量，用 `useRef` 惰性转发，避免 TDZ 报错。

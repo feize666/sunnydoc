@@ -67,7 +67,8 @@ export function AiAssistPopover({
           <span className="text-[13px] font-semibold text-text">AI 助手</span>
           <button
             onClick={onClose}
-            className="grid h-6 w-6 place-items-center rounded text-faint hover:bg-hover hover:text-text"
+            aria-label="关闭"
+            className="icon-btn text-faint hover:text-text"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 6L6 18M6 6l12 12" />

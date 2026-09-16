@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createDocument } from "@/lib/api";
+import { useModalFocus } from "@/lib/useModalFocus";
 import { CloseIcon } from "./icons";
 import { DOC_TEMPLATES, getTemplate } from "@/lib/templates";
 
@@ -21,6 +22,8 @@ export function NewDocDialog({
   const [templateId, setTemplateId] = useState("blank");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const panelRef = useModalFocus<HTMLDivElement>(open, onClose, "新建文档");
 
   if (!open) return null;
 
@@ -59,6 +62,7 @@ export function NewDocDialog({
   return (
     <div className="dialog-overlay" onClick={onClose}>
       <div
+        ref={panelRef}
         className="dialog-panel w-[640px] max-w-[94vw]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -66,6 +70,7 @@ export function NewDocDialog({
           <span className="text-sm font-semibold">新建文档</span>
           <button
             onClick={onClose}
+            aria-label="关闭"
             className="icon-btn text-muted hover:text-text"
           >
             <CloseIcon size={16} />

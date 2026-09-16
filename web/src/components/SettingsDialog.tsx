@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { CloseIcon, CheckIcon } from "./icons";
 import { Tooltip } from "./Tooltip";
+import { useModalFocus } from "@/lib/useModalFocus";
 import { ThemeToggle } from "./ThemeToggle";
 import {
   ConfirmDialog,
@@ -268,6 +269,21 @@ export function SettingsDialog({
     return opts;
   }, [customList]);
 
+  const panelRef = useModalFocus<HTMLDivElement>(open, onClose, "系统设置");
+  // 内层嵌套框：各自独立入栈，Esc 时先关闭最上层。
+  // 用 ref 惰性转发，避免依赖下方才定义的 closeSaveAsDialog（TDZ）。
+  const closeSaveAsRef = useRef<() => void>(() => {});
+  const saveAsRef = useModalFocus<HTMLDivElement>(
+    saveAsDialog,
+    () => closeSaveAsRef.current(),
+    "另存为命名预设",
+  );
+  const providerRef = useModalFocus<HTMLDivElement>(
+    !!pendingProviderChange,
+    () => setPendingProviderChange(null),
+    "切换供应商确认",
+  );
+
   if (!open) return null;
 
   const applyProvider = (pid: string) => {
@@ -435,6 +451,7 @@ export function SettingsDialog({
     setSaveAsName("");
     setSaveAsMsg("");
   };
+  closeSaveAsRef.current = closeSaveAsDialog;
 
   const doSaveAs = async () => {
     const name = saveAsName.trim();
@@ -529,6 +546,7 @@ export function SettingsDialog({
       }}
     >
       <div
+        ref={panelRef}
         className="dialog-panel flex max-h-[85vh] w-[640px] max-w-[94vw] flex-col"
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -536,6 +554,7 @@ export function SettingsDialog({
           <div className="text-[15px] font-semibold text-text">系统设置</div>
           <button
             onClick={onClose}
+            aria-label="关闭"
             className="icon-btn text-faint hover:text-text"
           >
             <CloseIcon size={15} />
@@ -858,6 +877,7 @@ export function SettingsDialog({
           }}
         >
           <div
+            ref={saveAsRef}
             className="dialog-panel w-[420px] max-w-[92vw] p-4"
             onMouseDown={(e) => e.stopPropagation()}
           >
@@ -908,6 +928,7 @@ export function SettingsDialog({
           }}
         >
           <div
+            ref={providerRef}
             className="dialog-panel w-[420px] max-w-[92vw] p-4"
             onMouseDown={(e) => e.stopPropagation()}
           >

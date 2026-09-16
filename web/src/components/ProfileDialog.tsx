@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { updateMe, changePassword, setToken, type User } from "@/lib/api";
+import { useModalFocus } from "@/lib/useModalFocus";
 import { CloseIcon } from "./icons";
 import { PasswordInput } from "./PasswordInput";
 
@@ -40,6 +41,8 @@ export function ProfileDialog({
       setPwdDone(false);
     }
   }, [open, user]);
+
+  const panelRef = useModalFocus<HTMLDivElement>(open, onClose, "个人信息");
 
   if (!open) return null;
 
@@ -95,6 +98,7 @@ export function ProfileDialog({
       onClick={onClose}
     >
       <div
+        ref={panelRef}
         className="dialog-panel w-[480px] max-w-[92vw] overflow-hidden rounded-xl border border-line bg-background"
         onClick={(e) => e.stopPropagation()}
       >
@@ -102,6 +106,7 @@ export function ProfileDialog({
           <span className="text-sm font-semibold">个人信息</span>
           <button
             onClick={onClose}
+            aria-label="关闭"
             className="icon-btn text-muted hover:text-text"
           >
             <CloseIcon size={16} />

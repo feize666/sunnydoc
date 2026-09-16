@@ -25,7 +25,8 @@ export function FavoritesPopover({
           <span className="text-[14px] font-semibold text-text">我的收藏</span>
           <button
             onClick={onClose}
-            className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
+            aria-label="关闭"
+            className="icon-btn text-faint hover:text-text"
           >
             <CloseIcon size={14} />
           </button>

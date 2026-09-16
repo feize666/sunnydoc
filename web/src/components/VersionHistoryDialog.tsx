@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { listDocVersions, rollbackDocument, type DocVersion } from "@/lib/api";
 import { renderMarkdown } from "@/lib/markdown";
 import { CloseIcon } from "./icons";
+import { useModalFocus } from "@/lib/useModalFocus";
 import { useToast } from "./Toast";
 
 function formatTime(ts: number): string {
@@ -97,6 +98,8 @@ export function VersionHistoryDialog({
     }
   }, [open, load]);
 
+  const panelRef = useModalFocus<HTMLDivElement>(open && !!docId, onClose, "版本历史");
+
   if (!open || !docId) return null;
 
   const rollback = async (versionId: string) => {
@@ -136,6 +139,7 @@ export function VersionHistoryDialog({
   return (
     <div className="dialog-overlay" onClick={onClose}>
       <div
+        ref={panelRef}
         className="dialog-panel flex max-h-[72vh] w-[720px] max-w-[94vw] flex-col"
         onClick={(e) => e.stopPropagation()}
       >
@@ -143,6 +147,7 @@ export function VersionHistoryDialog({
           <div className="text-[15px] font-semibold text-text">版本历史</div>
           <button
             onClick={onClose}
+            aria-label="关闭"
             className="icon-btn text-faint hover:text-text"
           >
             <CloseIcon size={15} />

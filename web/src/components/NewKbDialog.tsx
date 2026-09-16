@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createKb, updateKb, type Kb } from "@/lib/api";
+import { useModalFocus } from "@/lib/useModalFocus";
 import { CloseIcon } from "./icons";
 
 export function NewKbDialog({
@@ -30,6 +31,8 @@ export function NewKbDialog({
     }
   }, [open, kb]);
 
+  const panelRef = useModalFocus<HTMLDivElement>(open, onClose, kb ? "编辑知识库" : "新建知识库");
+
   if (!open) return null;
 
   const handleSubmit = async () => {
@@ -57,6 +60,7 @@ export function NewKbDialog({
   return (
     <div className="dialog-overlay" onClick={onClose}>
       <div
+        ref={panelRef}
         className="dialog-panel w-[460px] max-w-[92vw]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -66,6 +70,7 @@ export function NewKbDialog({
           </span>
           <button
             onClick={onClose}
+            aria-label="关闭"
             className="icon-btn text-muted hover:text-text"
           >
             <CloseIcon size={16} />

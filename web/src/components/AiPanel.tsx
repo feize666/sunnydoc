@@ -928,6 +928,7 @@ export function AiPanel({
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={loading || uploading}
+              aria-label={uploading ? "正在上传附件" : "添加附件"}
               className="icon-btn border border-line bg-background text-muted disabled:opacity-50"
             >
               {uploading ? (

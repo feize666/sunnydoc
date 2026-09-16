@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { exportDocuments, type ExportFormat } from "@/lib/api";
+import { useModalFocus } from "@/lib/useModalFocus";
 import { CloseIcon } from "./icons";
 
 const FORMATS: {
@@ -64,6 +65,8 @@ export function ExportDialog({
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const panelRef = useModalFocus<HTMLDivElement>(open, onClose, "导出文档");
+
   if (!open) return null;
 
   const handleExport = async () => {
@@ -113,6 +116,7 @@ export function ExportDialog({
   return (
     <div className="dialog-overlay" onClick={onClose}>
       <div
+        ref={panelRef}
         className="dialog-panel w-[560px] max-w-[92vw]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -120,6 +124,7 @@ export function ExportDialog({
           <span className="text-sm font-semibold">导出文档</span>
           <button
             onClick={onClose}
+            aria-label="关闭"
             className="icon-btn text-muted hover:text-text"
           >
             <CloseIcon size={16} />

@@ -201,7 +201,8 @@ export function CommentPanel({
         </span>
         <button
           onClick={onClose}
-          className="grid h-7 w-7 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
+          aria-label="关闭评论"
+          className="icon-btn text-faint hover:text-text"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M18 6L6 18M6 6l12 12" />

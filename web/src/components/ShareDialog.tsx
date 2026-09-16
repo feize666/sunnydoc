@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { Kb, KbShare } from "@/lib/api";
 import { listShares, addShare, removeShare, searchUsers, type UserBrief } from "@/lib/api";
 import { CloseIcon, TrashIcon } from "./icons";
+import { useModalFocus } from "@/lib/useModalFocus";
 
 function ShareIcon({ size = 14 }: { size?: number }) {
   return (
@@ -82,6 +83,8 @@ export function ShareDialog({
     };
   }, [query, open, kb]);
 
+  const panelRef = useModalFocus<HTMLDivElement>(open && !!kb, onClose, "共享与协作");
+
   if (!open || !kb) return null;
 
   const handleAdd = async (u: UserBrief, permission: "read" | "write") => {
@@ -124,6 +127,7 @@ export function ShareDialog({
   return (
     <div className="dialog-overlay" onClick={onClose}>
       <div
+        ref={panelRef}
         className="dialog-panel flex max-h-[80vh] w-[460px] max-w-[92vw] flex-col"
         onClick={(e) => e.stopPropagation()}
       >
@@ -139,6 +143,7 @@ export function ShareDialog({
           </div>
           <button
             onClick={onClose}
+            aria-label="关闭"
             className="icon-btn text-faint hover:text-text"
           >
             <CloseIcon size={15} />

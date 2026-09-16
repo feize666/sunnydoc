@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useModalFocus } from "@/lib/useModalFocus";
 import { CloseIcon } from "./icons";
 
 /** 通用重命名弹窗（文档 / 文件夹）。 */
@@ -24,6 +25,8 @@ export function RenameDialog({
     if (open) setName(initialName);
   }, [open, initialName]);
 
+  const panelRef = useModalFocus<HTMLDivElement>(open, onClose, title);
+
   if (!open) return null;
 
   const submit = async () => {
@@ -41,6 +44,7 @@ export function RenameDialog({
   return (
     <div className="dialog-overlay" onClick={onClose}>
       <div
+        ref={panelRef}
         className="dialog-panel w-[360px] max-w-[92vw]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -48,6 +52,7 @@ export function RenameDialog({
           <div className="text-[15px] font-semibold text-text">{title}</div>
           <button
             onClick={onClose}
+            aria-label="关闭"
             className="icon-btn text-faint hover:text-text"
           >
             <CloseIcon size={15} />

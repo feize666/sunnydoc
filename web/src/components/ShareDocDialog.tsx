@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { createShare, revokeShare } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 import { CloseIcon, CheckIcon } from "./icons";
+import { useModalFocus } from "@/lib/useModalFocus";
 import { PasswordInput } from "./PasswordInput";
 
 export function ShareDocDialog({
@@ -32,6 +33,8 @@ export function ShareDocDialog({
       setExpiry("forever");
     }
   }, [open, doc]);
+
+  const panelRef = useModalFocus<HTMLDivElement>(open && !!doc, onClose, "分享文档链接");
 
   if (!open || !doc) return null;
 
@@ -84,6 +87,7 @@ export function ShareDocDialog({
   return (
     <div className="dialog-overlay" onClick={onClose}>
       <div
+        ref={panelRef}
         className="dialog-panel w-[460px] max-w-[92vw]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -94,6 +98,7 @@ export function ShareDocDialog({
           </div>
           <button
             onClick={onClose}
+            aria-label="关闭"
             className="icon-btn text-faint hover:text-text"
           >
             <CloseIcon size={15} />

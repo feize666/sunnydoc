@@ -1181,13 +1181,13 @@ export function RichEditor({
             <>
               <div className="fixed inset-0 z-10" onClick={() => setAlignOpen(false)} />
               <div className="menu-panel absolute left-0 top-full z-40 mt-1 flex gap-0.5 p-1">
-                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { (editor.chain().focus() as any).setTextAlign("left").run(); setAlignOpen(false); }} className={`icon-btn ${editor.isActive({ textAlign: "left" }) ? "tool-btn-on" : "text-muted"}`} title="左对齐">
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { (editor.chain().focus() as any).setTextAlign("left").run(); setAlignOpen(false); }} aria-label="左对齐" className={`icon-btn ${editor.isActive({ textAlign: "left" }) ? "tool-btn-on" : "text-muted"}`} title="左对齐">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h10M4 18h16" /></svg>
                 </button>
-                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { (editor.chain().focus() as any).setTextAlign("center").run(); setAlignOpen(false); }} className={`icon-btn ${editor.isActive({ textAlign: "center" }) ? "tool-btn-on" : "text-muted"}`} title="居中对齐">
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { (editor.chain().focus() as any).setTextAlign("center").run(); setAlignOpen(false); }} aria-label="居中对齐" className={`icon-btn ${editor.isActive({ textAlign: "center" }) ? "tool-btn-on" : "text-muted"}`} title="居中对齐">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M8 12h8M4 18h16" /></svg>
                 </button>
-                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { (editor.chain().focus() as any).setTextAlign("right").run(); setAlignOpen(false); }} className={`icon-btn ${editor.isActive({ textAlign: "right" }) ? "tool-btn-on" : "text-muted"}`} title="右对齐">
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { (editor.chain().focus() as any).setTextAlign("right").run(); setAlignOpen(false); }} aria-label="右对齐" className={`icon-btn ${editor.isActive({ textAlign: "right" }) ? "tool-btn-on" : "text-muted"}`} title="右对齐">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M14 12h6M4 18h16" /></svg>
                 </button>
               </div>
@@ -1358,6 +1358,7 @@ export function RichEditor({
             type="button"
             onClick={() => jumpToMatch(findIdx - 1)}
             disabled={matches.length === 0}
+            aria-label="上一个"
             className="icon-btn text-muted"
             title="上一个"
           >
@@ -1367,6 +1368,7 @@ export function RichEditor({
             type="button"
             onClick={() => jumpToMatch(findIdx + 1)}
             disabled={matches.length === 0}
+            aria-label="下一个匹配"
             className="icon-btn text-muted"
             title="下一个"
           >
@@ -1392,6 +1394,7 @@ export function RichEditor({
             type="button"
             onClick={() => setFindOpen(false)}
             className="ml-auto icon-btn text-muted"
+            aria-label="关闭查找"
             title="关闭"
           >
             <CloseIcon size={14} />

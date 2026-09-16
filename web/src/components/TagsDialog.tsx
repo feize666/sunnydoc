@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { setDocTags, listTags } from "@/lib/api";
+import { useModalFocus } from "@/lib/useModalFocus";
 import { CloseIcon } from "./icons";
 import { useToast } from "./Toast";
 
@@ -45,6 +46,8 @@ export function TagsDialog({
       .slice(0, 8);
   }, [input, allTags, tags]);
 
+  const panelRef = useModalFocus<HTMLDivElement>(open && !!docId, onClose, "文档标签");
+
   if (!open || !docId) return null;
 
   const addTag = (raw?: string) => {
@@ -79,6 +82,7 @@ export function TagsDialog({
   return (
     <div className="dialog-overlay" onClick={onClose}>
       <div
+        ref={panelRef}
         className="dialog-panel w-[420px] max-w-[92vw]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -86,6 +90,7 @@ export function TagsDialog({
           <div className="text-[15px] font-semibold text-text">文档标签</div>
           <button
             onClick={onClose}
+            aria-label="关闭"
             className="icon-btn text-faint hover:text-text"
           >
             <CloseIcon size={15} />

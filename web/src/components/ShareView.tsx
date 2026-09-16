@@ -117,7 +117,8 @@ export function ShareView({ token }: { token: string }) {
         <div className="flex-1" />
         <button
           onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
-          className="icon-btn text-muted hover:text-text hover:text-text"
+          aria-label={theme === "light" ? "切换到暗色主题" : "切换到亮色主题"}
+          className="icon-btn text-muted hover:text-text"
         >
           {theme === "light" ? (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">

@@ -14,6 +14,7 @@ import {
   type CommunityTemplate,
 } from "@/lib/api";
 import { useToast } from "./Toast";
+import { useModalFocus } from "@/lib/useModalFocus";
 
 /**
  * 流程图 / 思维导图「模板」对话框。
@@ -69,9 +70,10 @@ export function DiagramTemplateDialog({
     return community.filter((t) => t.name.toLowerCase().includes(q));
   }, [community, search]);
 
-  if (!open) return null;
-
   const label = type === "flowchart" ? "流程图" : "思维导图";
+  const panelRef = useModalFocus<HTMLDivElement>(open, onClose, `${label}模板`);
+
+  if (!open) return null;
 
   const handleSaveLocal = () => {
     const n = name.trim();
@@ -127,6 +129,7 @@ export function DiagramTemplateDialog({
   return (
     <div className="dialog-overlay" onClick={onClose}>
       <div
+        ref={panelRef}
         className="dialog-panel w-[500px] max-w-[92vw]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -134,8 +137,9 @@ export function DiagramTemplateDialog({
           <span className="text-sm font-semibold">{label}模板</span>
           <button
             onClick={onClose}
-            className="icon-btn text-muted hover:text-text"
+            aria-label="关闭"
             title="关闭"
+            className="icon-btn text-muted hover:text-text"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M18 6L6 18M6 6l12 12" />

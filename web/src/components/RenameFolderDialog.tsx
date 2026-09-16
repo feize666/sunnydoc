@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { renameFolder, type Folder } from "@/lib/api";
+import { useModalFocus } from "@/lib/useModalFocus";
 import { CloseIcon } from "./icons";
 
 export function RenameFolderDialog({
@@ -23,6 +24,8 @@ export function RenameFolderDialog({
       setError(null);
     }
   }, [folder]);
+
+  const panelRef = useModalFocus<HTMLDivElement>(!!folder, onClose, "重命名文件夹");
 
   if (!folder) return null;
 
@@ -47,6 +50,7 @@ export function RenameFolderDialog({
   return (
     <div className="dialog-overlay" onClick={onClose}>
       <div
+        ref={panelRef}
         className="dialog-panel w-[420px] max-w-[92vw]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -54,6 +58,7 @@ export function RenameFolderDialog({
           <span className="text-sm font-semibold">重命名文件夹</span>
           <button
             onClick={onClose}
+            aria-label="关闭"
             className="icon-btn text-muted hover:text-text"
           >
             <CloseIcon size={16} />

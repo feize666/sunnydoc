@@ -14,6 +14,7 @@ import { CloseIcon, PlusIcon } from "./icons";
 import { useToast } from "./Toast";
 import { AuditLogView } from "./AuditLogView";
 import { PasswordInput } from "./PasswordInput";
+import { useModalFocus } from "@/lib/useModalFocus";
 
 function formatTime(ts?: number): string {
   if (!ts) return "-";
@@ -337,6 +338,7 @@ function UserFormDialog({
 
   const title = isCreate ? "新增用户" : isReset ? "重置密码" : "编辑用户";
   const targetUser = !isCreate ? (target as { user: User }).user : null;
+  const panelRef = useModalFocus<HTMLDivElement>(true, onClose, title);
 
   return (
     <div
@@ -344,6 +346,7 @@ function UserFormDialog({
       onClick={onClose}
     >
       <div
+        ref={panelRef}
         className="dialog-panel w-[420px] max-w-[92vw] overflow-hidden rounded-xl border border-line bg-background"
         onClick={(e) => e.stopPropagation()}
       >
@@ -351,6 +354,7 @@ function UserFormDialog({
           <span className="text-sm font-semibold">{title}</span>
           <button
             onClick={onClose}
+            aria-label="关闭"
             className="icon-btn text-muted hover:text-text"
           >
             <CloseIcon size={16} />

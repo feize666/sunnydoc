@@ -15,10 +15,12 @@
   --hover: #eef4ff;
   --active: #dbeafe;
 
-  /* 文本 */
+  /* 文本：三级层级 text > muted > faint。
+     faint 为准文本色（占位符 / 旁白 / 次数统计），已按 WCAG AA 校准：
+     亮色 4.76:1（≥4.5），暗色 6.08:1 —— 勿再调浅，否则弱文字不可读。 */
   --text: #0f172a;
   --muted: #475569;
-  --faint: #94a3b8;
+  --faint: #64748b;
 
   /* 边框 */
   --line: #e2e8f0;
@@ -83,9 +85,10 @@
   --hover: #24324a;
   --active: #1e3a8a;
 
+  /* 暗色 faint：6.08:1，同样满足 AA 正文（勿调浅） */
   --text: #e2e8f0;
   --muted: #94a3b8;
-  --faint: #64748b;
+  --faint: #8494a8;
 
   --line: #273549;
   --line-strong: #3b4a63;
@@ -125,8 +128,8 @@
   --hero-glow: rgba(120, 160, 255, 0.24);
   --hero-grid-line: rgba(255, 255, 255, 0.1);
 
-  /* 深色主题下拉箭头：改用 --faint (#64748b) 描边 */
-  --chevron-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  /* 深色主题下拉箭头：改用 --faint (#8494a8) 描边 */
+  --chevron-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238494a8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 /* 映射为 Tailwind 可用的颜色 / 圆角 / 阴影变量（bg-* / text-* / rounded-* / shadow-*） */

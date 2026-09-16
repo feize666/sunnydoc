@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
 import { AlertIcon } from "./icons";
+import { useModalFocus } from "@/lib/useModalFocus";
 
 export function ConfirmDialog({
   open,
@@ -22,20 +22,14 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onCancel]);
+  const panelRef = useModalFocus<HTMLDivElement>(open, onCancel, title);
 
   if (!open) return null;
 
   return (
     <div className="dialog-overlay" onClick={onCancel}>
       <div
+        ref={panelRef}
         className="dialog-panel w-[400px] max-w-[92vw]"
         onClick={(e) => e.stopPropagation()}
       >
