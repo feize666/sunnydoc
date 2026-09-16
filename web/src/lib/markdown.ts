@@ -5,21 +5,6 @@ import anchor from "markdown-it-anchor";
 import taskLists from "markdown-it-task-lists";
 import { createHighlighterCore, type HighlighterCore } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
-import javascript from "shiki/langs/javascript.mjs";
-import typescript from "shiki/langs/typescript.mjs";
-import python from "shiki/langs/python.mjs";
-import json from "shiki/langs/json.mjs";
-import bash from "shiki/langs/bash.mjs";
-import shell from "shiki/langs/shell.mjs";
-import sql from "shiki/langs/sql.mjs";
-import css from "shiki/langs/css.mjs";
-import html from "shiki/langs/html.mjs";
-import xml from "shiki/langs/xml.mjs";
-import mdLang from "shiki/langs/markdown.mjs";
-import yaml from "shiki/langs/yaml.mjs";
-import java from "shiki/langs/java.mjs";
-import go from "shiki/langs/go.mjs";
-import rust from "shiki/langs/rust.mjs";
 import oneDarkPro from "shiki/themes/one-dark-pro.mjs";
 import githubLight from "shiki/themes/github-light.mjs";
 
@@ -297,29 +282,36 @@ const LANG_ALIAS: Record<string, string> = {
 const SHIKI_THEME_DARK = "one-dark-pro";
 const SHIKI_THEME_LIGHT = "github-light";
 
+// 支持高亮的语言：按需动态 import，避免首屏打包全部语言语法（原本静态引入 15 种
+// 语言会让共享 chunk 增加约 1MB+）。只有文档实际出现该语言代码块时才会下载。
+const LANG_LOADERS: Record<string, () => Promise<{ default: unknown }>> = {
+  javascript: () => import("shiki/langs/javascript.mjs"),
+  typescript: () => import("shiki/langs/typescript.mjs"),
+  python: () => import("shiki/langs/python.mjs"),
+  json: () => import("shiki/langs/json.mjs"),
+  bash: () => import("shiki/langs/bash.mjs"),
+  shell: () => import("shiki/langs/shell.mjs"),
+  sql: () => import("shiki/langs/sql.mjs"),
+  css: () => import("shiki/langs/css.mjs"),
+  html: () => import("shiki/langs/html.mjs"),
+  xml: () => import("shiki/langs/xml.mjs"),
+  markdown: () => import("shiki/langs/markdown.mjs"),
+  yaml: () => import("shiki/langs/yaml.mjs"),
+  java: () => import("shiki/langs/java.mjs"),
+  go: () => import("shiki/langs/go.mjs"),
+  rust: () => import("shiki/langs/rust.mjs"),
+};
+
 let highlighterPromise: Promise<HighlighterCore> | null = null;
+/** 已按需加载进 highlighter 的语言（规范名） */
+const loadedLangs = new Set<string>();
 
 function getHighlighter(): Promise<HighlighterCore> {
   if (!highlighterPromise) {
     highlighterPromise = createHighlighterCore({
+      // 只预载主题；语言全部按需加载
       themes: [oneDarkPro, githubLight],
-      langs: [
-        javascript,
-        typescript,
-        python,
-        json,
-        bash,
-        shell,
-        sql,
-        css,
-        html,
-        xml,
-        mdLang,
-        yaml,
-        java,
-        go,
-        rust,
-      ],
+      langs: [],
       // forgiving: 个别语法含 JS 引擎无法模拟的 oniguruma 特性时，
       // 跳过不支持的 pattern 而不是抛错，保证其余部分仍能正常高亮。
       engine: createJavaScriptRegexEngine({ forgiving: true }),
@@ -429,12 +421,20 @@ export async function renderMarkdown(
 
   const shikiTheme = themeName === "dark" ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT;
   let out = html;
-  blocks.forEach((block, i) => {
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
     const placeholder = `<span data-shiki-block="${i}"></span>`;
     const normalized = normalizeLang(block.lang);
     let body: string;
-    if (highlighter && normalized) {
+    // 该语言有按需加载器才尝试加载；语言包下载失败不影响其余代码块。
+    const load = normalized ? LANG_LOADERS[normalized] : undefined;
+    if (highlighter && normalized && load) {
       try {
+        if (!loadedLangs.has(normalized)) {
+          const mod = await load();
+          await highlighter.loadLanguage(mod.default as never);
+          loadedLangs.add(normalized);
+        }
         body = highlighter.codeToHtml(block.code, {
           lang: normalized,
           theme: shikiTheme,
@@ -446,7 +446,7 @@ export async function renderMarkdown(
       body = plainCodeHtml(block.code);
     }
     out = out.replace(placeholder, codeBlockHtml(block.lang, body));
-  });
+  }
   return out;
 }
 

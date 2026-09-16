@@ -9,16 +9,18 @@ import { updateDocument, subscribeSSE } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 import type { Doc } from "@/data/docs";
 import type { RecentDoc, Backlink } from "@/lib/api";
-import { RichEditor } from "./RichEditor";
-import { TableEditor } from "./TableEditor";
-import { BoardEditor } from "./BoardEditor";
-import { DatasheetEditor } from "./DatasheetEditor";
-import { MindMapEditor } from "./MindMapEditor";
-import { FlowchartEditor } from "./FlowchartEditor";
-import { AiAssistPopover } from "./AiAssistPopover";
-import { ErrorBoundary } from "./ErrorBoundary";
-import { CopyIcon, CheckIcon, EditIcon, CodeIcon } from "./icons";
 import { useResizable } from "@/hooks/useResizable";
+import { ErrorBoundary } from "./ErrorBoundary";
+import { AiAssistPopover } from "./AiAssistPopover";
+import {
+  LazyFlowchartEditor,
+  LazyMindMapEditor,
+  LazyBoardEditor,
+  LazyDatasheetEditor,
+  LazyTableEditor,
+  LazyRichEditor,
+} from "./LazyEditors";
+import { CopyIcon, CheckIcon, EditIcon, CodeIcon } from "./icons";
 
 type Mode = "preview" | "edit" | "source";
 
@@ -607,19 +609,19 @@ export function Editor({
                 </div>
               ) : doc.type === "flowchart" ? (
                 <div className="mt-6 overflow-hidden rounded-lg border border-line">
-                  <FlowchartEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly />
+                  <LazyFlowchartEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly />
                 </div>
               ) : doc.type === "mindmap" ? (
                 <div className="mt-6 overflow-hidden rounded-lg border border-line">
-                  <MindMapEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly />
+                  <LazyMindMapEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly />
                 </div>
               ) : doc.type === "board" ? (
                 <div className="mt-6 overflow-hidden rounded-lg border border-line">
-                  <BoardEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly />
+                  <LazyBoardEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly />
                 </div>
               ) : doc.type === "datasheet" ? (
                 <div className="mt-6 overflow-hidden rounded-lg border border-line">
-                  <DatasheetEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly />
+                  <LazyDatasheetEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly />
                 </div>
               ) : doc.type === "html" ? (
                 <div
@@ -719,15 +721,15 @@ export function Editor({
                     spellCheck={false}
                   />
                 ) : doc.type === "table" ? (
-                  <TableEditor key={doc.key} value={doc.body} onChange={setDraft} />
+                  <LazyTableEditor key={doc.key} value={doc.body} onChange={setDraft} />
                 ) : doc.type === "board" ? (
-                  <BoardEditor key={doc.key} value={doc.body} onChange={setDraft} />
+                  <LazyBoardEditor key={doc.key} value={doc.body} onChange={setDraft} />
                 ) : doc.type === "datasheet" ? (
-                  <DatasheetEditor key={doc.key} value={doc.body} onChange={setDraft} />
+                  <LazyDatasheetEditor key={doc.key} value={doc.body} onChange={setDraft} />
                 ) : doc.type === "flowchart" ? (
-                  <FlowchartEditor key={doc.key} value={doc.body} onChange={setDraft} />
+                  <LazyFlowchartEditor key={doc.key} value={doc.body} onChange={setDraft} />
                 ) : doc.type === "mindmap" ? (
-                  <MindMapEditor key={doc.key} value={doc.body} onChange={setDraft} />
+                  <LazyMindMapEditor key={doc.key} value={doc.body} onChange={setDraft} />
                 ) : doc.type === "html" ? (
                   <textarea
                     value={draft}
@@ -737,7 +739,7 @@ export function Editor({
                     spellCheck={false}
                   />
                 ) : (
-                  <RichEditor
+                  <LazyRichEditor
                     key={doc.key}
                     value={doc.body}
                     onChange={setDraft}
