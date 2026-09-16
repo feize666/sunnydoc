@@ -73,16 +73,16 @@ export function NewKbDialog({
         </div>
 
         <div className="p-4">
-          <label className="mb-1 block text-xs text-muted">名称</label>
+          <label className="field-label">名称</label>
           <input
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="输入知识库名称"
-            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+            className="input"
           />
 
-          <label className="mb-1 mt-3 block text-xs text-muted">
+          <label className="field-label mt-3">
             描述（可选）
           </label>
           <textarea
@@ -90,7 +90,7 @@ export function NewKbDialog({
             onChange={(e) => setDescription(e.target.value)}
             placeholder="一句话说明这个知识库的用途"
             rows={3}
-            className="w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+            className="textarea"
           />
 
           {error && (

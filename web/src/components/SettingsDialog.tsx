@@ -144,7 +144,7 @@ function Field({
 }) {
   return (
     <div className="mt-2.5">
-      <div className="mb-1 text-[12px] font-medium text-muted">{label}</div>
+      <div className="field-label">{label}</div>
       <div className="flex items-center gap-2">
         <input
           value={value}
@@ -154,12 +154,12 @@ function Field({
           spellCheck={false}
           className={
             inputClassName ||
-            "h-8 w-full rounded-md border border-line bg-background px-2 text-[13px] text-text outline-none placeholder:text-faint focus:border-accent"
+            "input input-sm"
           }
         />
         {suffix}
       </div>
-      {hint && <div className="mt-0.5 text-[11px] text-faint">{hint}</div>}
+      {hint && <div className="field-hint mt-0.5">{hint}</div>}
     </div>
   );
 }
@@ -597,11 +597,11 @@ export function SettingsDialog({
                     {/* 供应商 */}
                     <div className="flex items-end gap-2">
                       <div className="flex-1">
-                        <div className="mb-1 text-[12px] font-medium text-muted">供应商</div>
+                        <div className="field-label">供应商</div>
                         <select
                           value={provider}
                           onChange={(e) => applyProvider(e.target.value)}
-                          className="h-8 w-full cursor-pointer rounded-md border border-line bg-background px-2 text-[13px] text-text outline-none focus:border-accent"
+                          className="select select-sm"
                         >
                           {providerOptions.map((o) => (
                             <option key={o.id} value={o.id}>
@@ -871,7 +871,7 @@ export function SettingsDialog({
               value={saveAsName}
               onChange={(e) => setSaveAsName(e.target.value)}
               placeholder="例如：阿里云正式环境 / 内网 Ollama"
-              className="mt-3 h-9 w-full rounded-md border border-line bg-background px-2 text-[13px] text-text outline-none placeholder:text-faint focus:border-accent"
+              className="input mt-3"
             />
             {saveAsMsg && (
               <div className="mt-2 text-[12px] text-danger">{saveAsMsg}</div>

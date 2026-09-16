@@ -1746,7 +1746,7 @@ export function MindMapEditor({
               onChange={(e) => setAiText(e.target.value)}
               placeholder="输入主题，例如：产品需求文档结构"
               rows={3}
-              className="mb-3 w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-text outline-none focus:border-accent"
+              className="textarea textarea-sm mb-3 resize-none"
             />
             <div className="flex justify-end gap-2">
               <button onClick={() => setAiOpen(false)} className="rounded-md px-3 py-1.5 text-[13px] text-muted hover:bg-hover">取消</button>
@@ -2308,7 +2308,7 @@ export function MindMapEditor({
                   onChange={(e) => setNoteDraft(e.target.value)}
                   placeholder="输入备注（支持换行）…"
                   rows={3}
-                  className="w-full resize-none rounded-md border border-line bg-surface px-2 py-1.5 text-[13px] text-text outline-none focus:border-accent"
+                  className="textarea textarea-sm resize-none"
                 />
                 <div className="mt-2 flex justify-end gap-2">
                   <button

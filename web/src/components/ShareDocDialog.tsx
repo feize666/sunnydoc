@@ -146,19 +146,19 @@ export function ShareDocDialog({
             <div className="mt-4 space-y-3">
               {/* 访问密码（可选） */}
               <div>
-                <label className="mb-1 block text-[13px] text-muted">
+                <label className="field-label">
                   访问密码（可选，留空则无需密码）
                 </label>
                 <PasswordInput
                   value={password}
                   onChange={setPassword}
                   placeholder="设置访问密码"
-                  className="w-full rounded-lg border border-line bg-background px-3 py-2 text-[13px] text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+                  className="input"
                 />
               </div>
               {/* 有效期 */}
               <div>
-                <label className="mb-1 block text-[13px] text-muted">有效期</label>
+                <label className="field-label">有效期</label>
                 <div className="flex gap-1.5">
                   {(["forever", "1d", "7d", "30d"] as const).map((v) => (
                     <button

@@ -226,7 +226,12 @@ export function CommandPalette({
           <span>↑↓ 选择</span>
           <span>Enter 执行 / 打开</span>
           <span>Esc 关闭</span>
-          {searching && <span className="ml-auto">搜索中…</span>}
+          {searching && (
+            <span className="ml-auto flex items-center gap-1.5">
+              <span className="spinner spinner-sm" />
+              搜索中…
+            </span>
+          )}
         </div>
       </div>
     </>

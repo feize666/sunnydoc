@@ -2186,7 +2186,7 @@ export function FlowchartEditor({
               onChange={(e) => setAiText(e.target.value)}
               placeholder="用一句话描述流程，例如：用户提交订单后，系统校验库存，有货则扣减库存并生成订单，无货则提示失败"
               rows={4}
-              className="mb-3 w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-text outline-none focus:border-accent"
+              className="textarea textarea-sm mb-3 resize-none"
             />
             <div className="flex justify-end gap-2">
               <button onClick={() => setAiOpen(false)} className="rounded-md px-3 py-1.5 text-[13px] text-muted hover:bg-hover">
@@ -2235,7 +2235,7 @@ export function FlowchartEditor({
                     commitEdit();
                   }
                 }}
-                className="mb-3 w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-text outline-none focus:border-accent"
+                className="textarea textarea-sm mb-3 resize-none"
               />
             ) : (
               <input
@@ -2251,7 +2251,7 @@ export function FlowchartEditor({
                     commitEdit();
                   }
                 }}
-                className="mb-3 w-full rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-text outline-none focus:border-accent"
+                className="input mb-3"
               />
             )}
             <div className="flex justify-end gap-2">

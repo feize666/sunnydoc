@@ -877,8 +877,12 @@ export function AiPanel({
           </div>
         ))}
         {loading && (
-          <div className="flex items-center gap-1.5 text-[13px] text-faint">
-            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+          <div className="flex items-center gap-2 text-[13px] text-faint">
+            <span className="typing-dots" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
             正在生成回答…
           </div>
         )}
@@ -929,7 +933,7 @@ export function AiPanel({
               className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg border border-line bg-background text-muted transition-colors hover:bg-hover hover:text-text disabled:opacity-50"
             >
               {uploading ? (
-                <span className="animate-pulse text-[12px] leading-none">…</span>
+                <span className="spinner spinner-sm" />
               ) : (
                 <PaperclipIcon size={16} />
               )}
@@ -953,7 +957,7 @@ export function AiPanel({
               }
             }}
             rows={1}
-            className="max-h-[120px] flex-1 resize-none rounded-lg border border-line bg-background px-3 py-2 text-[14px] outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
+            className="textarea max-h-[120px] min-h-0 flex-1 resize-none"
           />
           <Tooltip content={loading ? "暂停" : "发送"} className="shrink-0">
             <button

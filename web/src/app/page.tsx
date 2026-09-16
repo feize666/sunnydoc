@@ -982,7 +982,10 @@ export default function Home() {
   if (authLoading) {
     return (
       <div className="flex h-full items-center justify-center bg-background text-muted">
-        <p className="text-sm">加载中…</p>
+        <div className="loading-row">
+          <span className="spinner" />
+          加载中…
+        </div>
       </div>
     );
   }

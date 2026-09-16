@@ -61,13 +61,13 @@ export function RenameFolderDialog({
         </div>
 
         <div className="p-4">
-          <label className="mb-1 block text-xs text-muted">文件夹名</label>
+          <label className="field-label">文件夹名</label>
           <input
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="输入文件夹名称"
-            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+            className="input"
           />
 
           {error && (

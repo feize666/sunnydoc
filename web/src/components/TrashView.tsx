@@ -384,7 +384,7 @@ export function TrashView({ onBack }: { onBack: () => void }) {
       )}
 
       <div className="flex-1 overflow-y-auto">
-        <div ref={listRef} className="mx-auto max-w-3xl px-6 py-6">
+        <div ref={listRef} className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
           {!loading && total === 0 && (
             <EmptyState
               icon={

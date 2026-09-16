@@ -152,12 +152,15 @@ export function ShareDialog({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="输入用户名或昵称搜索并添加协作者…"
-              className="w-full rounded-lg border border-line bg-background px-3 py-2 text-[14px] text-text outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
+              className="input"
             />
             {query.trim() && (
               <div className="menu-panel absolute left-0 right-0 top-full z-20 mt-1 max-h-[220px] overflow-y-auto">
                 {searching ? (
-                  <div className="px-3 py-2.5 text-center text-[13px] text-faint">搜索中…</div>
+                  <div className="flex items-center justify-center gap-2 px-3 py-2.5 text-center text-[13px] text-faint">
+                    <span className="spinner spinner-sm" />
+                    搜索中…
+                  </div>
                 ) : candidates.length === 0 ? (
                   <div className="px-3 py-2.5 text-center text-[13px] text-faint">未找到用户</div>
                 ) : (
@@ -217,7 +220,15 @@ export function ShareDialog({
               已共享成员（{shares.length}）
             </div>
             {loading ? (
-              <div className="py-4 text-center text-[13px] text-faint">加载中…</div>
+              <ul className="space-y-1.5">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <li key={i} className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2">
+                    <div className="skeleton h-7 w-7 shrink-0 rounded-full" />
+                    <div className="skeleton skeleton-line w-28" />
+                    <div className="skeleton skeleton-line ml-auto w-12" />
+                  </li>
+                ))}
+              </ul>
             ) : shares.length === 0 ? (
               <div className="rounded-lg border border-dashed border-line py-6 text-center text-[13px] text-faint">
                 尚未共享给任何用户

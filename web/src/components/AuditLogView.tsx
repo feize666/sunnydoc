@@ -49,7 +49,7 @@ export function AuditLogView() {
   }, [refresh]);
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-6">
+    <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
       <div className="mb-4 flex items-center justify-between">
         <p className="text-xs text-faint">
           记录团队成员对文档、知识库的增删改与共享操作
@@ -75,14 +75,27 @@ export function AuditLogView() {
       )}
 
       {loading ? (
-        <div className="text-sm text-faint">加载中…</div>
+        <div className="overflow-hidden rounded-xl border border-line bg-background">
+          <div className="border-b border-line bg-surface-2 px-4 py-3">
+            <div className="skeleton skeleton-line w-20" />
+          </div>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4 border-b border-line px-4 py-3.5 last:border-0">
+              <div className="skeleton skeleton-line w-28" />
+              <div className="skeleton skeleton-line w-20" />
+              <div className="skeleton skeleton-line w-24" />
+              <div className="skeleton skeleton-line ml-auto w-16" />
+            </div>
+          ))}
+        </div>
       ) : logs.length === 0 ? (
         <div className="rounded-xl border border-line bg-background py-16 text-center text-sm text-faint">
           暂无操作记录
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-line bg-background">
-          <table className="w-full text-left text-[14px]">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-left text-[14px]">
             <thead>
               <tr className="border-b border-line bg-surface-2 text-xs text-muted">
                 <th className="px-4 py-2.5 font-medium">时间</th>
@@ -117,6 +130,7 @@ export function AuditLogView() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

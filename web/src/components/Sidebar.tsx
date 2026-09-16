@@ -506,7 +506,7 @@ export function Sidebar({
                 }
               }}
               placeholder="搜索文档内容…"
-              className="h-9 w-full rounded-lg border border-line bg-background pl-9 pr-9 text-[15px] text-text outline-none placeholder:text-faint transition-colors focus:border-accent focus:ring-2 focus:ring-accent/20"
+              className="input input-icon pr-9"
             />
             {searchQuery && (
               <button
@@ -629,11 +629,26 @@ export function Sidebar({
                 </button>
               )}
             </div>
-            <div className="px-2 py-1 text-[12px] text-faint">
-              {searching
-                ? "搜索中…"
-                : `共 ${searchResults.length} 条结果`}
+            <div className="flex items-center gap-1.5 px-2 py-1 text-[12px] text-faint">
+              {searching ? (
+                <>
+                  <span className="spinner spinner-sm" />
+                  搜索中…
+                </>
+              ) : (
+                `共 ${searchResults.length} 条结果`
+              )}
             </div>
+            {searching && (
+              <div className="space-y-1.5 px-1 py-1">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="rounded-md px-1 py-1.5">
+                    <div className="skeleton skeleton-line w-3/4" />
+                    <div className="skeleton skeleton-line mt-1.5 w-1/2" />
+                  </div>
+                ))}
+              </div>
+            )}
             {!searching && searchResults.length === 0 && (
               <div className="px-2 py-6 text-center text-[13px] text-faint">
                 无匹配结果

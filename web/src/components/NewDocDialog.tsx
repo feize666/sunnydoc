@@ -98,7 +98,7 @@ export function NewDocDialog({
             ))}
           </div>
 
-          <label className="mb-1 block text-xs text-muted">标题</label>
+          <label className="field-label">标题</label>
           <input
             autoFocus
             value={title}
@@ -107,10 +107,10 @@ export function NewDocDialog({
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleCreate();
             }}
             placeholder="输入文档标题"
-            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+            className="input"
           />
 
-          <label className="mb-1 mt-3 block text-xs text-muted">
+          <label className="field-label mt-3">
             内容（可选，Markdown）
           </label>
           <textarea
@@ -118,7 +118,7 @@ export function NewDocDialog({
             onChange={(e) => setContent(e.target.value)}
             placeholder="输入文档内容，可留空"
             rows={8}
-            className="w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+            className="textarea"
           />
 
           {error && (

@@ -860,7 +860,7 @@ export function RichEditor({
           <select
             value={headingValue}
             onChange={(e) => setHeading(e.target.value)}
-            className="h-8 w-[80px] shrink-0 cursor-pointer rounded-md border border-line bg-background px-1.5 text-[13px] text-text outline-none hover:bg-hover"
+            className="select select-sm w-[80px] shrink-0"
           >
             <option value="p">正文</option>
             <option value="1">标题 1</option>
@@ -1060,7 +1060,7 @@ export function RichEditor({
             <select
               value={currentCodeLang}
               onChange={(e) => setCodeLang(e.target.value)}
-              className="h-8 w-[72px] shrink-0 cursor-pointer rounded-md border border-line bg-background px-1 text-[12px] text-muted outline-none hover:bg-hover"
+              className="select select-sm w-[72px] shrink-0 text-muted"
             >
               {CODE_LANGS.map((l) => (
                 <option key={l} value={l}>
@@ -1085,7 +1085,7 @@ export function RichEditor({
                 onKeyDown={(e) => { if (e.key === "Enter") applyLink(); if (e.key === "Escape") setLinkOpen(false); }}
                 placeholder="https://"
                 autoFocus
-                className="mb-2 h-8 w-full rounded-md border border-line bg-background px-2 text-[13px] text-text outline-none focus:border-accent"
+                className="input input-sm mb-2"
               />
               <div className="flex justify-end gap-1.5">
                 {editor.isActive("link") && (
@@ -1128,7 +1128,7 @@ export function RichEditor({
                 onKeyDown={(e) => { if (e.key === "Enter") applyImage(); if (e.key === "Escape") setImageOpen(false); }}
                 placeholder="https://…（也可直接粘贴截图，⌘V）"
                 autoFocus
-                className="mb-2 h-8 w-full rounded-md border border-line bg-background px-2 text-[13px] text-text outline-none focus:border-accent"
+                className="input input-sm mb-2"
               />
               <div className="flex justify-end gap-1.5">
                 <button
@@ -1355,13 +1355,13 @@ export function RichEditor({
             value={findText}
             onChange={(e) => { setFindText(e.target.value); setFindIdx(0); }}
             placeholder="查找"
-            className="h-8 w-44 rounded-md border border-line bg-background px-2 text-[13px] text-text outline-none focus:border-accent"
+            className="input input-sm w-44"
           />
           <input
             value={replaceText}
             onChange={(e) => setReplaceText(e.target.value)}
             placeholder="替换为"
-            className="h-8 w-44 rounded-md border border-line bg-background px-2 text-[13px] text-text outline-none focus:border-accent"
+            className="input input-sm w-44"
           />
           <span className="min-w-[52px] text-center text-[12px] text-muted">
             {findText ? `${matches.length > 0 ? findIdx + 1 : 0}/${matches.length}` : "0/0"}

@@ -354,7 +354,7 @@ export function CommentPanel({
               }}
               rows={2}
               placeholder="写下评论…（输入 @ 提及成员，⌘+Enter 发送）"
-              className="w-full resize-none rounded-lg border border-line bg-background px-3 py-2 text-[14px] leading-relaxed text-text outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
+              className="textarea textarea-sm resize-none"
             />
             <div className="mt-2 flex justify-end">
               <button

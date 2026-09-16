@@ -275,9 +275,9 @@ export function HomeView({
       </header>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-4xl px-6 py-8">
+        <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
           {/* 欢迎条：渐变品牌面 + 实时概览 */}
-          <section className="hero-surface anim-rise-in mb-6 overflow-hidden rounded-2xl px-6 py-5">
+          <section className="hero-surface anim-rise-in mb-6 overflow-hidden rounded-2xl px-4 py-5 sm:px-6">
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div className="min-w-0">
                 <div className="text-[20px] font-semibold tracking-tight">

@@ -227,7 +227,7 @@ export function ImportDialog({
                       if (e.key === "Enter") handleUrlImport();
                     }}
                     placeholder="或粘贴网页链接导入（http/https）"
-                    className="h-9 w-full rounded-lg border border-line bg-background pl-9 pr-2 text-[13px] text-text outline-none placeholder:text-faint focus:border-accent focus:ring-2 focus:ring-accent/20"
+                    className="input input-icon"
                   />
                 </div>
                 <button
@@ -250,7 +250,10 @@ export function ImportDialog({
         {phase === "uploading" && (
           <div className="p-6">
             <div className="mb-2 flex items-center justify-between gap-3 text-xs">
-              <span className="shrink-0 text-muted">上传中 {progress.toFixed(2)}%</span>
+              <span className="flex shrink-0 items-center gap-1.5 text-muted">
+                <span className="spinner spinner-sm" />
+                上传中 {progress.toFixed(2)}%
+              </span>
               <span className="truncate text-faint">{current}</span>
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
@@ -265,7 +268,10 @@ export function ImportDialog({
         {phase === "parsing" && (
           <div className="p-6">
             <div className="mb-2 flex items-center justify-between text-xs">
-              <span className="text-muted">解析中…</span>
+              <span className="flex items-center gap-1.5 text-muted">
+                <span className="spinner spinner-sm" />
+                解析中…
+              </span>
               <span className="font-medium text-accent">{progress.toFixed(2)}%</span>
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">

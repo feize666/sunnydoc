@@ -174,7 +174,7 @@ export function DiagramTemplateDialog({
         <div className="p-4">
           {tab === "save" ? (
             <div>
-              <label className="mb-1 block text-xs text-muted">模板名称</label>
+              <label className="field-label">模板名称</label>
               <input
                 autoFocus
                 value={name}
@@ -183,9 +183,9 @@ export function DiagramTemplateDialog({
                   if (e.key === "Enter") handleSaveLocal();
                 }}
                 placeholder={`例如：${type === "flowchart" ? "审批流程" : "项目规划"}`}
-                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+                className="input"
               />
-              <p className="mt-2 text-xs text-faint">
+              <p className="field-hint">
                 将当前{label}的节点与连线保存为模板，之后可一键复用。
               </p>
               <div className="mt-4 flex justify-end gap-2">
@@ -243,10 +243,20 @@ export function DiagramTemplateDialog({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="搜索社区模板…"
-                className="mb-3 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+                className="input mb-3"
               />
               {communityLoading ? (
-                <div className="py-8 text-center text-[13px] text-faint">加载中…</div>
+                <ul className="max-h-72 space-y-1.5 overflow-y-auto">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <li key={i} className="flex items-center gap-2 rounded-lg border border-line px-3 py-2">
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <div className="skeleton skeleton-line w-32" />
+                        <div className="skeleton skeleton-line w-20" />
+                      </div>
+                      <div className="skeleton h-6 w-12 shrink-0 rounded-md" />
+                    </li>
+                  ))}
+                </ul>
               ) : filteredCommunity.length === 0 ? (
                 <div className="py-8 text-center text-[13px] text-faint">
                   {community.length === 0 ? "社区还没有模板，快来发布第一个吧" : "没有匹配的模板"}

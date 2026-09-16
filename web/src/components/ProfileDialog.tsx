@@ -123,29 +123,29 @@ export function ProfileDialog({
             </div>
           </div>
 
-          <label className="mb-1 block text-xs text-muted">昵称</label>
+          <label className="field-label">昵称</label>
           <input
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
-            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
+            className="input"
           />
 
-          <label className="mb-1 mt-3 block text-xs text-muted">邮箱</label>
+          <label className="field-label mt-3">邮箱</label>
           <input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="选填"
-            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
+            className="input"
           />
 
-          <label className="mb-1 mt-3 block text-xs text-muted">
+          <label className="field-label mt-3">
             头像（emoji 或图片 URL，选填）
           </label>
           <input
             value={avatar}
             onChange={(e) => setAvatar(e.target.value)}
             placeholder="选填，留空则显示昵称首字"
-            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
+            className="input"
           />
 
           {error && (
@@ -166,18 +166,18 @@ export function ProfileDialog({
 
           <div className="mt-5 border-t border-line pt-4">
             <div className="mb-2 text-sm font-semibold text-text">修改密码</div>
-            <label className="mb-1 block text-xs text-muted">旧密码</label>
+            <label className="field-label">旧密码</label>
             <PasswordInput
               value={oldPassword}
               onChange={setOldPassword}
-              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
+              className="input"
             />
-            <label className="mb-1 mt-3 block text-xs text-muted">新密码</label>
+            <label className="field-label mt-3">新密码</label>
             <PasswordInput
               value={newPassword}
               onChange={setNewPassword}
               placeholder="至少 6 位"
-              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
+              className="input"
             />
 
             {pwdError && (

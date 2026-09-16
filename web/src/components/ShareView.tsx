@@ -64,19 +64,21 @@ export function ShareView({ token }: { token: string }) {
           <div className="mt-1 text-sm text-faint">请输入访问密码</div>
         </div>
         <div className="flex items-center gap-2">
-          <PasswordInput
-            value={password}
-            onChange={setPassword}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") load(password);
-            }}
-            placeholder="访问密码"
-            autoFocus
-            className="h-10 w-56 rounded-lg border border-line bg-background px-3 text-sm text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
-          />
+          <div className="w-56">
+            <PasswordInput
+              value={password}
+              onChange={setPassword}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") load(password);
+              }}
+              placeholder="访问密码"
+              autoFocus
+              className="input h-10"
+            />
+          </div>
           <button
             onClick={() => load(password)}
-            className="btn btn-accent h-10 px-4 text-white"
+            className="btn btn-accent h-10 shrink-0 px-4 text-white"
           >
             确定
           </button>
@@ -145,7 +147,7 @@ export function ShareView({ token }: { token: string }) {
       </header>
 
       <div className="flex-1 overflow-y-auto py-8">
-        <div className="mx-auto max-w-[760px] px-10">
+        <div className="mx-auto max-w-[760px] px-4 sm:px-10">
           <h1 className="text-[32px] font-bold leading-[1.25] tracking-[-0.01em] text-text">
             {doc.title}
           </h1>

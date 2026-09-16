@@ -255,7 +255,10 @@ export function Editor({
   if (loading && !doc) {
     return (
       <main className="flex flex-1 items-center justify-center bg-background text-muted">
-        <p className="text-sm">正在加载文档…</p>
+        <div className="loading-row">
+          <span className="spinner" />
+          正在加载文档…
+        </div>
       </main>
     );
   }
@@ -263,7 +266,7 @@ export function Editor({
   if (!doc) {
     return (
       <main className="flex-1 overflow-y-auto bg-background">
-        <div className="mx-auto max-w-[760px] px-10 py-10">
+        <div className="mx-auto max-w-[760px] px-4 py-10 sm:px-10">
           <h2 className="mb-4 text-base font-semibold text-text">最近浏览</h2>
           {!recent || recent.length === 0 ? (
             <p className="text-sm text-muted">暂无浏览记录，从左侧选择一个文档开始阅读</p>
@@ -561,7 +564,7 @@ export function Editor({
         {/* 正文（key 按文档变化：切换文档时重新挂载 + 淡入） */}
         <div key={doc.key} className="anim-fade-in flex-1 overflow-y-auto py-8">
           {mode === "preview" ? (
-            <div className="mx-auto max-w-[1080px] px-10">
+            <div className="mx-auto max-w-[1080px] px-4 sm:px-10">
               <h1 className="text-[32px] font-bold leading-[1.25] tracking-[-0.01em] text-text">
                 {doc.title}
               </h1>
@@ -692,7 +695,7 @@ export function Editor({
               )}
             </div>
           ) : (
-            <div className="mx-auto max-w-[1200px] px-10">
+            <div className="mx-auto max-w-[1200px] px-4 sm:px-10">
               <input
                 value={draftTitle}
                 onChange={(e) => setDraftTitle(e.target.value)}
@@ -710,7 +713,7 @@ export function Editor({
                   <textarea
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
-                    className="min-h-[60vh] w-full resize-y rounded-lg border border-line bg-background px-4 py-3 font-mono text-[14px] leading-relaxed text-text outline-none focus:border-accent"
+                    className="textarea min-h-[60vh] resize-y px-4 py-3 font-mono"
                     placeholder={
                       doc.type === "html"
                         ? "在此编辑 HTML 源码…"
@@ -734,7 +737,7 @@ export function Editor({
                   <textarea
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
-                    className="min-h-[60vh] w-full resize-y rounded-lg border border-line bg-background px-4 py-3 font-mono text-[14px] leading-relaxed text-text outline-none focus:border-accent"
+                    className="textarea min-h-[60vh] resize-y px-4 py-3 font-mono"
                     placeholder="在此编辑 HTML 源码…"
                     spellCheck={false}
                   />

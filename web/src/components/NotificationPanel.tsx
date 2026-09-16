@@ -145,7 +145,17 @@ export function NotificationPanel({
 
       <div className="max-h-[420px] overflow-y-auto">
         {loading ? (
-          <div className="py-10 text-center text-[13px] text-faint">加载中…</div>
+          <ul>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <li key={i} className="flex items-start gap-3 px-4 py-3">
+                <div className="skeleton h-6 w-6 shrink-0 rounded-full" />
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div className="skeleton skeleton-line w-3/4" />
+                  <div className="skeleton skeleton-line w-1/3" />
+                </div>
+              </li>
+            ))}
+          </ul>
         ) : items.length === 0 ? (
           <div className="py-12 text-center text-[13px] text-faint">暂无通知</div>
         ) : (

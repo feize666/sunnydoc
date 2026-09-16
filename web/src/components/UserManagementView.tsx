@@ -61,25 +61,25 @@ export function UserManagementView({
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-line bg-background px-5">
-        <div className="flex items-center gap-3">
+      <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-background px-4 sm:px-5">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <button
             onClick={onBack}
-            className="grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-hover hover:text-text"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted hover:bg-hover hover:text-text"
             title="返回首页"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5M12 19l-7-7 7-7" />
             </svg>
           </button>
-          <div>
-            <div className="text-[16px] font-semibold text-text">用户管理</div>
-            <div className="text-[12px] text-faint">管理账号、角色与状态</div>
+          <div className="min-w-0">
+            <div className="truncate text-[16px] font-semibold text-text">用户管理</div>
+            <div className="hidden text-[12px] text-faint sm:block">管理账号、角色与状态</div>
           </div>
-          <div className="ml-4 flex items-center gap-1 rounded-lg border border-line bg-surface p-0.5">
+          <div className="ml-1 flex shrink-0 items-center gap-1 rounded-lg border border-line bg-surface p-0.5 sm:ml-4">
             <button
               onClick={() => setTab("users")}
-              className={`rounded-md px-3 py-1 text-[13px] transition-colors ${
+              className={`rounded-md px-2.5 py-1 text-[13px] transition-colors sm:px-3 ${
                 tab === "users" ? "bg-accent-soft text-accent" : "text-muted hover:text-text"
               }`}
             >
@@ -87,7 +87,7 @@ export function UserManagementView({
             </button>
             <button
               onClick={() => setTab("audit")}
-              className={`rounded-md px-3 py-1 text-[13px] transition-colors ${
+              className={`rounded-md px-2.5 py-1 text-[13px] transition-colors sm:px-3 ${
                 tab === "audit" ? "bg-accent-soft text-accent" : "text-muted hover:text-text"
               }`}
             >
@@ -98,10 +98,11 @@ export function UserManagementView({
         {tab === "users" && (
           <button
             onClick={() => setTarget({ mode: "create" })}
-            className="btn btn-accent text-white"
+            className="btn btn-accent shrink-0 text-white"
           >
             <PlusIcon size={14} />
-            新增用户
+            <span className="hidden sm:inline">新增用户</span>
+            <span className="sm:hidden">新增</span>
           </button>
         )}
       </header>
@@ -112,7 +113,7 @@ export function UserManagementView({
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-4xl px-6 py-6">
+          <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
           {error && (
             <div className="mb-4 rounded-md border border-danger/40 bg-danger-soft px-3 py-2 text-xs text-danger">
               {error}
@@ -120,10 +121,23 @@ export function UserManagementView({
           )}
 
           {loading ? (
-            <div className="text-sm text-faint">加载中…</div>
+            <div className="overflow-hidden rounded-xl border border-line bg-background">
+              <div className="border-b border-line bg-surface-2 px-4 py-3">
+                <div className="skeleton skeleton-line w-24" />
+              </div>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-4 border-b border-line px-4 py-3.5 last:border-0">
+                  <div className="skeleton h-8 w-8 shrink-0 rounded-full" />
+                  <div className="skeleton skeleton-line w-32" />
+                  <div className="skeleton skeleton-line w-16" />
+                  <div className="skeleton skeleton-line ml-auto w-20" />
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="overflow-hidden rounded-xl border border-line bg-background">
-              <table className="w-full text-left text-[14px]">
+              <div className="overflow-x-auto">
+              <table className="w-full min-w-[560px] text-left text-[14px]">
                 <thead>
                   <tr className="border-b border-line bg-surface-2 text-xs text-muted">
                     <th className="px-4 py-2.5 font-medium">用户</th>
@@ -212,6 +226,7 @@ export function UserManagementView({
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
           </div>
@@ -348,48 +363,48 @@ function UserFormDialog({
               <div className="mb-2 text-xs text-muted">
                 为用户「{targetUser?.nickname ?? targetUser?.username}」重置密码
               </div>
-              <label className="mb-1 block text-xs text-muted">新密码</label>
+              <label className="field-label">新密码</label>
               <PasswordInput
                 value={password}
                 onChange={setPassword}
                 placeholder="至少 6 位"
-                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
+                className="input"
               />
             </>
           ) : (
             <>
               {isCreate && (
                 <>
-                  <label className="mb-1 block text-xs text-muted">用户名</label>
+                  <label className="field-label">用户名</label>
                   <input
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     placeholder="登录用户名"
-                    className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
+                    className="input"
                   />
-                  <label className="mb-1 mt-3 block text-xs text-muted">初始密码</label>
+                  <label className="field-label mt-3">初始密码</label>
                   <PasswordInput
                     value={password}
                     onChange={setPassword}
                     placeholder="至少 6 位"
-                    className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
+                    className="input"
                   />
                 </>
               )}
 
-              <label className="mb-1 mt-3 block text-xs text-muted">昵称</label>
+              <label className="field-label mt-3">昵称</label>
               <input
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
                 placeholder={isCreate ? "选填，默认同用户名" : "显示名称"}
-                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
+                className="input"
               />
 
-              <label className="mb-1 mt-3 block text-xs text-muted">角色</label>
+              <label className="field-label mt-3">角色</label>
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value as "admin" | "user")}
-                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
+                className="select"
               >
                 <option value="user">普通用户</option>
                 <option value="admin">管理员</option>
@@ -397,11 +412,11 @@ function UserFormDialog({
 
               {!isCreate && (
                 <>
-                  <label className="mb-1 mt-3 block text-xs text-muted">状态</label>
+                  <label className="field-label mt-3">状态</label>
                   <select
                     value={status}
                     onChange={(e) => setStatus(e.target.value as "active" | "disabled")}
-                    className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-text outline-none focus:border-accent"
+                    className="select"
                   >
                     <option value="active">正常</option>
                     <option value="disabled">禁用</option>
