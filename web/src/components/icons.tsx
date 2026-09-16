@@ -50,6 +50,51 @@ export function MoonIcon(p: IconProps) {
   );
 }
 
+export function CommentIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
+export function BellIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  );
+}
+
+export function InboxIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+      <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+    </svg>
+  );
+}
+
+export function ShareIcon(p: IconProps) {
+  return (
+    <svg {...base(p)} strokeWidth={2}>
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
+    </svg>
+  );
+}
+
+export function StarIcon(p: IconProps) {
+  return (
+    <svg {...base(p)} strokeWidth={2}>
+      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+    </svg>
+  );
+}
+
 export function FileIcon(p: IconProps) {
   return (
     <svg {...base(p)}>

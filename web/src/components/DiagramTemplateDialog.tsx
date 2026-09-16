@@ -15,6 +15,8 @@ import {
 } from "@/lib/api";
 import { useToast } from "./Toast";
 import { useModalFocus } from "@/lib/useModalFocus";
+import { FormatPaintIcon, ShareIcon } from "./icons";
+import { EmptyState } from "./EmptyState";
 
 /**
  * 流程图 / 思维导图「模板」对话框。
@@ -205,9 +207,12 @@ export function DiagramTemplateDialog({
           ) : tab === "browse" ? (
             <div>
               {templates.length === 0 ? (
-                <div className="py-8 text-center text-[13px] text-faint">
-                  还没有{label}模板，先在编辑器里「保存为模板」
-                </div>
+                <EmptyState
+                  size="panel"
+                  icon={<FormatPaintIcon size={16} />}
+                  title={`还没有${label}模板`}
+                  description="在编辑器里「保存为模板」即可复用"
+                />
               ) : (
                 <ul className="max-h-72 space-y-1.5 overflow-y-auto">
                   {templates.map((t) => (

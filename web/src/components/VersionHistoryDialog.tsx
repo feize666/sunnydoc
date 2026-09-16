@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { listDocVersions, rollbackDocument, type DocVersion } from "@/lib/api";
 import { renderMarkdown } from "@/lib/markdown";
-import { CloseIcon } from "./icons";
+import { CloseIcon, HistoryIcon } from "./icons";
+import { EmptyState } from "./EmptyState";
 import { useModalFocus } from "@/lib/useModalFocus";
 import { useToast } from "./Toast";
 
@@ -160,9 +161,12 @@ export function VersionHistoryDialog({
             {loading ? (
               <div className="px-3 py-8 text-center text-[14px] text-faint">加载中…</div>
             ) : versions.length === 0 ? (
-              <div className="px-3 py-8 text-center text-[14px] text-faint">
-                暂无历史版本
-              </div>
+              <EmptyState
+                size="panel"
+                icon={<HistoryIcon size={16} />}
+                title="暂无历史版本"
+                description="文档保存后会自动生成可回滚的版本"
+              />
             ) : (
               <ul>
                 {versions.map((v) => (

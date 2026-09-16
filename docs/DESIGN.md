@@ -39,7 +39,7 @@
 | `--active` | `#dbeafe` | `#1e3a8a` | 选中背景 |
 | `--text` | `#0f172a` | `#e2e8f0` | 正文 / 标题 |
 | `--muted` | `#475569` | `#94a3b8` | 次要文字 |
-| `--faint` | `#94a3b8` | `#64748b` | 弱文字 / 占位 / 图标 |
+| `--faint` | `#64748b` | `#8494a8` | 弱文字 / 占位 / 图标（**已按 AA 校准，勿调浅**，详见 §6.3） |
 | `--line` | `#e2e8f0` | `#273549` | 边框 / 分隔线 |
 | `--line-strong` | `#cbd5e1` | `#3b4a63` | 强调边框（次要按钮 hover） |
 
@@ -231,7 +231,38 @@ API 不变：`<Tooltip content="提示" side="top|bottom">触发元素</Tooltip>
   为 26px 紧凑档（`rounded-md px-2 py-1 text-xs`）——属于画布内嵌 UI，需贴近画布且密度更高，
   **刻意不并入 32px 阶梯**，勿强行统一。
 
-### 5.13 加载态 / 骨架屏
+#### 主题切换按钮（`components/ThemeToggle.tsx`）
+
+- 尺寸走 `.icon-btn`（32px），**调用点不要再传 `className="h-9 w-9"` / `"h-8 w-8"`** —— 那些是野生规格。
+  需要图标更醒目时只调 `size`（默认 16，标题栏 / 设置页用 18）。
+- 图形颜色取自 `--theme-moon-from/to`（蓝紫）、`--theme-sun-from/to`（金黄），明暗两套均已成对定义。
+- 渐变 `id` 由 `useId()` 生成：标题栏、首页、设置页可能同页共存，固定 id 会冲突。
+- 分享页（`ShareView`）直接复用本组件，**不要再复制一份 SVG**。
+
+### 5.14 空状态（`components/EmptyState.tsx`）
+
+列表 / 面板 / 页面无数据时统一用 `EmptyState`，**不要手写**「居中一行 `text-faint`」的空态块。
+
+| 规格 | 用途 | 规格特征 |
+| --- | --- | --- |
+| `size="page"`（默认） | 页面 / 主内容区 | 64px 圆角图标框（含 `shadow-md`）+ `py-14`；15px/600 标题 + 13px 描述 |
+| `size="panel"` | 侧栏 / 弹层 / 对话框分栏等窄容器 | 36px 图标框 + `py-8`；13px/500 标题 + 12px 描述（`max-w-220px`），不撑破容器 |
+
+```tsx
+<EmptyState
+  size="panel"
+  icon={<HistoryIcon size={16} />}
+  title="暂无历史版本"
+  description="文档保存后会自动生成可回滚的版本"
+/>
+```
+
+- `icon` 传入图标组件，尺寸由容器 CSS 统一控制（`[&>svg]`），**不必自己写 `size`**。
+- `description` 可选；不要写「暂无 X，点击 Y」这类罗列式长句——短句或省略。
+- **不适用本组件**：紧贴正文的一行旁白（文件树节点下的「暂无文件夹」、卡片字段占位
+  「暂无描述」、节点备注「暂无备注」），直接用一行 `text-[12px] text-faint` 即可。
+
+### 5.15 加载态 / 骨架屏
 
 替换裸文字「加载中…」，按场景选用：
 
@@ -263,6 +294,14 @@ API 不变：`<Tooltip content="提示" side="top|bottom">触发元素</Tooltip>
 - 圆角用 `rounded-sm/md/lg`，阴影用 `shadow-sm/md/lg/glow`，聚焦用统一聚焦态规则。
 - 新增色值先在 `globals.css` 的 `:root` / `[data-theme="dark"]` 成对定义，再在 `@theme inline` 映射。
 - 新增状态色沿用 `--success / --warning / --danger` 及其 `-soft` 变体，不要引入 `red-* / green-* / yellow-*` 裸色。
+- **禁止使用 Tailwind 调色板类**（`text-emerald-500` / `bg-slate-100` 等）：这些类在本次 token 体系外，
+  主题切换不会跟随。语义色一律映射到 `text-success` / `text-danger` / `text-warning` / `text-accent` 等 token 类。
+- **SVG 图形内的颜色也必须 token 化**：`<stop stopColor="var(--theme-sun-from)" />`、`stroke="var(--x)"`，
+  不要写 `stopColor="#fbbf24"`。多实例渲染的 SVG 若含 `<linearGradient>` 等 `id`，**必须用 `useId()` 生成唯一 id**
+  ——固定 id（如 `moon-grad`）在同一页面渲染多个实例时会互相覆盖渐变定义（`ThemeToggle` 即为此例，
+  见 §5.12 下方「主题切换按钮」）。
+- **图标统一从 `components/icons.tsx` 取用**，不要在组件文件里重复定义相同 `<svg>`。
+  同一图形曾出现三份 `ShareIcon` 副本（HomeView / ShareDialog / Editor），已收敛到图标库。
 
 ### 6.1 CSS 层级纪律（务必遵守）
 

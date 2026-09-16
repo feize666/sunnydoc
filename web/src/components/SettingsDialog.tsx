@@ -570,12 +570,7 @@ export function SettingsDialog({
                 当前为{theme === "light" ? "浅色" : "深色"}主题
               </div>
             </div>
-            <ThemeToggle
-              theme={theme}
-              onToggle={onToggleTheme}
-              size={18}
-              className="h-9 w-9"
-            />
+            <ThemeToggle theme={theme} onToggle={onToggleTheme} size={18} />
           </div>
 
           <div className="mt-4 text-[13px] font-semibold text-muted">语言</div>

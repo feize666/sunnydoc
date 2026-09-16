@@ -1,7 +1,8 @@
 "use client";
 
 import type { DocMeta } from "@/lib/api";
-import { CloseIcon } from "./icons";
+import { CloseIcon, StarIcon } from "./icons";
+import { EmptyState } from "./EmptyState";
 
 /** 全局收藏入口浮层：展示收藏的文档，点击打开。 */
 export function FavoritesPopover({
@@ -34,9 +35,12 @@ export function FavoritesPopover({
 
         <div className="flex-1 overflow-y-auto p-1.5">
           {favorites.length === 0 ? (
-            <div className="px-3 py-8 text-center text-[13px] text-faint">
-              暂无收藏，打开文档点击「收藏」即可加入
-            </div>
+            <EmptyState
+              size="panel"
+              icon={<StarIcon size={16} />}
+              title="暂无收藏"
+              description="打开文档点击「收藏」即可加入"
+            />
           ) : (
             <ul>
               {favorites.map((d) => (

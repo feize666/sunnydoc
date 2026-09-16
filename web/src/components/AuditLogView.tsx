@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { listAuditLogs, type AuditLog } from "@/lib/api";
+import { HistoryIcon } from "./icons";
+import { EmptyState } from "./EmptyState";
 
 const ACTION_LABELS: Record<string, { label: string; color: string }> = {
-  create: { label: "创建", color: "text-emerald-500" },
+  create: { label: "创建", color: "text-success" },
   update: { label: "更新", color: "text-accent" },
   delete: { label: "删除", color: "text-danger" },
   duplicate: { label: "复制", color: "text-accent" },
@@ -89,8 +91,12 @@ export function AuditLogView() {
           ))}
         </div>
       ) : logs.length === 0 ? (
-        <div className="rounded-xl border border-line bg-background py-16 text-center text-sm text-faint">
-          暂无操作记录
+        <div className="rounded-xl border border-line bg-background">
+          <EmptyState
+            icon={<HistoryIcon size={24} />}
+            title="暂无操作记录"
+            description="创建、更新、删除、共享等操作会记录在这里"
+          />
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-line bg-background">

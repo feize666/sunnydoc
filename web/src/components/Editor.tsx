@@ -20,7 +20,8 @@ import {
   LazyTableEditor,
   LazyRichEditor,
 } from "./LazyEditors";
-import { CopyIcon, CheckIcon, EditIcon, CodeIcon } from "./icons";
+import { CopyIcon, CheckIcon, EditIcon, CodeIcon, HistoryIcon, ShareIcon } from "./icons";
+import { EmptyState } from "./EmptyState";
 
 type Mode = "preview" | "edit" | "source";
 
@@ -34,17 +35,6 @@ function parseTableData(value: string): string[][] {
     /* fallthrough */
   }
   return [];
-}
-
-function ShareIcon({ size = 15 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="18" cy="5" r="3" />
-      <circle cx="6" cy="12" r="3" />
-      <circle cx="18" cy="19" r="3" />
-      <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
-    </svg>
-  );
 }
 
 function StarIcon({ size = 15, filled = false }: { size?: number; filled?: boolean }) {
@@ -269,7 +259,12 @@ export function Editor({
         <div className="mx-auto max-w-[760px] px-4 py-10 sm:px-10">
           <h2 className="mb-4 text-base font-semibold text-text">最近浏览</h2>
           {!recent || recent.length === 0 ? (
-            <p className="text-sm text-muted">暂无浏览记录，从左侧选择一个文档开始阅读</p>
+            <EmptyState
+              size="panel"
+              icon={<HistoryIcon size={16} />}
+              title="暂无浏览记录"
+              description="从左侧选择一个文档开始阅读"
+            />
           ) : (
             <ul className="overflow-hidden rounded-xl border border-line bg-surface">
               {recent.map((r, i) => (

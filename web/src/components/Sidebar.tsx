@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect } from "react";
 import { FileTree } from "./FileTree";
 import { Tooltip } from "./Tooltip";
-import { PlusIcon, SearchIcon, CloseIcon } from "./icons";
+import { PlusIcon, SearchIcon, CloseIcon, FileIcon } from "./icons";
+import { EmptyState } from "./EmptyState";
 import { useResizable } from "@/hooks/useResizable";
 import type { TreeNode, SortBy } from "@/data/docs";
 import type { Folder, SearchResult } from "@/lib/api";
@@ -712,9 +713,12 @@ export function Sidebar({
               </div>
             )}
             {data.length === 0 && !listError && (
-              <div className="px-2 py-4 text-center text-[13px] text-faint">
-                暂无文档，点击上方「导入」或「新建」
-              </div>
+              <EmptyState
+                size="panel"
+                icon={<FileIcon size={16} />}
+                title="暂无文档"
+                description="点击上方「导入」或「新建」开始"
+              />
             )}
             <FileTree
               data={data}

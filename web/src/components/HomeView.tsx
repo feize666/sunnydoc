@@ -6,20 +6,9 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { Tooltip } from "./Tooltip";
 import { UserMenu } from "./UserMenu";
 import { ThemeToggle } from "./ThemeToggle";
-import { PlusIcon, TrashIcon, HistoryIcon, FolderIcon, EditIcon, FileIcon, AlertIcon } from "./icons";
+import { PlusIcon, TrashIcon, HistoryIcon, FolderIcon, EditIcon, FileIcon, AlertIcon, ShareIcon } from "./icons";
 import { EmptyState } from "./EmptyState";
 import { useFlipList } from "@/hooks/useFlipList";
-
-function ShareIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="18" cy="5" r="3" />
-      <circle cx="6" cy="12" r="3" />
-      <circle cx="18" cy="19" r="3" />
-      <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
-    </svg>
-  );
-}
 
 function StarIcon({ size = 14 }: { size?: number }) {
   return (
@@ -260,7 +249,7 @@ export function HomeView({
             新建知识库
           </button>
 
-          <ThemeToggle theme={theme} onToggle={onToggleTheme} className="h-8 w-8" />
+          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
 
           {user && onLogout && (
             <UserMenu

@@ -10,6 +10,8 @@ import {
   type DocComment,
   type UserBrief,
 } from "@/lib/api";
+import { CommentIcon } from "./icons";
+import { EmptyState } from "./EmptyState";
 
 function formatCommentTime(ts: number): string {
   if (!ts) return "";
@@ -214,9 +216,12 @@ export function CommentPanel({
         {loading ? (
           <div className="py-8 text-center text-[13px] text-faint">加载中…</div>
         ) : comments.length === 0 ? (
-          <div className="py-8 text-center text-[13px] text-faint">
-            暂无评论{canComment ? "，来发表第一条吧" : ""}
-          </div>
+          <EmptyState
+            size="panel"
+            icon={<CommentIcon size={16} />}
+            title="暂无评论"
+            description={canComment ? "选中正文即可引用并发表第一条评论" : undefined}
+          />
         ) : (
           <ul className="space-y-4">
             {comments.map((c) => {

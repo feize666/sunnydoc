@@ -7,6 +7,8 @@ import {
   markAllNotificationsRead,
   type Notification,
 } from "@/lib/api";
+import { BellIcon } from "./icons";
+import { EmptyState } from "./EmptyState";
 
 function formatTime(ts: number): string {
   if (!ts) return "";
@@ -158,7 +160,12 @@ export function NotificationPanel({
             ))}
           </ul>
         ) : items.length === 0 ? (
-          <div className="py-12 text-center text-[13px] text-faint">暂无通知</div>
+          <EmptyState
+            size="panel"
+            icon={<BellIcon size={16} />}
+            title="暂无通知"
+            description="文档共享、评论与系统消息会出现在这里"
+          />
         ) : (
           <ul>
             {items.map((n, i) => (
