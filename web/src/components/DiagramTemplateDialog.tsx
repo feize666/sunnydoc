@@ -228,7 +228,7 @@ export function DiagramTemplateDialog({
                       </span>
                       <button
                         onClick={() => handleApply(t.data, t.name)}
-                        className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                        className="rounded-md bg-accent-solid px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
                       >
                         应用
                       </button>
@@ -285,7 +285,7 @@ export function DiagramTemplateDialog({
                       </span>
                       <button
                         onClick={() => handleApplyCommunity(t)}
-                        className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                        className="rounded-md bg-accent-solid px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
                       >
                         应用
                       </button>

@@ -12,15 +12,17 @@
   --background: #ffffff;
   --surface: #f8fafc;
   --surface-2: #eef2f7;
-  --hover: #eef4ff;
-  --active: #dbeafe;
+  /* hover / active 须在 white 上可察觉：原 #eef4ff 仅 1.10，与静止态几乎无差。 */
+  --hover: #e2ecfd;   /* white 1.19 */
+  --active: #d3e2fb;  /* white 1.31 */
 
   /* 文本：三级层级 text > muted > faint。
-     faint 为准文本色（占位符 / 旁白 / 次数统计），已按 WCAG AA 校准：
-     亮色 4.76:1（≥4.5），暗色 6.08:1 —— 勿再调浅，否则弱文字不可读。 */
+     faint 为准文本色（占位符 / 旁白 / 次数统计），按 WCAG AA 以「最严苛背景
+     surface-2(#eef2f7)」为准校准：亮色 4.61:1，暗色 4.72:1 —— 勿再调浅。
+     （原 #64748b 只按白底算得 4.76，落到 surface-2 上仅 4.23，不达标。） */
   --text: #0f172a;
   --muted: #475569;
-  --faint: #64748b;
+  --faint: #5f6e84;
 
   /* 边框 */
   --line: #e2e8f0;
@@ -32,10 +34,21 @@
   --accent-hover: #1d4ed8;
   --accent-active: #1e4fd6;
   --accent-deep: #2b5ce6;
-  --accent-grad: linear-gradient(135deg, #6ea0ff 0%, #2f6bff 48%, #2451d8 100%);
+  /* 渐变主按钮底：三档 stop 全部承载白字，故每档 luminance 都压到「白字 ≥4.5」
+     之下，且预留 hover 提亮（brightness 1.04）后仍 ≥4.5 的余量。
+     原值：起端 #6ea0ff 白字仅 2.58、中端 #2f6bff 4.50（临界），均已修正。 */
+  --accent-grad: linear-gradient(135deg, #2862f4 0%, #0c4be8 48%, #093ab1 100%);
+  /* 实底蓝（bg-accent-solid + text-white）：单色场景与渐变同一安全线。
+     与 --accent(#2f6bff) 分开的原因：--accent 还兼任 137 处 text-accent 文本色，
+     文本需要「亮」、白字底需要「暗」，同一变量无法同时满足两个方向。 */
+  --accent-solid: #2862f4;        /* rest 白字 5.07 / hover 后 4.73 */
+  --accent-solid-hover: #1d4ed8;  /* 白字 6.70 */
 
-  /* 渐变：蓝 → 靛（科技感点缀，用于装饰线/强调） */
-  --grad-blue-indigo: linear-gradient(135deg, #4f8bff 0%, #2f6bff 45%, #6d5cff 100%);
+  /* 渐变：蓝 → （品牌区 hero-surface / avatar-ring 承载白字与 hero-ink 系前景）。
+     三档 stop 全部要托住白字，故起端压到 luminance 0.1833 以下：
+     原值 #4f8bff 白字仅 2.58，整片品牌区标题/正文在 WCAG 上不可读，已按方案②修正。
+     修正后：起端白字 5.55 / 中端 5.24 / 末端 4.53，最严苛档仍 ≥4.5。 */
+  --grad-blue-indigo: linear-gradient(135deg, #065cef 0%, #2b54fa 45%, #6445fa 100%);
 
   /* 主题切换图形（ThemeToggle）：月亮=蓝紫渐变，太阳=金黄渐变。
      两者互斥显示（亮色见月亮、暗色见太阳），仍按规范成对定义两套。 */
@@ -68,18 +81,27 @@
   /* 聚焦环 */
   --focus-ring: 0 0 0 3px rgba(47, 107, 255, 0.25);
 
-  /* 滚动条 */
-  --scrollbar: #cbd5e1;
-  --scrollbar-hover: #94a3b8;
+  /* 滚动条：装饰级，但在白底上过淡会「看不见滚动条」，故各加深一档 */
+  --scrollbar: #c2cedb;
+  --scrollbar-hover: #8b9cb0;
 
-  /* 品牌氛围层（登录页品牌区 / 渐变强调区） */
-  --hero-ink: #ffffff;                       /* 渐变底上的前景色 */
-  --hero-ink-muted: rgba(255, 255, 255, 0.74);
-  --hero-ink-faint: rgba(255, 255, 255, 0.56);
-  --hero-grid-line: rgba(255, 255, 255, 0.14);
-  --hero-glow: rgba(255, 255, 255, 0.32);
-  --hero-chip: rgba(255, 255, 255, 0.16);
-  --hero-chip-border: rgba(255, 255, 255, 0.22);
+  /* 品牌氛围层（登录页品牌区 / 渐变强调区）
+     前景色是「半透明白叠加在渐变底上」：半透明白的对比度恒 ≤ 纯白，
+     故只靠调 alpha 无法在浅渐变上达标 —— 必须先把渐变压暗（见 --grad-blue-indigo），
+     alpha 再按「白 > muted > faint」的层级收紧。
+     faint 取 0.88（亮 4.64 / 暗 4.68）：早前的 0.86 亮色恰好 4.50，无余量。 */
+  --hero-ink: #ffffff;                       /* 渐变底上的前景色 · 5.55 / 5.57 */
+  --hero-ink-muted: rgba(255, 255, 255, 0.92);  /* 亮 4.93 / 暗 4.97 */
+  --hero-ink-faint: rgba(255, 255, 255, 0.88);  /* 亮 4.64 / 暗 4.68 */
+  /* 装饰层：网格遮罩（右上角椭圆）与光晕都只在右上角显形，实测不覆盖左侧正文；
+     但为给文字留出余量，仍各降一档（网格 0.14→0.08、光晕 0.32→0.18）。 */
+  --hero-grid-line: rgba(255, 255, 255, 0.08);
+  --hero-glow: rgba(255, 255, 255, 0.18);
+  /* 玻璃徽标底：原是 rgba(255,255,255,0.16) 白玻璃，但「白玻璃 + 白字」数学上
+     不可能达标（半透明白的对比恒 ≤ 纯白）——0.16 时 chip 内白字仅 4.17，越白越糊。
+     改用深蓝玻璃：chip 内白字 亮 7.42 / 暗 7.37，徽标块感保留。 */
+  --hero-chip: rgba(9, 20, 62, 0.34);
+  --hero-chip-border: rgba(255, 255, 255, 0.38);
 
   /* 原生下拉箭头（.select 用）：随主题切换描边色，避免在组件里写裸色值 */
   --chevron-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
@@ -97,6 +119,9 @@
   --muted: #94a3b8;
   --faint: #8494a8;
 
+  /* 暗色 --line：与页面底对比 1.52。经实测判定为「装饰性描边」而非 UI 组件边界
+     （border-line 在 input/select/textarea 上 0 次，表单边框由 .input 等类内部定义），
+     故不受 WCAG 1.4.11 的 3:1 约束；1.52 已高于亮色的 1.23，落在行业基准区间。 */
   --line: #273549;
   --line-strong: #3b4a63;
 
@@ -105,9 +130,18 @@
   --accent-hover: #6ea0ff;
   --accent-active: #3b82f6;
   --accent-deep: #3b82f6;
-  --accent-grad: linear-gradient(135deg, #8ab5ff 0%, #4f8bff 48%, #3b82f6 100%);
+  /* 暗色渐变必须比亮色更深：亮色原样搬到暗底上时白字只有 2.07~3.68。
+     三档保品牌蓝色相（H≈223°），每档在 #0b1120 上轮廓 ≥2.8，且 hover 提亮后白字仍 ≥4.5。 */
+  --accent-grad: linear-gradient(135deg, #2f63ee 0%, #134ce4 48%, #0e3baf 100%);
+  /* 实底蓝：hover 取「更深」方向也行（#2f63ee→#325fd9 白字 4.61→5.56），
+     此处与渐变同色系，hover 用略深一档保证白字余量。 */
+  --accent-solid: #2f63ee;        /* rest 白字 5.07 / vs 暗底 3.71 */
+  --accent-solid-hover: #325fd9;  /* 白字 5.56 */
 
-  --grad-blue-indigo: linear-gradient(135deg, #6ea0ff 0%, #4f8bff 45%, #8b7bff 100%);
+  /* 暗色品牌渐变：暗底上的白字本就比亮色宽松，但仍需按同一安全线校准，
+     使 hero-surface 在两套主题下观感一致（同为「深蓝→深靛」，不因切主题而跳色）。
+     修正后：起端 5.57 / 中端 5.36 / 末端 4.52。 */
+  --grad-blue-indigo: linear-gradient(135deg, #0f5ee6 0%, #3057f2 45%, #6448f3 100%);
 
   /* 暗色下月亮图形提亮一档，避免在深底上糊成一团 */
   --theme-moon-from: #a5b4fc;
@@ -134,12 +168,13 @@
 
   --focus-ring: 0 0 0 3px rgba(79, 139, 255, 0.35);
 
-  --scrollbar: #334155;
-  --scrollbar-hover: #475569;
+  --scrollbar: #3f4f68;
+  --scrollbar-hover: #526178;
 
-  /* 品牌氛围层（深色主题下沿用同一套白前景，渐变底更深） */
-  --hero-glow: rgba(120, 160, 255, 0.24);
-  --hero-grid-line: rgba(255, 255, 255, 0.1);
+  /* 品牌氛围层（深色主题下沿用同一套白前景，渐变底更深；
+     装饰层与亮色统一为网格 0.08，光晕沿用蓝色但同样不叠加到正文上） */
+  --hero-glow: rgba(120, 160, 255, 0.20);
+  --hero-grid-line: rgba(255, 255, 255, 0.08);
 
   /* 深色主题下拉箭头：改用 --faint (#8494a8) 描边 */
   --chevron-down: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238494a8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
@@ -162,6 +197,8 @@
   --color-accent-hover: var(--accent-hover);
   --color-accent-active: var(--accent-active);
   --color-accent-deep: var(--accent-deep);
+  --color-accent-solid: var(--accent-solid);
+  --color-accent-solid-hover: var(--accent-solid-hover);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-warning: var(--warning);
@@ -905,7 +942,8 @@ body {
   outline-offset: 2px;
 }
 
-/* 科技感主按钮：蓝→靛蓝渐变 + 微光 */
+/* 科技感主按钮：蓝→靛蓝渐变 + 微光。
+   hover 提亮幅度受「白字需 ≥4.5」约束：1.06 会把渐变最亮端推破线，故取 1.04。 */
 .btn-accent {
   background-image: var(--accent-grad);
   box-shadow: 0 1px 2px rgba(47, 107, 255, 0.28),
@@ -913,13 +951,13 @@ body {
   transition: filter 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
 }
 .btn-accent:hover {
-  filter: brightness(1.06) saturate(1.08);
+  filter: brightness(1.04) saturate(1.08);
   box-shadow: var(--shadow-glow),
     inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 .btn-accent:active {
   transform: scale(0.97);
-  filter: brightness(0.97);
+  filter: brightness(0.96);
 }
 .btn-accent:focus-visible {
   outline: 2px solid var(--accent);

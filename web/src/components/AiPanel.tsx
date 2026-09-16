@@ -66,7 +66,7 @@ function attachmentEmoji(kind: string): string {
 /** 单条附件展示（含图片缩略图/文件图标 + 文件名 + 大小） */
 function AttachmentBadge({ att, preview }: { att: { filename: string; kind: string; size: number; preview_url?: string | null }; preview?: boolean }) {
   return (
-    <span className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-white/20 px-2 py-1">
+    <span className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-[var(--hero-chip)] px-2 py-1">
       {att.kind === "image" && preview && att.preview_url ? (
         <img src={att.preview_url} alt={att.filename} className="h-8 w-8 shrink-0 rounded object-cover" />
       ) : (
@@ -74,7 +74,7 @@ function AttachmentBadge({ att, preview }: { att: { filename: string; kind: stri
       )}
       <span className="min-w-0">
         <span className="block max-w-[200px] truncate text-[12px] font-medium">{att.filename}</span>
-        <span className="block text-[10px] opacity-70">{formatSize(att.size)}</span>
+        <span className="block text-[10px] opacity-90">{formatSize(att.size)}</span>
       </span>
     </span>
   );
@@ -808,7 +808,7 @@ export function AiPanel({
                     <button
                       type="button"
                       onClick={() => retryWithWeb(messages[i - 1]?.content ?? "")}
-                      className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
+                      className="flex items-center gap-1.5 rounded-lg bg-accent-solid px-3 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <circle cx="12" cy="12" r="10" />

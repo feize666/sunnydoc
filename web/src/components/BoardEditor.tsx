@@ -196,7 +196,7 @@ export function BoardEditor({
             key={t.id}
             onClick={() => setTool(t.id)}
             className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
-              tool === t.id ? "bg-accent text-white" : "text-muted hover:bg-hover hover:text-text"
+              tool === t.id ? "bg-accent-solid text-white" : "text-muted hover:bg-hover hover:text-text"
             }`}
           >
             {t.label}

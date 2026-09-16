@@ -360,7 +360,7 @@ export function Editor({
                   {collabPresence.slice(0, 3).map((p) => (
                     <span
                       key={p.id}
-                      className="grid h-6 w-6 place-items-center rounded-full border border-background bg-accent text-[11px] font-medium text-white"
+                      className="grid h-6 w-6 place-items-center rounded-full border border-background bg-accent-solid text-[11px] font-medium text-white"
                       title={p.nickname}
                     >
                       {p.avatar ? (
@@ -794,7 +794,7 @@ export function Editor({
               setAnnotate(null);
               window.getSelection()?.removeAllRanges();
             }}
-            className="btn-ghost bg-accent px-2.5 text-white shadow-md hover:bg-accent hover:brightness-105"
+            className="btn-ghost bg-accent-solid px-2.5 text-white shadow-md hover:bg-accent-solid-hover hover:brightness-105"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />

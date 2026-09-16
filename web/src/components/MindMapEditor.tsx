@@ -1727,7 +1727,7 @@ export function MindMapEditor({
         >
           模板
         </button>
-        <button onClick={() => setAiOpen(true)} className="rounded-md bg-accent px-2.5 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90">
+        <button onClick={() => setAiOpen(true)} className="rounded-md bg-accent-solid px-2.5 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90">
           ✨ AI 生成
         </button>
         <button onClick={() => commit([{ id: genId(), text: "中心主题", parent: null }], [])} className="rounded-md px-2 py-1.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text">
@@ -1750,7 +1750,7 @@ export function MindMapEditor({
             />
             <div className="flex justify-end gap-2">
               <button onClick={() => setAiOpen(false)} className="rounded-md px-3 py-1.5 text-[13px] text-muted hover:bg-hover">取消</button>
-              <button onClick={runAi} disabled={aiBusy || !aiText.trim()} className="rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-50">
+              <button onClick={runAi} disabled={aiBusy || !aiText.trim()} className="rounded-md bg-accent-solid px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-50">
                 {aiBusy ? "生成中…" : "生成"}
               </button>
             </div>
@@ -1801,7 +1801,7 @@ export function MindMapEditor({
               </button>
               <button
                 onClick={confirmCustomTheme}
-                className="rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-white hover:opacity-90"
+                className="rounded-md bg-accent-solid px-3 py-1.5 text-[13px] font-medium text-white hover:opacity-90"
               >
                 应用
               </button>
@@ -2316,7 +2316,7 @@ export function MindMapEditor({
                       setNodeNote(noteTarget, noteDraft.trim());
                       setNoteTarget(null);
                     }}
-                    className="rounded-md bg-accent px-2.5 py-1 text-[12px] font-medium text-white hover:opacity-90"
+                    className="rounded-md bg-accent-solid px-2.5 py-1 text-[12px] font-medium text-white hover:opacity-90"
                   >
                     保存
                   </button>

@@ -45,7 +45,7 @@ function Checkbox({
       role="checkbox"
       className={`grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors ${
         isOn || isPartial
-          ? "border-accent bg-accent text-white"
+          ? "border-accent bg-accent-solid text-white"
           : "border-line bg-background text-transparent hover:border-accent/50"
       }`}
     >

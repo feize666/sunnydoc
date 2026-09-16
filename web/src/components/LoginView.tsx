@@ -68,7 +68,7 @@ export function LoginView({ onAuthed }: { onAuthed: (user: User) => void }) {
       {/* —— 左侧品牌区（窄屏隐藏） —— */}
       <aside className="hero-surface hidden w-[46%] max-w-[560px] shrink-0 flex-col justify-between p-10 lg:flex xl:p-12">
         <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/18 text-lg font-bold ring-1 ring-white/25 backdrop-blur-sm">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--hero-chip)] text-lg font-bold ring-1 ring-[var(--hero-chip-border)] backdrop-blur-sm">
             知
           </span>
           <div className="leading-tight">

@@ -2165,7 +2165,7 @@ export function FlowchartEditor({
           </button>
           <button
             onClick={() => setAiOpen(true)}
-            className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
+            className="rounded-md bg-accent-solid px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
           >
             ✨ AI 生成
           </button>
@@ -2192,7 +2192,7 @@ export function FlowchartEditor({
               <button onClick={() => setAiOpen(false)} className="rounded-md px-3 py-1.5 text-[13px] text-muted hover:bg-hover">
                 取消
               </button>
-              <button onClick={runAi} disabled={aiBusy || !aiText.trim()} className="rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-50">
+              <button onClick={runAi} disabled={aiBusy || !aiText.trim()} className="rounded-md bg-accent-solid px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-50">
                 {aiBusy ? "生成中…" : "生成"}
               </button>
             </div>
@@ -2258,7 +2258,7 @@ export function FlowchartEditor({
               <button onClick={closeEdit} className="rounded-md px-3 py-1.5 text-[13px] text-muted hover:bg-hover">
                 取消
               </button>
-              <button onClick={commitEdit} className="rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-white">
+              <button onClick={commitEdit} className="rounded-md bg-accent-solid px-3 py-1.5 text-[13px] font-medium text-white">
                 确定
               </button>
             </div>

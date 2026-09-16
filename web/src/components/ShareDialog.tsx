@@ -188,7 +188,7 @@ export function ShareDialog({
                             <button
                               onClick={() => handleAdd(u, "write")}
                               disabled={addingId === u.id}
-                              className="rounded-md bg-accent-soft px-2 py-1 text-[12px] text-accent transition-colors hover:bg-accent hover:text-white"
+                              className="rounded-md bg-accent-soft px-2 py-1 text-[12px] text-accent transition-colors hover:bg-accent-solid hover:text-white"
                             >
                               可编辑
                             </button>
@@ -250,7 +250,7 @@ export function ShareDialog({
                         onClick={() => handleTogglePermission(s)}
                         className={`rounded-full px-2.5 py-1 text-[12px] font-medium transition-colors ${
                           s.permission === "write"
-                            ? "bg-accent-soft text-accent hover:bg-accent hover:text-white"
+                            ? "bg-accent-soft text-accent hover:bg-accent-solid hover:text-white"
                             : "bg-surface-2 text-faint hover:bg-hover hover:text-text"
                         }`}
                       >

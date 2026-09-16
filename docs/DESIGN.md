@@ -20,13 +20,19 @@
 
 | Token | 浅色 | 深色 | 用途 |
 | --- | --- | --- | --- |
-| `--accent` | `#2f6bff` | `#4f8bff` | 主色：链接、选中态、焦点、图标强调 |
-| `--accent-hover` | `#1d4ed8` | `#6ea0ff` | 主色 hover |
-| `--accent-active` | `#1e4fd6` | `#3b82f6` | 主色按下 |
-| `--accent-deep` | `#2b5ce6` | `#3b82f6` | 主色深色锚点 |
+| `--accent` | `#2f6bff` | `#4f8bff` | 主色：链接、选中态、焦点、图标强调（**兼任 137 处 `text-accent` 文本色，故须「亮」**） |
+| `--accent-solid` | `#2862f4` | `#2f63ee` | **实底蓝**：`bg-accent-solid` + `text-white` 的单色场景（白字底须「暗」）。新增 token，与 `--accent` 分离，详见 §6.3 |
+| `--accent-solid-hover` | `#1d4ed8` | `#325fd9` | 实底蓝 hover（白字 6.70 / 5.56） |
+| `--accent-hover` | `#1d4ed8` | `#6ea0ff` | 主色 hover（注：TSX 中 0 引用，当前为保留 token） |
+| `--accent-active` | `#1e4fd6` | `#3b82f6` | 主色按下（注：TSX 中 0 引用，当前为保留 token） |
+| `--accent-deep` | `#2b5ce6` | `#3b82f6` | 主色深色锚点（注：TSX 中 0 引用，当前为保留 token） |
 | `--accent-soft` | `#eaf1ff` | `#172554` | 主色弱底（选中背景 / 徽标底） |
-| `--accent-grad` | `linear-gradient(135deg,#5b8dff,#2f6bff 50%,#2b5ce6)` | `linear-gradient(135deg,#7aa7ff,#4f8bff 50%,#3b82f6)` | 渐变主按钮、消息气泡 |
-| `--grad-blue-indigo` | `linear-gradient(135deg,#4f8bff,#2f6bff 45%,#6d5cff)` | `linear-gradient(135deg,#6ea0ff,#4f8bff 45%,#8b7bff)` | 蓝→靛装饰线（H1 下划线等） |
+| `--accent-grad` | `linear-gradient(135deg,#2862f4,#0c4be8 48%,#093ab1)` | `linear-gradient(135deg,#2f63ee,#134ce4 48%,#0e3baf)` | 渐变主按钮、消息气泡、`logo-mark`。**三档均承载白字**，每档按白字 ≥4.5 校准 |
+| `--grad-blue-indigo` | `linear-gradient(135deg,#065cef,#2b54fa 45%,#6445fa)` | `linear-gradient(135deg,#0f5ee6,#3057f2 45%,#6448f3)` | 品牌渐变面板（`.hero-surface` 登录页/首页）与 `avatar-ring`。**承载白字与 `--hero-*` 前景**，故压得比 `--accent` 更深 |
+
+> **`--accent` 与 `--accent-solid` 为何必须分开**：`--accent` 同时担任「文本色」与「白字底」两个角色，
+> 而这两个角色对亮度的要求方向相反——文本要够亮才能看清，白字底要够暗才能托住白字。
+> 同一个变量无法同时满足，故拆为两个 token。改任一者都需重算 §6.3 的对比度。
 
 ### 2.2 背景 / 文本 / 边框
 
@@ -35,13 +41,15 @@
 | `--background` | `#ffffff` | `#0b1120` | 页面主背景 |
 | `--surface` | `#f8fafc` | `#111827` | 侧栏 / 面板 / 工具栏底 |
 | `--surface-2` | `#eef2f7` | `#1e293b` | 次级底（代码块 / 输入框 / 表头） |
-| `--hover` | `#eef4ff` | `#24324a` | hover 背景 |
-| `--active` | `#dbeafe` | `#1e3a8a` | 选中背景 |
+| `--hover` | `#e2ecfd` | `#24324a` | hover 背景（须在 `--background` 上可察觉，见 §6.3） |
+| `--active` | `#d3e2fb` | `#1e3a8a` | 选中背景 |
 | `--text` | `#0f172a` | `#e2e8f0` | 正文 / 标题 |
 | `--muted` | `#475569` | `#94a3b8` | 次要文字 |
-| `--faint` | `#64748b` | `#8494a8` | 弱文字 / 占位 / 图标（**已按 AA 校准，勿调浅**，详见 §6.3） |
-| `--line` | `#e2e8f0` | `#273549` | 边框 / 分隔线 |
-| `--line-strong` | `#cbd5e1` | `#3b4a63` | 强调边框（次要按钮 hover） |
+| `--faint` | `#5f6e84` | `#8494a8` | 弱文字 / 占位 / 图标（**已按最严苛背景 `--surface-2` 校准为 AA，勿调浅**，详见 §6.3） |
+| `--line` | `#e2e8f0` | `#273549` | 边框 / 分隔线（**装饰性**，不受 3:1 约束，暗色 1.52 为定论，详见 §6.3） |
+| `--line-strong` | `#cbd5e1` | `#3b4a63` | 强调边框（次要按钮 hover）。**若用于表单控件轮廓，须按 3:1 单独核算** |
+| `--scrollbar` | `#c2cedb` | `#3f4f68` | 滚动条滑块（装饰级，但过淡会「看不见滚动条」，故较原值各深一档） |
+| `--scrollbar-hover` | `#8b9cb0` | `#526178` | 滚动条滑块 hover |
 
 ### 2.3 状态色
 
@@ -87,15 +95,33 @@ Tailwind 映射：`shadow-sm` / `shadow-md` / `shadow-lg` / `shadow-glow`。
 - 可点击元素（`button` / `[role="button"]` / `a` / `[tabindex]`）`focus-visible` → 蓝色 `outline`。
 - 文本输入 / 下拉（`input` / `select`）`focus-visible` → 蓝色边框 + `--focus-ring` 光晕。
 
-### 3.4 玻璃拟态
+### 3.4 玻璃拟态（现状说明）
 
-| Token | 浅色 | 深色 |
-| --- | --- | --- |
-| `--glass-bg` | `rgba(255,255,255,.72)` | `rgba(17,24,39,.72)` |
-| `--glass-blur` | `12px` | `12px` |
-| `--glass-border` | `rgba(255,255,255,.6)` | `rgba(255,255,255,.08)` |
+> **注意**：本节早前记载的 `--glass-bg` / `--glass-blur` / `--glass-border` 三个 token
+> 与 `.glass` 工具类**在 `globals.css` 中均不存在**（已核对，0 处定义）。
+> 实际的玻璃效果只有一处来源：`.hero-chip` 内的 `backdrop-filter: blur(4px)`，
+> 以及登录页两处引用 `--hero-chip` 的徽标所带的 `backdrop-blur-sm`。
+> 浮层（`.menu-panel` / `.popover-panel`）用的是**不透明底 + 边框 + 阴影**，并未做毛玻璃。
+> 若要恢复 token 化，请先补定义再更新本节，**不要沿用旧表**。
 
-使用类 `.glass`（半透明 + `backdrop-filter: blur()`），用于命令面板等浮层。
+### 3.5 品牌氛围层（`--hero-*`，登录页 / 首页渐变面板）
+
+用于 `.hero-surface`（登录页品牌区、首页欢迎条）、`.hero-chip`（玻璃徽标）
+与 `avatar-ring` / `logo-mark`。**全部前景色在 `--grad-blue-indigo` / `--accent-grad` 之上**，
+故其取值受 §6.3「渐变面上的前景色」的物理约束支配。
+
+| Token | 浅色 | 深色 | 说明 |
+| --- | --- | --- | --- |
+| `--hero-ink` | `#ffffff` | `#ffffff` | 渐变底主前景 · 白字 5.55 / 5.57 |
+| `--hero-ink-muted` | `rgba(255,255,255,.92)` | 同左 | 次级前景 · 4.93 / 4.97 |
+| `--hero-ink-faint` | `rgba(255,255,255,.88)` | 同左 | 弱前景 · 4.64 / 4.68（早前 0.86 仅 4.50，无余量） |
+| `--hero-grid-line` | `rgba(255,255,255,.08)` | 同左 | 网格纹理线（仅右上角显形，见 §6.3） |
+| `--hero-glow` | `rgba(255,255,255,.18)` | `rgba(120,160,255,.20)` | 右上角径向光晕 |
+| `--hero-chip` | `rgba(9,20,62,.34)` | 同左 | **深蓝玻璃**徽标底（原为白玻璃，白字不可能达标，见 §6.3） |
+| `--hero-chip-border` | `rgba(255,255,255,.38)` | 同左 | 徽标描边（在深玻璃上 2.48:1 可辨） |
+
+`--hero-chip` 是**唯一允许的渐变面玻璃底**。任何渐变底上的徽标 / 卡片一律引用它，
+**禁止写 `bg-white/20`、`bg-white/18` 这类裸白玻璃**（历史缺陷，已全量清除）。
 
 ---
 
@@ -120,6 +146,13 @@ Tailwind 映射：`shadow-sm` / `shadow-md` / `shadow-lg` / `shadow-glow`。
 <button className="btn btn-accent text-white">保存</button>
 <button className="btn btn-accent btn-sm text-white">保存</button>
 ```
+
+> **`brightness` 只能取 1.04**：`.btn-accent:hover` 的提亮会同时抬高渐变各档的亮度，
+> 从而压低白字对比。1.06 会使最亮档（`#2862f4`）的白字跌到 **4.32 < 4.5**；
+> 1.04 时为 4.89，达标。改这个值必须重算 §6.3。
+
+> **单色实底场景用 `bg-accent-solid`**：当需要「纯色蓝底 + 白字」（而非渐变）时，
+> 用 `bg-accent-solid` 而不是 `bg-accent`——`--accent` 是文本色，作白字底不达标。详见 §6.3。
 
 ### 5.2 次要按钮（`.btn` + `.btn-secondary`）
 `.btn-secondary` 叠加描边 + 透明白底，hover 用 `--hover` 底 + `--line-strong` 边框。
@@ -194,23 +227,33 @@ API 不变：`<Tooltip content="提示" side="top|bottom">触发元素</Tooltip>
 `.md-body .codeblock` 容器 + `.codeblock-head`（语言标签 + 复制按钮）+ `pre.shiki`（shiki 高亮）。复制逻辑在 `components/CodeBlock.tsx`（事件委托），样式与逻辑分离，勿改动复制逻辑。
 
 ### 5.9 消息气泡
-用户消息用 `.bubble-accent`（渐变蓝底白字）；AI 消息用 `border-line bg-background` 圆角卡片，错误态用 `border-danger/40 bg-danger-soft text-danger`。
+用户消息用 `.bubble-accent`（渐变蓝底白字，白字 5.07:1）；AI 消息用 `border-line bg-background` 圆角卡片，错误态用 `border-danger/40 bg-danger-soft text-danger`。
+
+> **用户气泡内的附件徽标**（`AiPanel` 的 `AttachmentBadge`）底必须是 `var(--hero-chip)`（深蓝玻璃），
+> 不能是 `bg-white/20`。原名/大小两行中，**大小行原用 `opacity-70` 只有 2.54:1，已提到 `opacity-90`（6.42:1）**。
+> 原因是它叠在 `--accent-grad` 渐变的**最亮档**上，白玻璃会把底提亮到白字 3.58:1。详见 §6.3。
 
 ### 5.10 品牌标识（`.logo-mark`）
-渐变蓝底白字 + 微光，用于「知」Logo 标识，替代硬编码 `from-[#5b8dff] to-[#2b5ce6]`。
+渐变蓝底（`--accent-grad`）白字 + 微光，用于「知」Logo 标识，替代硬编码 `from-[#5b8dff] to-[#2b5ce6]`。
+白字 5.07:1（亮/暗同值）。
 
 ### 5.11 页面级组合类（登录页 / 首页）
 
 | 类名 | 用途 | 说明 |
 | --- | --- | --- |
 | `.hero-surface` | 品牌渐变面板 | `--grad-blue-indigo` 底 + 网格纹理（`::before`）+ 右上光晕（`::after`）。前景文字统一用 `--hero-ink / --hero-ink-muted / --hero-ink-faint`。**子元素自动 `position: relative; z-index: 1`**，无需手动处理层级。用于登录页左侧品牌区、首页欢迎条。 |
-| `.hero-chip` | 渐变底上的小徽标 | 半透明白底 + 白描边 + `backdrop-filter`，文字用 `--hero-ink`。 |
+| `.hero-chip` | 渐变底上的小徽标 | **深蓝玻璃底**（`--hero-chip` = `rgba(9,20,62,.34)`）+ 白描边 + `backdrop-filter`，文字用 `--hero-ink`。**不可改回白玻璃**（白玻璃+白字数学上不可能达标，见 §6.3）。 |
 | `.stat-tile` | 首页数据概览磁贴 | 与 `.card` 同规格，hover 上浮 1px + 蓝色描边 + `--shadow-md`。 |
 | `.section-heading` | 首页区块标题 | 左侧 3px 渐变竖条（`::before`）+ 15px/600 标题；计数徽标以兄弟 `span` 传入。 |
 | `.kb-topline` / `.kb-badge` | 知识库卡片 hover 装饰 | 需配合父级 `.group`：hover 时顶部渐变条淡入、首字徽标由浅底蓝字反转为渐变底白字。 |
 | `.anim-rise-in` / `.stagger` | 上浮入场 | `.anim-rise-in` 单项 0.32s 上浮；`.stagger > *` 对同容器前 6 个子项依次延迟 0.02~0.22s。均受 `prefers-reduced-motion` 兜底。 |
 
 > 品牌氛围层前景色（`--hero-ink*` / `--hero-grid-line` / `--hero-glow` / `--hero-chip*`）在 `:root` 与 `[data-theme="dark"]` 成对定义，渐变底上始终为白色系以保证对比度。
+
+> **网格与光晕有作用域，不是全屏均匀的**（评估对比度时须注意）：
+> `::before` 网格被 `mask-image` 限制在右上角（`ellipse 86% 74% at 84% 6%`），
+> `::after` 光晕是以右上角为心的圆（全透明半径 = `0.68 ×` 最远角距离 ≈ 182.7px）。
+> 登录页正文位于左侧，两者的实际叠加量都为 0。详见 §6.3。
 
 ### 5.12 尺寸阶梯（全站统一，勿另造新规格）
 
@@ -328,10 +371,65 @@ Tailwind 4 的层级顺序为 `theme < base < components < utilities`。
 #### 对比度
 
 - 文本色按 WCAG AA **4.5:1** 校准，非文本（边框 / 图标）按 **3.0:1** 校准。
-- `--faint` 是准文本色（占位符 / 旁白 / 计数），已校准：**亮色 `#64748b` = 4.76:1**、
-  **暗色 `#8494a8` = 6.08:1**。**勿再调浅**——浅于这两个值就不达 AA。
+- `--faint` 是准文本色（占位符 / 旁白 / 计数）。**须按最严苛背景 `--surface-2` 校准，而非白底**：
+  亮色 `#5f6e84` = **4.61:1（对 surface-2）**、暗色 `#8494a8` = **6.08:1**。**勿再调浅**。
+  （原先按白底算的 `#64748b` 看似 4.76:1 达标，但落在 `--surface-2` 上只有 4.23:1，实为不达标。）
+- `--hover` / `--active` 须在 `--background` 上**可察觉**：亮色 `#e2ecfd`（1.19）/ `#d3e2fb`（1.31）。
+  原 `#eef4ff` 仅 1.10，与静止态几乎无差，hover 反馈形同失效。
 - 改任何文本 token 后必须重算对比度（公式：相对亮度 `L = 0.2126R + 0.7152G + 0.0722B`，
   比值 `(L₁+0.05)/(L₂+0.05)`），并同时核对它落在 `--background` / `--surface` / `--surface-2` 上的表现。
+
+#### 装饰性边框 vs UI 组件边界（WCAG 1.4.11 的适用范围）
+
+- `--line` 系列的 3:1 约束**只适用于 UI 组件边界**（输入框 / 按钮 / 选择器等的可视轮廓）。
+- 本项目 `border-line` 实测**在 `input`/`select`/`textarea` 上 0 次**——表单边框由 `.input` 等
+  组件类内部定义。故 `--line` 实为**装饰性分隔线**（div 容器 / 分割线），**不受 3:1 约束**。
+- 据此，暗色 `--line: #273549` 对 `--background` 的 **1.52:1 判定为可接受**（已高于亮色的 1.23，
+  与 GitHub Primer 等业界暗色描边基线同档）。**此为定论，勿再以「不达 3:1」为由反复调整。**
+- 若将来把 `--line` 用到表单控件的可视轮廓上，则该处**必须单独取 `--line-strong` 或更深值**并重算 3:1。
+
+#### 渐变面上的前景色（关键物理约束）
+
+**半透明白的对比度恒 ≤ 纯白。** 这条推论决定了渐变品牌区的所有取值方向：
+
+- 若渐变某档的**纯白字**对比 < 4.5，则在它上面**任何 alpha 的半透明白都不可能达标**。
+  因此要么压暗渐变色阶，要么降低叠加层强度，**不能靠调 alpha 补救**。
+- **品牌区 `--grad-blue-indigo`** 承载白字与 `--hero-*` 系前景，三档 stop 全部按白字 ≥4.5 校准：
+  亮色 `#065cef / #2b54fa / #6445fa`（白字 5.55 / 5.60 / 5.57），
+  暗色 `#0f5ee6 / #3057f2 / #6448f3`（5.58 / 5.57 / 5.58）。
+  原亮色起端 `#4f8bff` 白字仅 **2.58**，整片品牌区标题在 WCAG 上不可读。
+- **`--accent` 与 `--accent-solid` 必须分开**：`--accent` 兼任 137 处 `text-accent` 文本色（需「亮」），
+  `--accent-solid` 作白字底（需「暗」），同一变量无法同时满足两个方向。
+  渐变主按钮底 `--accent-grad` 三档同样压到白字 ≥4.5，并预留 `hover` 提亮余量
+  （`.btn-accent:hover` 的 `brightness` 只能取 1.04；1.06 会使最亮档白字跌到 4.32）。
+
+#### 玻璃徽标：白玻璃 + 白字是数学死结
+
+`.hero-chip`（登录页「私有部署」、首页「N 篇收藏」）及 AI 气泡的附件徽标，原本都是
+**半透明白玻璃底 + 白字**。这是不可能达标的组合（见上「半透明白恒 ≤ 纯白」）：
+
+| 组合 | 实测（渐变色相最坏档） |
+|---|---|
+| 白玻璃 α=0.16 + 白字 | 4.17 ❌ |
+| 白玻璃 α=0.30 + 白字 | 3.20 ❌（越白越糊） |
+| **深蓝玻璃 `rgba(9,20,62,0.34)` + 白字** | **7.42 ✅** |
+
+故 `--hero-chip` 取**深蓝玻璃**：既保住「玻璃徽标」的块感，又让白字有充足余量。
+`--hero-chip-border` 相应提到 `rgba(255,255,255,0.38)`，使描边在深玻璃上仍可辨（2.48:1）。
+**渐变底上一律用 `var(--hero-chip)` 作玻璃底，禁止写 `bg-white/20` 这类裸白玻璃。**
+
+#### 装饰层的「作用域」意识
+
+`.hero-surface` 的网格纹理（`::before`）与光晕（`::after`）**都不是全屏均匀的**：
+
+- 网格：`mask-image: radial-gradient(ellipse 86% 74% at 84% 6%, …)` → 只在**右上角**显形，
+  向左下衰减到 t=0.76 处完全透明。**登录页正文在左侧，实际叠加量为 0。**
+- 光晕：`circle … transparent 68%`，68% 是相对 **farthest-corner** 的（380px 盒即 182.7px 半径），
+  **不是半个边长**。仅首页右侧的 chip 落在其内。
+
+评估此类装饰面上的文字对比时，**必须按元素实际位置代入各自的叠加量**，而不是全域取最坏值——
+后者会把不存在的重叠算进来，得出过于悲观的结论。不过为留余量，两层装饰本次仍各降一档
+（网格 `0.14→0.08`、亮色光晕峰值 `0.32→0.18`）。
 
 #### 图标按钮必须可访问
 

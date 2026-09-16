@@ -900,7 +900,7 @@ export function SettingsDialog({
               </button>
               <button
                 onClick={doSaveAs}
-                className="h-8 rounded-md bg-accent px-3 text-[12px] text-white hover:bg-accent/90"
+                className="h-8 rounded-md bg-accent-solid px-3 text-[12px] text-white hover:bg-accent-solid-hover"
               >
                 保存
               </button>
@@ -943,7 +943,7 @@ export function SettingsDialog({
                   if (pendingProviderChange) doApplyProvider(pendingProviderChange);
                   setPendingProviderChange(null);
                 }}
-                className="h-8 rounded-md bg-accent px-3 text-[12px] text-white hover:bg-accent/90"
+                className="h-8 rounded-md bg-accent-solid px-3 text-[12px] text-white hover:bg-accent-solid-hover"
               >
                 继续切换
               </button>

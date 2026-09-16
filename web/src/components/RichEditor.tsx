@@ -1099,7 +1099,7 @@ export function RichEditor({
                 <button
                   type="button"
                   onClick={applyLink}
-                  className="btn-ghost bg-accent px-3 text-white hover:bg-accent hover:brightness-105"
+                  className="btn-ghost bg-accent-solid px-3 text-white hover:bg-accent-solid-hover hover:brightness-105"
                 >
                   确定
                 </button>
@@ -1133,7 +1133,7 @@ export function RichEditor({
                 <button
                   type="button"
                   onClick={applyImage}
-                  className="btn-ghost bg-accent px-3 text-white hover:bg-accent hover:brightness-105"
+                  className="btn-ghost bg-accent-solid px-3 text-white hover:bg-accent-solid-hover hover:brightness-105"
                 >
                   插入
                 </button>

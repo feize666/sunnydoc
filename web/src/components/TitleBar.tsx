@@ -180,8 +180,8 @@ export function TitleBar({
           onClick={onToggleAi}
           className={`flex h-9 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors ${
             aiOpen
-              ? "bg-accent text-white"
-              : "bg-accent-soft text-accent hover:bg-accent hover:text-white"
+              ? "bg-accent-solid text-white"
+              : "bg-accent-soft text-accent hover:bg-accent-solid hover:text-white"
           }`}
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

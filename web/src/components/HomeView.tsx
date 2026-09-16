@@ -139,7 +139,7 @@ function TagCloud({ data }: { data: { name: string; count: number }[] }) {
         return (
           <span
             key={i}
-            className="inline-flex items-center rounded-full bg-accent-soft px-3 py-1 text-accent transition-colors hover:bg-accent hover:text-white"
+            className="inline-flex items-center rounded-full bg-accent-soft px-3 py-1 text-accent transition-colors hover:bg-accent-solid hover:text-white"
             style={{ fontSize: size, fontWeight: weight }}
           >
             #{d.name}

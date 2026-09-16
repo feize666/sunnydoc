@@ -596,7 +596,7 @@ export function Sidebar({
                   onClick={() => onSearchTypeChange(t.value)}
                   className={`rounded-full px-2.5 py-0.5 text-[12px] transition-colors ${
                     searchType === t.value
-                      ? "bg-accent text-white"
+                      ? "bg-accent-solid text-white"
                       : "text-muted hover:bg-hover hover:text-text"
                   }`}
                 >
@@ -607,7 +607,7 @@ export function Sidebar({
               <button
                 onClick={() => onSearchSortChange("relevance")}
                 className={`rounded-full px-2 py-0.5 text-[12px] transition-colors ${
-                  searchSort === "relevance" ? "bg-accent text-white" : "text-muted hover:bg-hover hover:text-text"
+                  searchSort === "relevance" ? "bg-accent-solid text-white" : "text-muted hover:bg-hover hover:text-text"
                 }`}
               >
                 相关度
@@ -615,7 +615,7 @@ export function Sidebar({
               <button
                 onClick={() => onSearchSortChange("created")}
                 className={`rounded-full px-2 py-0.5 text-[12px] transition-colors ${
-                  searchSort === "created" ? "bg-accent text-white" : "text-muted hover:bg-hover hover:text-text"
+                  searchSort === "created" ? "bg-accent-solid text-white" : "text-muted hover:bg-hover hover:text-text"
                 }`}
               >
                 时间
