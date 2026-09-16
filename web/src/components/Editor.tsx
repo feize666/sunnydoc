@@ -16,6 +16,7 @@ import { DatasheetEditor } from "./DatasheetEditor";
 import { MindMapEditor } from "./MindMapEditor";
 import { FlowchartEditor } from "./FlowchartEditor";
 import { AiAssistPopover } from "./AiAssistPopover";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { CopyIcon, CheckIcon, EditIcon, CodeIcon } from "./icons";
 import { useResizable } from "@/hooks/useResizable";
 
@@ -584,6 +585,7 @@ export function Editor({
                 </div>
               )}
               <div className="mt-4 border-b border-line" />
+              <ErrorBoundary key={doc.key} title="文档渲染失败">
               {doc.type === "table" ? (
                 <div className="mt-6 overflow-auto">
                   <table className="border-collapse">
@@ -652,6 +654,7 @@ export function Editor({
                   dangerouslySetInnerHTML={{ __html: previewHtml }}
                 />
               )}
+              </ErrorBoundary>
               {backlinks && backlinks.length > 0 && (
                 <div className="mt-10">
                   <h2 className="flex items-center gap-2 text-[15px] font-semibold text-text">
@@ -700,6 +703,7 @@ export function Editor({
               </p>
               <div className="mt-4 border-b border-line" />
               <div className="mt-6">
+                <ErrorBoundary key={`${doc.key}-${mode}`} title="编辑器加载失败">
                 {mode === "source" ? (
                   <textarea
                     value={draft}
@@ -740,6 +744,7 @@ export function Editor({
                     placeholder="开始输入内容…"
                   />
                 )}
+                </ErrorBoundary>
               </div>
             </div>
           )}

@@ -23,6 +23,7 @@ import { ShareDocDialog } from "@/components/ShareDocDialog";
 import { ShareView } from "@/components/ShareView";
 import { FavoritesPopover } from "@/components/FavoritesPopover";
 import { TrashView } from "@/components/TrashView";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { TagsDialog } from "@/components/TagsDialog";
 import { VersionHistoryDialog } from "@/components/VersionHistoryDialog";
 import { SettingsDialog } from "@/components/SettingsDialog";
@@ -1036,6 +1037,7 @@ export default function Home() {
   return (
     <div className="flex h-full flex-col bg-background">
       <div key={view} className="anim-fade-in flex min-h-0 flex-1 flex-col">
+        <ErrorBoundary key={`view-${view}`} title="页面加载失败">
         {view === "kb" ? (
         <>
           <TitleBar
@@ -1184,6 +1186,7 @@ export default function Home() {
           onOpenSettings={() => setSettingsOpen(true)}
         />
         )}
+        </ErrorBoundary>
       </div>
 
       <CommandPalette
