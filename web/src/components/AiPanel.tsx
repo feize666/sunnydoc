@@ -631,7 +631,7 @@ export function AiPanel({
             <button
               onClick={newSession}
               disabled={loading}
-              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-accent transition-colors hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-40"
+              className="btn-ghost text-accent hover:bg-accent-soft"
             >
               <PlusIcon size={14} />
               新建
@@ -640,9 +640,7 @@ export function AiPanel({
           <Tooltip content="历史会话">
             <button
               onClick={() => setShowHistory((v) => !v)}
-              className={`flex items-center gap-1 rounded-md px-2 py-1.5 text-xs transition-colors ${
-                showHistory ? "bg-active text-accent" : "text-muted hover:bg-hover hover:text-text"
-              }`}
+              className={`btn-ghost ${showHistory ? "bg-active text-accent" : "text-muted"}`}
             >
               <HistoryIcon size={14} />
               历史
@@ -651,7 +649,7 @@ export function AiPanel({
           <Tooltip content={expanded ? "还原大小" : "扩大"}>
             <button
               onClick={() => setExpanded((v) => !v)}
-              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-muted transition-colors hover:bg-hover hover:text-text"
+              className="btn-ghost text-muted"
             >
               {expanded ? (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -668,7 +666,7 @@ export function AiPanel({
             <button
               onClick={clearChat}
               disabled={loading}
-              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-muted transition-colors hover:bg-danger-soft hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
+              className="btn-ghost text-muted hover:bg-danger-soft hover:text-danger"
             >
               <TrashIcon size={14} />
               清空
@@ -677,7 +675,7 @@ export function AiPanel({
           <Tooltip content="关闭 AI 问答">
             <button
               onClick={onClose}
-              className="grid h-7 w-7 place-items-center rounded-md border border-line text-faint transition-colors hover:bg-hover hover:text-text"
+              className="icon-btn border border-line text-faint"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
@@ -930,7 +928,7 @@ export function AiPanel({
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={loading || uploading}
-              className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg border border-line bg-background text-muted transition-colors hover:bg-hover hover:text-text disabled:opacity-50"
+              className="icon-btn border border-line bg-background text-muted disabled:opacity-50"
             >
               {uploading ? (
                 <span className="spinner spinner-sm" />
@@ -962,7 +960,7 @@ export function AiPanel({
           <Tooltip content={loading ? "暂停" : "发送"} className="shrink-0">
             <button
               onClick={() => (loading ? abortRef.current?.abort() : ask())}
-              className="btn-accent grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg text-white"
+              className="btn-accent icon-btn text-white"
             >
               {loading ? (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">

@@ -799,7 +799,7 @@ export function Editor({
               setAnnotate(null);
               window.getSelection()?.removeAllRanges();
             }}
-            className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-[12px] font-medium text-white shadow-md transition-opacity hover:opacity-90"
+            className="btn-ghost bg-accent px-2.5 text-white shadow-md hover:bg-accent hover:brightness-105"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
@@ -815,7 +815,7 @@ export function Editor({
                 setAnnotate(null);
                 window.getSelection()?.removeAllRanges();
               }}
-              className="flex items-center gap-1 rounded-md bg-surface px-2.5 py-1 text-[12px] font-medium text-text shadow-md ring-1 ring-line transition-colors hover:bg-hover"
+              className="btn-ghost border border-line bg-surface px-2.5 text-text shadow-md hover:bg-hover"
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />

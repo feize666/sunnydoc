@@ -427,6 +427,106 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
+/* ---- 编辑器 / 面板专用：工具栏按钮与浮层 ----
+   尺寸阶梯（全站统一，勿在组件里另造新规格）：
+     36px —— .btn / .input / .select        主表单、对话框主操作
+     32px —— .btn-sm / .input-sm / .select-sm / .tool-btn   工具栏、紧凑表单、编辑器
+     28px —— .btn-ghost                     内联文字操作（消息操作条、列表项操作）
+
+   例外：画布类编辑器（FlowchartEditor / MindMapEditor / BoardEditor）的
+   浮动工具栏为 26px 紧凑档（rounded-md px-2 py-1 text-xs），属于画布内嵌 UI，
+   需要贴近画布、密度更高，因此不参与上表阶梯，勿强行并入 32px。 */
+
+/* 工具栏图标按钮：32px，min-width 保证正方形下限，可含文字或图标+小箭头 */
+.tool-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 7px;
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+.tool-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.tool-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.tool-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+/* 工具栏选中态：浅蓝底 + 主色 */
+.tool-btn-on,
+.tool-btn-on:hover {
+  background: var(--active);
+  color: var(--accent);
+}
+
+/* 内联幽灵按钮：28px，无底色，hover 才浮现（阅后长按等紧凑操作区） */
+.btn-ghost {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.btn-ghost:hover {
+  background: var(--hover);
+}
+.btn-ghost:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 下拉菜单行：整行可点、hover 浅底（编辑器菜单 / 历史会话 / 命令面板共用） */
+.menu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.menu-item:hover {
+  background: var(--hover);
+}
+.menu-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 有内容的浮层（编辑器工具弹窗等）：与 .menu-panel 同为浮层，
+   区别是允许内边距承载表单，阴影层级更高一级 */
+.popover-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 12px;
+}
+
 } /* @layer components 结束 */
 
 /* ==========================================================================

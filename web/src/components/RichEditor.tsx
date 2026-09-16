@@ -303,12 +303,8 @@ function ToolBtn({
         onMouseDown={(e) => e.preventDefault()}
         onClick={onClick}
         disabled={disabled}
-        className={`flex h-9 min-w-[34px] shrink-0 items-center justify-center rounded-md px-2 transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
-          active
-            ? "bg-active text-accent"
-            : tone
-              ? `${tone} hover:bg-hover`
-              : "text-muted hover:bg-hover hover:text-text"
+        className={`tool-btn ${
+          active ? "tool-btn-on" : tone ? `${tone} hover:bg-hover` : ""
         }`}
       >
         {children}
@@ -900,9 +896,7 @@ export function RichEditor({
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => setColorOpen((v) => !v)}
-              className={`flex h-9 min-w-[34px] items-center justify-center rounded-md px-2 transition-colors ${
-                currentColor ? "text-accent" : "text-muted hover:bg-hover hover:text-text"
-              }`}
+              className={`tool-btn ${currentColor ? "text-accent" : ""}`}
             >
               <span className="text-[16px] leading-none">
                 A
@@ -969,9 +963,7 @@ export function RichEditor({
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => setBgColorOpen((v) => !v)}
-              className={`flex h-9 min-w-[34px] items-center justify-center rounded-md px-2 transition-colors ${
-                editor.isActive("backgroundColor") ? "text-accent" : "text-muted hover:bg-hover hover:text-text"
-              }`}
+              className={`tool-btn ${editor.isActive("backgroundColor") ? "text-accent" : ""}`}
             >
               <span className="text-[16px] leading-none">
                 A
@@ -1077,7 +1069,7 @@ export function RichEditor({
             <LinkIcon size={17} />
           </ToolBtn>
           {linkOpen && (
-            <div className="absolute left-0 top-full z-30 mt-1 w-72 rounded-lg border border-line bg-surface p-3 shadow-lg">
+            <div className="popover-panel absolute left-0 top-full z-30 mt-1 w-72">
               <div className="mb-1 text-[12px] font-medium text-text">链接地址</div>
               <input
                 value={linkUrl}
@@ -1092,7 +1084,7 @@ export function RichEditor({
                   <button
                     type="button"
                     onClick={() => { editor.chain().focus().extendMarkRange("link").unsetLink().run(); setLinkOpen(false); }}
-                    className="h-7 rounded-md px-2 text-[12px] text-danger hover:bg-hover"
+                    className="btn-ghost text-danger"
                   >
                     移除链接
                   </button>
@@ -1100,14 +1092,14 @@ export function RichEditor({
                 <button
                   type="button"
                   onClick={() => setLinkOpen(false)}
-                  className="h-7 rounded-md px-2 text-[12px] text-muted hover:bg-hover"
+                  className="btn-ghost text-muted"
                 >
                   取消
                 </button>
                 <button
                   type="button"
                   onClick={applyLink}
-                  className="h-7 rounded-md bg-accent px-3 text-[12px] font-medium text-white hover:opacity-90"
+                  className="btn-ghost bg-accent px-3 text-white hover:bg-accent hover:brightness-105"
                 >
                   确定
                 </button>
@@ -1120,7 +1112,7 @@ export function RichEditor({
             <ImageIcon size={17} />
           </ToolBtn>
           {imageOpen && (
-            <div className="absolute left-0 top-full z-30 mt-1 w-72 rounded-lg border border-line bg-surface p-3 shadow-lg">
+            <div className="popover-panel absolute left-0 top-full z-30 mt-1 w-72">
               <div className="mb-1 text-[12px] font-medium text-text">图片地址</div>
               <input
                 value={imageUrl}
@@ -1134,14 +1126,14 @@ export function RichEditor({
                 <button
                   type="button"
                   onClick={() => setImageOpen(false)}
-                  className="h-7 rounded-md px-2 text-[12px] text-muted hover:bg-hover"
+                  className="btn-ghost text-muted"
                 >
                   取消
                 </button>
                 <button
                   type="button"
                   onClick={applyImage}
-                  className="h-7 rounded-md bg-accent px-3 text-[12px] font-medium text-white hover:opacity-90"
+                  className="btn-ghost bg-accent px-3 text-white hover:bg-accent hover:brightness-105"
                 >
                   插入
                 </button>
@@ -1171,10 +1163,10 @@ export function RichEditor({
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => setAlignOpen((v) => !v)}
-              className={`flex h-9 min-w-[34px] items-center justify-center rounded-md px-2 transition-colors ${
+              className={`tool-btn ${
                 alignOpen || editor.isActive({ textAlign: "left" }) || editor.isActive({ textAlign: "center" }) || editor.isActive({ textAlign: "right" })
-                  ? "bg-active text-accent"
-                  : "text-muted hover:bg-hover hover:text-text"
+                  ? "tool-btn-on"
+                  : ""
               }`}
             >
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -1189,13 +1181,13 @@ export function RichEditor({
             <>
               <div className="fixed inset-0 z-10" onClick={() => setAlignOpen(false)} />
               <div className="menu-panel absolute left-0 top-full z-40 mt-1 flex gap-0.5 p-1">
-                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { (editor.chain().focus() as any).setTextAlign("left").run(); setAlignOpen(false); }} className={`grid h-8 w-8 place-items-center rounded-md transition-colors ${editor.isActive({ textAlign: "left" }) ? "bg-active text-accent" : "text-muted hover:bg-hover hover:text-text"}`} title="左对齐">
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { (editor.chain().focus() as any).setTextAlign("left").run(); setAlignOpen(false); }} className={`icon-btn ${editor.isActive({ textAlign: "left" }) ? "tool-btn-on" : "text-muted"}`} title="左对齐">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h10M4 18h16" /></svg>
                 </button>
-                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { (editor.chain().focus() as any).setTextAlign("center").run(); setAlignOpen(false); }} className={`grid h-8 w-8 place-items-center rounded-md transition-colors ${editor.isActive({ textAlign: "center" }) ? "bg-active text-accent" : "text-muted hover:bg-hover hover:text-text"}`} title="居中对齐">
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { (editor.chain().focus() as any).setTextAlign("center").run(); setAlignOpen(false); }} className={`icon-btn ${editor.isActive({ textAlign: "center" }) ? "tool-btn-on" : "text-muted"}`} title="居中对齐">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M8 12h8M4 18h16" /></svg>
                 </button>
-                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { (editor.chain().focus() as any).setTextAlign("right").run(); setAlignOpen(false); }} className={`grid h-8 w-8 place-items-center rounded-md transition-colors ${editor.isActive({ textAlign: "right" }) ? "bg-active text-accent" : "text-muted hover:bg-hover hover:text-text"}`} title="右对齐">
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { (editor.chain().focus() as any).setTextAlign("right").run(); setAlignOpen(false); }} className={`icon-btn ${editor.isActive({ textAlign: "right" }) ? "tool-btn-on" : "text-muted"}`} title="右对齐">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M14 12h6M4 18h16" /></svg>
                 </button>
               </div>
@@ -1258,9 +1250,7 @@ export function RichEditor({
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => setMoreOpen((v) => !v)}
-              className={`flex h-9 min-w-[34px] shrink-0 items-center justify-center rounded-md px-2 transition-colors ${
-                moreOpen ? "bg-active text-accent" : "text-muted hover:bg-hover hover:text-text"
-              }`}
+              className={`tool-btn ${moreOpen ? "tool-btn-on" : ""}`}
             >
               <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
                 <circle cx="5" cy="12" r="1.6" />
@@ -1273,25 +1263,25 @@ export function RichEditor({
             <>
               <div className="fixed inset-0 z-10" onClick={() => setMoreOpen(false)} />
               <div className="menu-panel absolute right-0 top-full z-40 mt-1 w-40">
-                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().toggleStrike().run(); setMoreOpen(false); }} className={`flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] transition-colors hover:bg-hover ${editor.isActive("strike") ? "text-accent" : "text-text"}`}>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().toggleStrike().run(); setMoreOpen(false); }} className={`menu-item ${editor.isActive("strike") ? "text-accent" : "text-text"}`}>
                   <span className="w-4 text-center font-semibold leading-none line-through">S</span>删除线
                 </button>
-                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().setHorizontalRule().run(); setMoreOpen(false); }} className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] text-text transition-colors hover:bg-hover">
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().setHorizontalRule().run(); setMoreOpen(false); }} className="menu-item">
                   <MinusIcon size={15} />分割线
                 </button>
 
                 <div className="my-1 border-t border-line" />
 
-                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().sinkListItem("listItem").run(); setMoreOpen(false); }} className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] text-text transition-colors hover:bg-hover">
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().sinkListItem("listItem").run(); setMoreOpen(false); }} className="menu-item">
                   <IndentIcon size={15} />增加缩进
                 </button>
-                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().liftListItem("listItem").run(); setMoreOpen(false); }} className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] text-text transition-colors hover:bg-hover">
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().liftListItem("listItem").run(); setMoreOpen(false); }} className="menu-item">
                   <OutdentIcon size={15} />减少缩进
                 </button>
 
                 <div className="my-1 border-t border-line" />
 
-                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { clearFormat(); setMoreOpen(false); }} className="flex w-full items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] text-text transition-colors hover:bg-hover">
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { clearFormat(); setMoreOpen(false); }} className="menu-item">
                   <ClearFormatIcon size={15} />清除格式
                 </button>
               </div>
@@ -1309,9 +1299,7 @@ export function RichEditor({
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => setAiMenuOpen((v) => !v)}
               disabled={!!aiBusy}
-              className={`flex h-9 min-w-[34px] shrink-0 items-center justify-center rounded-md px-2 transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
-                aiMenuOpen ? "bg-active text-accent" : "text-accent hover:bg-hover"
-              }`}
+              className={`tool-btn ${aiMenuOpen ? "tool-btn-on" : "text-accent"}`}
             >
               {aiBusy ? (
                 <span className="animate-pulse text-[12px] leading-none">…</span>
@@ -1331,7 +1319,7 @@ export function RichEditor({
                   <button
                     key={a.key}
                     onClick={() => runAiAssist(a.key)}
-                    className="flex w-full items-center rounded-md px-3 py-2 text-[13px] text-text transition-colors hover:bg-hover"
+                    className="menu-item py-2"
                   >
                     {a.label}
                   </button>
@@ -1370,7 +1358,7 @@ export function RichEditor({
             type="button"
             onClick={() => jumpToMatch(findIdx - 1)}
             disabled={matches.length === 0}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-text disabled:opacity-40"
+            className="icon-btn text-muted"
             title="上一个"
           >
             <ChevronUpIcon size={15} />
@@ -1379,7 +1367,7 @@ export function RichEditor({
             type="button"
             onClick={() => jumpToMatch(findIdx + 1)}
             disabled={matches.length === 0}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-text disabled:opacity-40"
+            className="icon-btn text-muted"
             title="下一个"
           >
             <ChevronDownIcon size={15} />
@@ -1388,7 +1376,7 @@ export function RichEditor({
             type="button"
             onClick={replaceCurrent}
             disabled={matches.length === 0}
-            className="h-7 rounded-md border border-line px-2 text-[12px] text-text hover:bg-hover disabled:opacity-40"
+            className="btn-ghost border border-line px-3 text-text"
           >
             替换
           </button>
@@ -1396,14 +1384,14 @@ export function RichEditor({
             type="button"
             onClick={replaceAll}
             disabled={matches.length === 0}
-            className="h-7 rounded-md border border-line px-2 text-[12px] text-text hover:bg-hover disabled:opacity-40"
+            className="btn-ghost border border-line px-3 text-text"
           >
             全部替换
           </button>
           <button
             type="button"
             onClick={() => setFindOpen(false)}
-            className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-text"
+            className="ml-auto icon-btn text-muted"
             title="关闭"
           >
             <CloseIcon size={14} />
