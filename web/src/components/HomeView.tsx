@@ -6,7 +6,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { Tooltip } from "./Tooltip";
 import { UserMenu } from "./UserMenu";
 import { ThemeToggle } from "./ThemeToggle";
-import { PlusIcon, TrashIcon, HistoryIcon, FolderIcon, EditIcon, FileIcon } from "./icons";
+import { PlusIcon, TrashIcon, HistoryIcon, FolderIcon, EditIcon, FileIcon, AlertIcon } from "./icons";
 import { EmptyState } from "./EmptyState";
 import { useFlipList } from "@/hooks/useFlipList";
 
@@ -41,6 +41,16 @@ function formatTime(ts: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${time}`;
 }
 
+/** 按当前时段返回问候语（欢迎条用）。 */
+function greeting(): string {
+  const h = new Date().getHours();
+  if (h < 6) return "夜深了";
+  if (h < 11) return "早上好";
+  if (h < 14) return "中午好";
+  if (h < 18) return "下午好";
+  return "晚上好";
+}
+
 /* —— 数据看板图表（纯 SVG / CSS，不引第三方图表库） —— */
 
 function TrendChart({ data }: { data: { date: string; count: number }[] }) {
@@ -50,6 +60,8 @@ function TrendChart({ data }: { data: { date: string; count: number }[] }) {
   const padX = 8;
   const padY = 22;
   const max = Math.max(1, ...data.map((d) => d.count));
+  const total = data.reduce((s, d) => s + d.count, 0);
+  const avg = Math.round(total / data.length);
   const stepX = (w - padX * 2) / (data.length - 1);
   const pts = data.map((d, i) => ({
     x: padX + i * stepX,
@@ -60,41 +72,60 @@ function TrendChart({ data }: { data: { date: string; count: number }[] }) {
   const area = `${line} L${pts[pts.length - 1].x},${h - padY} L${pts[0].x},${h - padY} Z`;
   const labelEvery = Math.max(1, Math.ceil(data.length / 7));
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" role="img" aria-label="文档创建趋势">
-      {[0.25, 0.5, 0.75, 1].map((r) => {
-        const y = h - padY - (h - padY * 2) * r;
-        return (
-          <line key={r} x1={padX} x2={w - padX} y1={y} y2={y} stroke="var(--line)" strokeDasharray="3 3" />
-        );
-      })}
-      <path d={area} fill="var(--accent)" fillOpacity="0.12" />
-      <path d={line} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      {pts.map((p, i) => (
-        <g key={i}>
-          <circle cx={p.x} cy={p.y} r="3" fill="var(--background)" stroke="var(--accent)" strokeWidth="2" />
-          {i % labelEvery === 0 && (
-            <text x={p.x} y={h - 5} textAnchor="middle" fontSize="10" fill="var(--faint)">
-              {p.date}
-            </text>
-          )}
-        </g>
-      ))}
-    </svg>
+    <div>
+      {/* 图上摘要：总量 / 日均，让趋势一眼可读 */}
+      <div className="mb-3 flex items-baseline gap-4">
+        <span className="flex items-baseline gap-1.5">
+          <span className="text-[20px] font-semibold leading-none text-text">{total}</span>
+          <span className="text-[12px] text-faint">近 {data.length} 天新增</span>
+        </span>
+        <span className="flex items-baseline gap-1.5">
+          <span className="text-[14px] font-medium leading-none text-muted">{avg}</span>
+          <span className="text-[12px] text-faint">日均</span>
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full" role="img" aria-label="文档创建趋势">
+        <defs>
+          <linearGradient id="trend-area" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.26" />
+            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        {[0.25, 0.5, 0.75, 1].map((r) => {
+          const y = h - padY - (h - padY * 2) * r;
+          return (
+            <line key={r} x1={padX} x2={w - padX} y1={y} y2={y} stroke="var(--line)" strokeDasharray="3 3" />
+          );
+        })}
+        <path d={area} fill="url(#trend-area)" />
+        <path d={line} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        {pts.map((p, i) => (
+          <g key={i}>
+            <circle cx={p.x} cy={p.y} r={p.count === max && max > 0 ? 4 : 3} fill="var(--background)" stroke="var(--accent)" strokeWidth="2" />
+            {i % labelEvery === 0 && (
+              <text x={p.x} y={h - 5} textAnchor="middle" fontSize="10" fill="var(--faint)">
+                {p.date}
+              </text>
+            )}
+          </g>
+        ))}
+      </svg>
+    </div>
   );
 }
 
 function KbBarChart({ data }: { data: { name: string; count: number }[] }) {
   const max = Math.max(1, ...data.map((d) => d.count));
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
       {data.map((d, i) => (
-        <div key={i} className="flex items-center gap-2">
+        <div key={i} className="flex items-center gap-2.5">
           <span className="w-24 shrink-0 truncate text-right text-[12px] text-muted" title={d.name}>
             {d.name}
           </span>
           <div className="h-4 flex-1 overflow-hidden rounded bg-surface-2">
             <div
-              className="h-full rounded"
+              className="h-full rounded transition-[width] duration-500 ease-out"
               style={{
                 width: `${(d.count / max) * 100}%`,
                 background: "var(--accent)",
@@ -102,7 +133,7 @@ function KbBarChart({ data }: { data: { name: string; count: number }[] }) {
               }}
             />
           </div>
-          <span className="w-8 shrink-0 text-right text-[12px] text-faint">{d.count}</span>
+          <span className="w-8 shrink-0 text-right text-[12px] tabular-nums text-faint">{d.count}</span>
         </div>
       ))}
     </div>
@@ -114,15 +145,16 @@ function TagCloud({ data }: { data: { name: string; count: number }[] }) {
   return (
     <div className="flex flex-wrap gap-2">
       {data.map((d, i) => {
-        const size = 12 + Math.round((d.count / max) * 8);
+        const size = 12 + Math.round((d.count / max) * 6);
+        const weight = d.count / max > 0.6 ? 600 : 500;
         return (
           <span
             key={i}
-            className="inline-flex items-center rounded-full bg-accent-soft px-3 py-1 font-medium text-accent"
-            style={{ fontSize: size }}
+            className="inline-flex items-center rounded-full bg-accent-soft px-3 py-1 text-accent transition-colors hover:bg-accent hover:text-white"
+            style={{ fontSize: size, fontWeight: weight }}
           >
             #{d.name}
-            <span className="ml-1 text-[10px] opacity-55">{d.count}</span>
+            <span className="ml-1.5 text-[10px] tabular-nums opacity-60">{d.count}</span>
           </span>
         );
       })}
@@ -186,21 +218,21 @@ export function HomeView({
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-line bg-background px-5 select-none">
-        <div className="flex items-center gap-3">
-          <span className="logo-mark grid h-8 w-8 place-items-center rounded-lg text-sm font-bold">
+      <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-line bg-background px-5 select-none">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="logo-mark grid h-8 w-8 shrink-0 place-items-center rounded-lg text-sm font-bold">
             知
           </span>
-          <div className="leading-tight">
+          <div className="min-w-0 leading-tight">
             <div className="text-[16px] font-semibold text-text">知库</div>
-            <div className="text-[12px] text-faint">文档知识库</div>
+            <div className="truncate text-[12px] text-faint">文档知识库</div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <button
             onClick={onOpenPalette}
-            className="flex min-w-[200px] items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-xs text-faint"
+            className="group flex min-w-[200px] items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-3 py-1.5 text-xs text-faint transition-colors hover:border-accent/40 hover:bg-background hover:text-muted"
           >
             <svg
               width="13"
@@ -244,6 +276,28 @@ export function HomeView({
 
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-4xl px-6 py-8">
+          {/* 欢迎条：渐变品牌面 + 实时概览 */}
+          <section className="hero-surface anim-rise-in mb-6 overflow-hidden rounded-2xl px-6 py-5">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div className="min-w-0">
+                <div className="text-[20px] font-semibold tracking-tight">
+                  {greeting()}，{user?.nickname || user?.username || "你好"}
+                </div>
+                <p className="mt-1.5 text-[13px] text-[var(--hero-ink-muted)]">
+                  {stats && stats.total_docs > 0
+                    ? `已沉淀 ${stats.total_docs} 篇文档，分布在 ${stats.total_kbs} 个知识库`
+                    : "创建第一个知识库，开始整理你的文档"}
+                </p>
+              </div>
+              {favorites.length > 0 && (
+                <span className="hero-chip">
+                  <StarIcon size={11} />
+                  {favorites.length} 篇收藏
+                </span>
+              )}
+            </div>
+          </section>
+
           {/* 数据概览 */}
           {stats && (
             <section className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -253,16 +307,13 @@ export function HomeView({
                 { label: "收藏", value: stats.total_favorites, icon: <StarIcon size={20} /> },
                 { label: "最近浏览", value: stats.recent_count, icon: <HistoryIcon size={20} /> },
               ].map((s) => (
-                <div
-                  key={s.label}
-                  className="flex items-center gap-3 rounded-xl border border-line bg-background px-4 py-3.5 shadow-sm transition-shadow hover:shadow-md"
-                >
+                <div key={s.label} className="stat-tile">
                   <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
                     {s.icon}
                   </span>
                   <div className="min-w-0 leading-tight">
                     <div
-                      className="text-xl font-semibold"
+                      className="text-xl font-semibold tabular-nums"
                       style={{
                         backgroundImage: "var(--accent-grad)",
                         WebkitBackgroundClip: "text",
@@ -282,21 +333,21 @@ export function HomeView({
           {/* 数据看板图表 */}
           {stats &&
             (stats.doc_trend?.length || stats.docs_by_kb?.length || stats.top_tags?.length) && (
-              <section className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-5">
+              <section className="stagger mb-8 grid grid-cols-1 gap-4 lg:grid-cols-5">
                 {stats.doc_trend && stats.doc_trend.length > 0 && (
-                  <div className="rounded-xl border border-line bg-background p-4 shadow-sm lg:col-span-3">
+                  <div className="card p-4 lg:col-span-3">
                     <h3 className="mb-3 text-sm font-semibold text-text">文档创建趋势（近 14 天）</h3>
                     <TrendChart data={stats.doc_trend} />
                   </div>
                 )}
                 {stats.docs_by_kb && stats.docs_by_kb.length > 0 && (
-                  <div className="rounded-xl border border-line bg-background p-4 shadow-sm lg:col-span-2">
+                  <div className="card p-4 lg:col-span-2">
                     <h3 className="mb-3 text-sm font-semibold text-text">知识库分布</h3>
                     <KbBarChart data={stats.docs_by_kb} />
                   </div>
                 )}
                 {stats.top_tags && stats.top_tags.length > 0 && (
-                  <div className="rounded-xl border border-line bg-background p-4 shadow-sm lg:col-span-5">
+                  <div className="card p-4 lg:col-span-5">
                     <h3 className="mb-3 text-sm font-semibold text-text">热门标签</h3>
                     <TagCloud data={stats.top_tags} />
                   </div>
@@ -306,18 +357,28 @@ export function HomeView({
 
           {/* 知识库 */}
           <section>
-            <h2 className="mb-4 text-base font-semibold text-text">知识库</h2>
+            <h2 className="section-heading mb-4">
+              知识库
+              {kbs.length > 0 && (
+                <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium tabular-nums text-faint">
+                  {kbs.length}
+                </span>
+              )}
+            </h2>
 
             {error && (
-              <div className="mb-4 rounded-md border border-danger/40 bg-danger-soft px-3 py-2 text-xs text-danger">
-                {error}（后端服务未启动？）
+              <div className="mb-4 flex items-start gap-2 rounded-lg border border-danger/40 bg-danger-soft px-3 py-2 text-[13px] text-danger">
+                <span className="mt-0.5 shrink-0">
+                  <AlertIcon size={14} />
+                </span>
+                <span>{error}（后端服务未启动？）</span>
               </div>
             )}
 
             {loadingKbs ? (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {[0, 1, 2].map((i) => (
-                  <div key={i} className="skeleton h-32 rounded-lg" />
+                  <div key={i} className="skeleton h-[7.5rem] rounded-lg" />
                 ))}
               </div>
             ) : kbs.length === 0 ? (
@@ -333,15 +394,17 @@ export function HomeView({
                 }
               />
             ) : (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="stagger grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {kbs.map((kb) => (
                   <button
                     key={kb.id}
                     onClick={() => onOpenKb(kb.id)}
-                    className="group relative flex flex-col gap-2 rounded-lg border border-line bg-background p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-md"
+                    className="group relative flex flex-col gap-2.5 overflow-hidden rounded-xl border border-line bg-background p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-glow"
                   >
+                    {/* hover 时顶部浮现渐变装饰条 */}
+                    <span className="kb-topline" />
                     <div className="flex items-start justify-between">
-                      <span className="grid h-9 w-9 place-items-center rounded-lg bg-accent-soft text-sm font-semibold text-accent">
+                      <span className="kb-badge grid h-9 w-9 place-items-center rounded-lg text-sm font-semibold">
                         {(kb.name || "知").slice(0, 1)}
                       </span>
                       {kb.permission === "owner" ? (
@@ -412,15 +475,23 @@ export function HomeView({
                       )}
                     </div>
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-text">
+                      <div className="truncate text-sm font-semibold text-text transition-colors group-hover:text-accent">
                         {kb.name}
                       </div>
-                      <div className="mt-0.5 line-clamp-2 min-h-[2rem] text-xs leading-relaxed text-muted">
+                      <div className="mt-1 line-clamp-2 min-h-[2rem] text-xs leading-relaxed text-muted">
                         {kb.description || "暂无描述"}
                       </div>
                     </div>
-                    <div className="text-[12px] text-faint">
-                      {kb.doc_count ?? 0} 篇文档
+                    <div className="mt-auto flex items-center justify-between border-t border-line pt-2.5">
+                      <span className="text-[12px] text-faint">
+                        <span className="font-medium tabular-nums text-muted">{kb.doc_count ?? 0}</span> 篇文档
+                      </span>
+                      <span className="flex items-center gap-0.5 text-[12px] font-medium text-accent opacity-0 transition-opacity group-hover:opacity-100">
+                        打开
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M9 6l6 6-6 6" />
+                        </svg>
+                      </span>
                     </div>
                   </button>
                 ))}
@@ -428,7 +499,7 @@ export function HomeView({
                 {/* 新建知识库卡片 */}
                 <button
                   onClick={onCreateKb}
-                  className="flex min-h-[7.5rem] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-line text-faint transition-all hover:border-accent/50 hover:bg-accent-soft/40 hover:text-accent"
+                  className="flex min-h-[7.5rem] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line text-faint transition-all hover:-translate-y-0.5 hover:border-accent/50 hover:bg-accent-soft/40 hover:text-accent"
                 >
                   <PlusIcon size={22} />
                   <span className="text-xs">新建知识库</span>
@@ -439,9 +510,14 @@ export function HomeView({
 
           {/* 最近浏览 */}
           <section className="mt-10">
-            <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-text">
-              <HistoryIcon size={16} className="text-muted" />
+            <h2 className="section-heading mb-3">
+              <HistoryIcon size={15} className="text-muted" />
               最近浏览
+              {recent.length > 0 && (
+                <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium tabular-nums text-faint">
+                  {recent.length}
+                </span>
+              )}
             </h2>
 
             {recent.length === 0 ? (
@@ -451,14 +527,14 @@ export function HomeView({
                 description="打开过的文档会显示在这里，方便快速回看"
               />
             ) : (
-              <ul ref={recentListRef} className="overflow-hidden rounded-lg border border-line bg-background">
+              <ul ref={recentListRef} className="anim-rise-in overflow-hidden rounded-xl border border-line bg-background shadow-sm">
                 {recent.map((r, i) => (
                   <li key={r.doc_id} data-flip-key={`recent:${r.doc_id}`}>
                     <button
                       onClick={() => onOpenRecent(r.doc_id, r.kb_id)}
                       className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-hover"
                     >
-                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-surface-2 text-faint">
+                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-surface-2 text-faint transition-colors group-hover:bg-accent-soft group-hover:text-accent">
                         <svg
                           width="15"
                           height="15"
@@ -472,15 +548,30 @@ export function HomeView({
                         </svg>
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[14px] text-text group-hover:text-accent">
+                        <span className="block truncate text-[14px] text-text transition-colors group-hover:text-accent">
                           {r.title}
                         </span>
                         <span className="mt-0.5 block truncate text-[12px] text-faint">
                           {kbNameOf(r.kb_id)} · {formatTime(r.viewed_at)}
                         </span>
                       </span>
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="shrink-0 text-faint opacity-0 transition-opacity group-hover:opacity-100"
+                      >
+                        <path d="M9 6l6 6-6 6" />
+                      </svg>
                     </button>
-                    {i < recent.length - 1 && <div className="border-b border-line" />}
+                    {i < recent.length - 1 && (
+                      <div className="ml-14 border-b border-line" />
+                    )}
                   </li>
                 ))}
               </ul>
@@ -489,11 +580,16 @@ export function HomeView({
 
           {/* 我的收藏 */}
           <section className="mt-10">
-            <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-text">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-muted">
+            <h2 className="section-heading mb-3">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" className="text-muted">
                 <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
               </svg>
               我的收藏
+              {favorites.length > 0 && (
+                <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium tabular-nums text-faint">
+                  {favorites.length}
+                </span>
+              )}
             </h2>
 
             {favorites.length === 0 ? (
@@ -503,7 +599,7 @@ export function HomeView({
                 description="在文档右上角点击「收藏」即可加入"
               />
             ) : (
-              <ul ref={favListRef} className="overflow-hidden rounded-lg border border-line bg-background">
+              <ul ref={favListRef} className="anim-rise-in overflow-hidden rounded-xl border border-line bg-background shadow-sm">
                 {favorites.map((d, i) => (
                   <li key={d.id} data-flip-key={`fav:${d.id}`}>
                     <button
@@ -516,15 +612,30 @@ export function HomeView({
                         </svg>
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[14px] text-text group-hover:text-accent">
+                        <span className="block truncate text-[14px] text-text transition-colors group-hover:text-accent">
                           {d.title}
                         </span>
                         <span className="mt-0.5 block truncate text-[12px] text-faint">
                           {kbNameOf(d.kb_id ?? null)}
                         </span>
                       </span>
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="shrink-0 text-faint opacity-0 transition-opacity group-hover:opacity-100"
+                      >
+                        <path d="M9 6l6 6-6 6" />
+                      </svg>
                     </button>
-                    {i < favorites.length - 1 && <div className="border-b border-line" />}
+                    {i < favorites.length - 1 && (
+                      <div className="ml-14 border-b border-line" />
+                    )}
                   </li>
                 ))}
               </ul>

@@ -62,6 +62,15 @@
   /* 滚动条 */
   --scrollbar: #cbd5e1;
   --scrollbar-hover: #94a3b8;
+
+  /* 品牌氛围层（登录页品牌区 / 渐变强调区） */
+  --hero-ink: #ffffff;                       /* 渐变底上的前景色 */
+  --hero-ink-muted: rgba(255, 255, 255, 0.74);
+  --hero-ink-faint: rgba(255, 255, 255, 0.56);
+  --hero-grid-line: rgba(255, 255, 255, 0.14);
+  --hero-glow: rgba(255, 255, 255, 0.32);
+  --hero-chip: rgba(255, 255, 255, 0.16);
+  --hero-chip-border: rgba(255, 255, 255, 0.22);
 }
 
 [data-theme="dark"] {
@@ -108,6 +117,10 @@
 
   --scrollbar: #334155;
   --scrollbar-hover: #475569;
+
+  /* 品牌氛围层（深色主题下沿用同一套白前景，渐变底更深） */
+  --hero-glow: rgba(120, 160, 255, 0.24);
+  --hero-grid-line: rgba(255, 255, 255, 0.1);
 }
 
 /* 映射为 Tailwind 可用的颜色 / 圆角 / 阴影变量（bg-* / text-* / rounded-* / shadow-*） */
@@ -304,6 +317,121 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
+/* ==========================================================================
+   页面级组合类（登录页 / 首页共用）
+   ========================================================================== */
+
+/* 品牌渐变面板：登录页品牌区、首页欢迎条共用。
+   纯 CSS 实现网格纹理 + 光晕，不引入图片资源；文字统一用 --hero-* 前景色。 */
+.hero-surface {
+  position: relative;
+  overflow: hidden;
+  background-image: var(--grad-blue-indigo);
+  color: var(--hero-ink);
+}
+.hero-surface::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(var(--hero-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hero-grid-line) 1px, transparent 1px);
+  background-size: 34px 34px;
+  -webkit-mask-image: radial-gradient(ellipse 86% 74% at 84% 6%, #000 0%, transparent 76%);
+  mask-image: radial-gradient(ellipse 86% 74% at 84% 6%, #000 0%, transparent 76%);
+  pointer-events: none;
+}
+.hero-surface::after {
+  content: "";
+  position: absolute;
+  top: -150px;
+  right: -110px;
+  width: 380px;
+  height: 380px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--hero-glow) 0%, transparent 68%);
+  pointer-events: none;
+}
+/* 面板内容需压在装饰层之上 */
+.hero-surface > * {
+  position: relative;
+  z-index: 1;
+}
+/* 渐变底上的小徽标 chip */
+.hero-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--hero-chip-border);
+  background: var(--hero-chip);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--hero-ink);
+  backdrop-filter: blur(4px);
+}
+
+/* 数据概览磁贴：hover 上浮 + 蓝色描边（首页指标卡） */
+.stat-tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--background);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.stat-tile:hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+/* 区块标题：左侧蓝色短竖条 + 计数徽标位 */
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.section-heading::before {
+  content: "";
+  width: 3px;
+  height: 15px;
+  border-radius: 2px;
+  background-image: var(--accent-grad);
+  flex-shrink: 0;
+}
+
+/* 知识库卡片：hover 时浮现顶部渐变条（配合 .group 使用） */
+.kb-topline {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background-image: var(--accent-grad);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.group:hover .kb-topline {
+  opacity: 1;
+}
+/* 知识库卡片首字徽标：hover 时由浅底反转为渐变底白字 */
+.kb-badge {
+  background: var(--accent-soft);
+  color: var(--accent);
+  transition: background-image 0.15s ease, color 0.15s ease;
+}
+.group:hover .kb-badge {
+  background-image: var(--accent-grad);
+  color: #fff;
+}
+
 /* 骨架屏：shimmer 扫光（比 animate-pulse 更精致） */
 .skeleton {
   background: var(--surface-2);
@@ -389,11 +517,26 @@ body {
 @keyframes exit-collapse {
   to { opacity: 0; transform: scale(0.96); }
 }
+/* 上浮入场：登录卡片 / 首页分区依次浮现 */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .anim-fade-in { animation: fade-in 0.14s ease; }
 .anim-scale-in { animation: scale-in 0.16s cubic-bezier(0.16, 1, 0.3, 1); }
 .anim-slide-down-in { animation: slide-down-in 0.14s ease; }
 .anim-slide-in-right { animation: slide-in-right 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
 .anim-exit { animation: exit-collapse 0.18s ease forwards; pointer-events: none; }
+.anim-rise-in { animation: rise-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* 依次浮现：给同容器内子项按序号加延迟（首页分区） */
+.stagger > * { animation: rise-in 0.34s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.stagger > *:nth-child(2) { animation-delay: 0.06s; }
+.stagger > *:nth-child(3) { animation-delay: 0.1s; }
+.stagger > *:nth-child(4) { animation-delay: 0.14s; }
+.stagger > *:nth-child(5) { animation-delay: 0.18s; }
+.stagger > *:nth-child(6) { animation-delay: 0.22s; }
 
 /* 侧栏宽度过渡（折叠/展开） */
 .sidebar-transition { transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
@@ -407,9 +550,14 @@ body {
   .anim-slide-down-in,
   .anim-slide-in-right,
   .anim-exit,
+  .anim-rise-in,
+  .stagger > *,
   .sidebar-transition {
     animation: none !important;
     transition: none !important;
+  }
+  .stat-tile:hover {
+    transform: none;
   }
 }
 
