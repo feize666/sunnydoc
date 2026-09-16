@@ -51,7 +51,7 @@ export function MoveToKbDialog({
       <div className="dialog-panel w-[460px] max-w-[92vw]" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
           <span className="text-sm font-semibold">移动到知识库</span>
-          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-hover">
+          <button onClick={onClose} className="icon-btn text-muted hover:text-text">
             <CloseIcon size={16} />
           </button>
         </div>

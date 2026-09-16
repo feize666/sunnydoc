@@ -117,7 +117,7 @@ export function ShareView({ token }: { token: string }) {
         <div className="flex-1" />
         <button
           onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
-          className="grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-hover hover:text-text"
+          className="icon-btn text-muted hover:text-text hover:text-text"
         >
           {theme === "light" ? (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">

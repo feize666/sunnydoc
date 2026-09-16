@@ -264,7 +264,7 @@ export function Sidebar({
           <Tooltip content="展开侧栏">
             <button
               onClick={onToggleCollapse}
-              className="grid h-8 w-8 place-items-center rounded-md border border-line text-faint transition-colors hover:bg-hover hover:text-text"
+              className="icon-btn border border-line text-faint hover:text-text"
             >
               <svg
                 width="15"

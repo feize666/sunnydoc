@@ -159,12 +159,12 @@ export function TableEditor({
     <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
       <div className="flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
         <Tooltip content="添加行">
-          <button onClick={addRow} className="grid h-8 w-8 place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-text">
+          <button onClick={addRow} className="icon-btn text-muted hover:text-text">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
           </button>
         </Tooltip>
         <Tooltip content="添加列">
-          <button onClick={addCol} className="grid h-8 w-8 place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-text">
+          <button onClick={addCol} className="icon-btn text-muted hover:text-text">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
           </button>
         </Tooltip>

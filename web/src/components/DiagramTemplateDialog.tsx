@@ -134,7 +134,7 @@ export function DiagramTemplateDialog({
           <span className="text-sm font-semibold">{label}模板</span>
           <button
             onClick={onClose}
-            className="grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-hover"
+            className="icon-btn text-muted hover:text-text"
             title="关闭"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">

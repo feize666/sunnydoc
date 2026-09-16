@@ -66,7 +66,7 @@ export function NewKbDialog({
           </span>
           <button
             onClick={onClose}
-            className="grid h-8 w-8 place-items-center rounded-md text-muted hover:bg-hover"
+            className="icon-btn text-muted hover:text-text"
           >
             <CloseIcon size={16} />
           </button>

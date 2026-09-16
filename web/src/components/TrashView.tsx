@@ -326,7 +326,7 @@ export function TrashView({ onBack }: { onBack: () => void }) {
         <Tooltip content="返回">
           <button
             onClick={onBack}
-            className="grid h-8 w-8 place-items-center rounded-md text-muted transition-colors hover:bg-hover hover:text-text"
+            className="icon-btn text-muted hover:text-text"
           >
             <BackIcon />
           </button>
