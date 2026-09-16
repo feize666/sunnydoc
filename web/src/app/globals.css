@@ -294,7 +294,8 @@ body {
   width: 32px;
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease,
+    transform 0.1s ease;
 }
 /* 用 background-color（非 background 简写）以免重置调用方的 background-image
    —— 例如「发送」按钮同时带 .btn-accent 的渐变底 */
@@ -455,10 +456,10 @@ body {
   border-radius: var(--radius-md);
   color: var(--muted);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
 }
 .tool-btn:hover {
-  background: var(--hover);
+  background-color: var(--hover);
   color: var(--text);
 }
 .tool-btn:active:not(:disabled) {
@@ -471,7 +472,7 @@ body {
 /* 工具栏选中态：浅蓝底 + 主色 */
 .tool-btn-on,
 .tool-btn-on:hover {
-  background: var(--active);
+  background-color: var(--active);
   color: var(--accent);
 }
 
@@ -493,7 +494,7 @@ body {
   transition: background 0.15s ease, color 0.15s ease;
 }
 .btn-ghost:hover {
-  background: var(--hover);
+  background-color: var(--hover);
 }
 .btn-ghost:disabled {
   opacity: 0.4;
@@ -515,7 +516,7 @@ body {
   transition: background 0.15s ease, color 0.15s ease;
 }
 .menu-item:hover {
-  background: var(--hover);
+  background-color: var(--hover);
 }
 .menu-item:disabled {
   opacity: 0.4;
