@@ -1019,7 +1019,6 @@ export default function Home() {
     onExportDoc: handleExportDoc,
     listError,
     kbName: currentKb?.name,
-    onBackHome: goHome,
     searchQuery,
     onSearchChange: setSearchQuery,
     searchType,

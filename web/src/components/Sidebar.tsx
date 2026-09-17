@@ -132,7 +132,6 @@ export function Sidebar({
   onImportToFolder,
   listError,
   kbName,
-  onBackHome,
   searchQuery,
   onSearchChange,
   searchType,
@@ -174,7 +173,6 @@ export function Sidebar({
   onImportToFolder?: (folderId: string, folderName: string) => void;
   listError?: string | null;
   kbName?: string;
-  onBackHome?: () => void;
   onOpenTrash?: () => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
@@ -305,27 +303,11 @@ export function Sidebar({
       <div className="border-b border-line px-3 pb-2.5 pt-2.5">
         <div className="mb-2 flex items-center justify-between">
           <div className="flex min-w-0 items-center gap-1.5">
-            {onBackHome && (
-              <Tooltip content="返回首页" className="shrink-0">
-                <button
-                  onClick={onBackHome}
-                  className="grid h-7 w-7 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
-                >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M19 12H5M12 19l-7-7 7-7" />
-                </svg>
-              </button>
-              </Tooltip>
-            )}
+            {/* 「返回首页」统一由 TitleBar 承担（其按钮 32px 位于全局标题栏）。
+                此处原有一个 28px 的重复按钮，与标题栏纵向相邻、图标同为 ·左箭头·，
+                属同一动作的冗余入口，故移除，避免「返回首页」重影。
+                注：本头部右端的「折叠侧栏」（15 18l-6-6 6-6）与标题栏的汉堡按钮
+                「折叠侧栏」（3 6h18…）是不同交互，保留。 */}
             <svg
               width="16"
               height="16"
