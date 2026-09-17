@@ -4,6 +4,8 @@ import { useState, useRef, useCallback, useMemo } from "react";
 import { toPng, toSvg } from "html-to-image";
 import JSZip from "jszip";
 import { generateDiagram } from "@/lib/api";
+import { useColorTheme } from "@/lib/useColorTheme";
+import { readableOnCanvas } from "@/lib/colorContrast";
 import { DiagramTemplateDialog } from "./DiagramTemplateDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useToast } from "./Toast";
@@ -490,6 +492,14 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 
+// —— 画布可辨性校正见 @/lib/colorContrast ——
+//
+// 背景：节点色既作**描边/图标/连线**，也必须同时落在「白底（亮色主题）」与
+// 「近黑底（暗色主题）」上都看得见，而两个方向要求的亮度区间**很窄**。
+// 因此不在色板上写死两套值（那样要人工同步上百色、且覆盖不到用户自选色与
+// 「自定义主题」里即时生成的调色板），而是**渲染时**按当前主题校正一次
+// （readableOnCanvas）：保色相、只调明度、不写回文档。
+
 // 给定主色 hex，基于简单 HSL 变换生成 8 色调色板（主色 / 加深 / 变浅 / 相邻色相）
 function generatePalette(base: string): string[] {
   const { h, s, l } = hexToHsl(base);
@@ -521,37 +531,46 @@ const PRESET_COLORS = [
   "#64748b",
 ];
 
-// 按层级自动上色的色板。每色都保证「在它上面写白字 ≥4.5」：
-// 这些色同时用作**根节点填充**（实心 + 白字）与子节点的描边/文字色，
-// 所以「白字可读」是硬约束。原先 6 个临界色（4.10~4.50）已各压深一档，
-// 色相不变、肉眼几乎无差；未压深时 104 个主题色块里有 73 个不达标。
-const PALETTE = ["#1d4ed8", "#15803d", "#c2410c", "#7e22ce", "#0369a1", "#be185d", "#b91c1c", "#57534e"];
+// 按层级自动上色的色板。**保持设计原值，勿为对比度预压深**（原因见下）。
+//
+// ⚠️ 约束澄清（上一版曾误判，勿再按「白字底」压深）：
+// 这些色只用于**子节点**，而子节点渲染是 `fill=var(--background)` + 本色**描边/图标/连线**
+// （见画布里的 rect / text / path），**从不作白字实底**。
+// 全图唯一的实底节点是根节点，它固定用 ROOT_FILL（--accent-solid），不取本数组。
+// 故本数组的硬约束是**非文本 3.0：在当前主题底色上可辨**，且**白底与近黑底两个方向都要过**
+// （同时满足的合规亮度带仅 L∈[0.117,0.300]，很窄）。
+// 按「白字 ≥4.5」压深会把颜色推出暗底的下界 —— 实测暗底失败数从 0 升到 4
+// （最低 2.47），等于用 2 个亮底失败换了 4 个暗底失败。
+// 且写死两套色板要人工保持 104 色同步，还覆盖不到用户自选色与「自定义主题」即时生成色。
+// 故改为**渲染时按当前主题校正**（readableOnCanvas）：保住设计师原本的色相，
+// 仅在必要时微调明度，且不写回文档。
+const PALETTE = ["#2f6bff", "#16a34a", "#f97316", "#a855f7", "#0ea5e9", "#ec4899", "#dc2626", "#78716c"];
 
-// 根节点是「实心填充 + 白字」：必须用 --accent-solid（专为白字底校准的 token），
-// 不能用 --accent —— 后者是**文字色** token，暗色下为 #4f8bff（偏亮），
-// 白字压上去只有 3.30；而 --accent-solid 两套主题下白字均 ≥5.07。
+// 根节点是**唯一**的「实底 + 白字」节点：必须用 --accent-solid（专为白字底校准的 token）。
+// 不能用 --accent —— 那是**文字色** token，暗色下为 #4f8bff（偏亮），白字压上去只有 3.25；
+// --accent-solid 两套主题下白字均 ≥5.07。
 const ROOT_FILL = "var(--accent-solid)";
 const ROOT_TEXT = "#ffffff";
 const MAX_HISTORY = 100;
 
 // 主题配色方案（按层级自动上色的色板）
-// 每色都保证「白字 ≥4.5」（这些色会作根节点实心填充 + 白字）。
-// 原先 6 个临界色（4.10~4.50）已各压深一档，色相不变、肉眼几乎无差。
+// 各色保持设计师原值；对比度由 levelColor → readableOnCanvas 在渲染时按当前主题校正，
+// 故此处**不要**为追求对比度而预先压深（会把颜色推出暗色主题的下界，见 PALETTE 注释）。
 const THEMES: { name: string; palette: string[] }[] = [
   { name: "默认", palette: PALETTE },
-  { name: "海洋", palette: ["#0ea5e9", "#0369a1", "#06b6d4", "#38bdf8", "#7dd3fc", "#0c4a6e", "#0891b2", "#22d3ee"] },
+  { name: "海洋", palette: ["#0ea5e9", "#0284c7", "#06b6d4", "#38bdf8", "#7dd3fc", "#0c4a6e", "#0891b2", "#22d3ee"] },
   { name: "森林", palette: ["#16a34a", "#15803d", "#22c55e", "#4ade80", "#86efac", "#14532d", "#65a30d", "#84cc16"] },
   { name: "暖阳", palette: ["#f97316", "#ea580c", "#f59e0b", "#fbbf24", "#fcd34d", "#c2410c", "#ef4444", "#fb923c"] },
   { name: "紫罗兰", palette: ["#a855f7", "#9333ea", "#7c3aed", "#8b5cf6", "#c084fc", "#6b21a8", "#d946ef", "#e879f9"] },
   // —— 新增主题（每套 8 色） ——
   { name: "珊瑚", palette: ["#ff6b6b", "#fa5252", "#f06595", "#e64980", "#ff8787", "#ffa94d", "#d6336c", "#f783ac"] },
-  { name: "天青", palette: ["#22b8cf", "#15aabf", "#3bc9db", "#66d9e8", "#0e7490", "#1098ad", "#099268", "#38d9a9"] },
+  { name: "天青", palette: ["#22b8cf", "#15aabf", "#3bc9db", "#66d9e8", "#0c8599", "#1098ad", "#099268", "#38d9a9"] },
   { name: "薄荷", palette: ["#51cf66", "#40c057", "#69db7c", "#a9e34b", "#94d82d", "#37b24d", "#2f9e44", "#74b816"] },
   { name: "金色", palette: ["#fcc419", "#fab005", "#f59f00", "#f08c00", "#e67700", "#ffd43b", "#f1a208", "#d4a017"] },
-  { name: "靛蓝", palette: ["#5c7cfa", "#3b5bdb", "#748ffc", "#4263eb", "#3b5bdb", "#5f3dc4", "#6741d9", "#7048e8"] },
+  { name: "靛蓝", palette: ["#5c7cfa", "#4c6ef5", "#748ffc", "#4263eb", "#3b5bdb", "#5f3dc4", "#6741d9", "#7048e8"] },
   { name: "石墨", palette: ["#212529", "#343a40", "#495057", "#5c636a", "#6c757d", "#868e96", "#adb5bd", "#ced4da"] },
   { name: "酒红", palette: ["#9c1d1d", "#c92a2a", "#e03131", "#d6336c", "#a61e4d", "#862e9c", "#b0255e", "#7d1f3c"] },
-  { name: "蓝灰", palette: ["#4263eb", "#5c7cfa", "#748ffc", "#3b5bdb", "#5b6bd6", "#6c7ae0", "#8094e8", "#3b5bdb"] },
+  { name: "蓝灰", palette: ["#4263eb", "#5c7cfa", "#748ffc", "#4c6ef5", "#5b6bd6", "#6c7ae0", "#8094e8", "#3b5bdb"] },
 ];
 
 // 快捷键提示面板：本编辑器支持的全部快捷键（分组展示）
@@ -719,6 +738,8 @@ export function MindMapEditor({
   const [aiText, setAiText] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [themePalette, setThemePalette] = useState<string[]>(PALETTE);
+  // 当前明暗主题：节点描边/图标/连线色需按其校正到「在画布底上可辨」
+  const colorTheme = useColorTheme();
   // 自定义主题：会话内维护，不持久化
   const [customThemes, setCustomThemes] = useState<{ name: string; palette: string[] }[]>([]);
   const [themeCustomOpen, setThemeCustomOpen] = useState(false);
@@ -1456,14 +1477,14 @@ export function MindMapEditor({
 
   const levelColor = (id: string): string => {
     const c = mapNode(id)?.color;
-    if (c) return c;
+    if (c) return readableOnCanvas(c, colorTheme);
     let depth = 0;
     let cur = id;
     while (mapNode(cur)?.parent) {
       depth++;
       cur = mapNode(cur)!.parent!;
     }
-    return themePalette[depth % themePalette.length];
+    return readableOnCanvas(themePalette[depth % themePalette.length], colorTheme);
   };
 
   const isRoot = (id: string) => !mapNode(id)?.parent;

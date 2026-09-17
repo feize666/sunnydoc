@@ -28,6 +28,7 @@ import { toPng, toSvg } from "html-to-image";
 import JSZip from "jszip";
 import { generateDiagram } from "@/lib/api";
 import { useColorTheme } from "@/lib/useColorTheme";
+import { readableOnCanvas } from "@/lib/colorContrast";
 import { DiagramTemplateDialog } from "./DiagramTemplateDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useToast } from "./Toast";
@@ -368,8 +369,8 @@ const STROKE_COLORS = ["#78716c", "#ef4444", "#f97316", "#22c55e", "#3b82f6", "#
 const STROKE_COLORS_DARK = ["#a8a29e", "#f87171", "#fb923c", "#4ade80", "#60a5fa", "#c084fc", "#38bdf8", "#f472b6"];
 
 // —— 整图主题（一键换色）——
-// 每套主题含亮/暗两份 nodeFill（描边色在两套主题下都已达标：vs 暗底 3.96~7.76），
-// 故 nodeStroke / edgeColor 只需一份。
+// 每套主题含亮/暗两份 nodeFill；描边与连线共用 nodeStroke，按当前明暗过一遍
+// readableOnCanvas 校正（亮底有 2 档偏弱的已由校正补上），故只需存一份。
 const THEMES: {
   name: string;
   nodeFill: string;
@@ -727,17 +728,23 @@ function createShapeNode(
       ? (theme as unknown as { nodeFillDark: string }).nodeFillDark
       : theme.nodeFill;
     const userFill = fillForTheme(d.fill, colorTheme);
-    const userStroke = strokeForTheme(d.stroke, colorTheme);
+    const userStrokeRaw = strokeForTheme(d.stroke, colorTheme);
+    // 描边是节点的可视轮廓（非文本 3.0）：亮色档有 2 个（#f97316 2.80 / #0ea5e9 2.77）
+    // 在白底上偏弱，故统一过一遍画布可辨性校正；已达标的原样返回，不改变既有观感。
+    const userStroke = userStrokeRaw ? readableOnCanvas(userStrokeRaw, colorTheme) : undefined;
     // 容器类：更淡的半透明填充（基于主题边框色，低透明度），让容器更清晰且不喧宾夺主
     const containerFill = (() => {
-      const hex = theme.nodeStroke;
+      const hex = readableOnCanvas(theme.nodeStroke, colorTheme);
       const r = parseInt(hex.slice(1, 3), 16);
       const g = parseInt(hex.slice(3, 5), 16);
       const b = parseInt(hex.slice(5, 7), 16);
       return `rgba(${r}, ${g}, ${b}, ${colorTheme === "dark" ? 0.18 : 0.06})`;
     })();
     const fill = userFill ?? (selected ? "var(--accent-soft)" : isContainerShape ? containerFill : themeFill);
-    const stroke = userStroke ?? (selected ? "var(--accent)" : theme.nodeStroke);
+    // 描边是节点的可视轮廓（非文本 3.0）：主题描边按其校正，用户自选色同样校正
+    const stroke =
+      userStroke ??
+      (selected ? "var(--accent)" : readableOnCanvas(theme.nodeStroke, colorTheme));
     const dashed = d.shape === "container" || d.shape === "group";
     // 选中态加粗到 2.5；容器类非选中态 2，其它 1.5
     const strokeW = selected ? 2.5 : isContainerShape ? 2 : 1.5;
@@ -1215,13 +1222,14 @@ export function FlowchartEditor({
     () => ({
       type: edgeKind,
       // 注意：markerEnd/markerStart 不在此设置，改由 viewEdges 依据 edge.data 箭头类型生成（含「无箭头」）
-      style: { stroke: THEMES[themeIndex].nodeStroke, strokeWidth: 1.5 },
+      // 连线与主题描边同为「画布线要素」，需按当前明暗校正到画布底上可辨（非文本 3.0）
+      style: { stroke: readableOnCanvas(THEMES[themeIndex].nodeStroke, colorTheme), strokeWidth: 1.5 },
       labelStyle: { fill: "var(--text)", fontSize: 12, fontWeight: 500 },
       labelBgStyle: { fill: "var(--background)", fillOpacity: 0.9 },
       labelBgPadding: [6, 3] as [number, number],
       labelBgBorderRadius: 4,
     }),
-    [edgeKind, themeIndex],
+    [edgeKind, themeIndex, colorTheme],
   );
 
   // 节点类型随主题 / 明暗配色重建，使所有未手动设色节点即时换色
