@@ -28,8 +28,12 @@
   --line: #e2e8f0;
   --line-strong: #cbd5e1;
 
-  /* 主色（蓝） */
-  --accent: #2f6bff;
+  /* 主色（蓝）
+     --accent 共 137 处 text-accent 文本色，须在「最严苛底色 accent-soft」上 ≥4.5：
+     原 #2f6bff 在白底恰好 4.50（临界），落到 accent-soft 只剩 3.97、surface-2 只剩 4.00，
+     而 accent-soft 正是本 UI 的主徽标/标签/内联代码底（25 处静态共现）。
+     故压深到 #2563eb（soft 4.56 / 白底 5.17 / surface-2 4.60），仍为品牌蓝且余量充足。 */
+  --accent: #2563eb;
   --accent-soft: #eaf1ff;
   --accent-hover: #1d4ed8;
   --accent-active: #1e4fd6;
@@ -39,7 +43,7 @@
      原值：起端 #6ea0ff 白字仅 2.58、中端 #2f6bff 4.50（临界），均已修正。 */
   --accent-grad: linear-gradient(135deg, #2862f4 0%, #0c4be8 48%, #093ab1 100%);
   /* 实底蓝（bg-accent-solid + text-white）：单色场景与渐变同一安全线。
-     与 --accent(#2f6bff) 分开的原因：--accent 还兼任 137 处 text-accent 文本色，
+     与 --accent(#2563eb) 分开的原因：--accent 还兼任 137 处 text-accent 文本色，
      文本需要「亮」、白字底需要「暗」，同一变量无法同时满足两个方向。 */
   --accent-solid: #2862f4;        /* rest 白字 5.07 / hover 后 4.73 */
   --accent-solid-hover: #1d4ed8;  /* 白字 6.70 */
@@ -57,14 +61,19 @@
   --theme-sun-from: #fbbf24;
   --theme-sun-to: #f59e0b;
 
-  /* 状态色 */
-  --success: #16a34a;
+  /* 状态色。
+     校准基准是「自家 -soft 徽标底」，而非白底 —— text-<status> 有 45 处与
+     bg-<status>-soft 同现（danger 42 / success 3），且 diff 行的底也是 soft 色。
+     原值只按白底验过，落到 soft 底上不达标：danger 3.95、success 3.00、warning 2.86。
+     现值（色相不变、饱和度几乎不变）：soft 底 4.54 / 4.66 / 4.56，白底 5.54 / 5.12 / 5.07。
+     同时仍满足作实底时的白字：danger 5.54（优于原 4.83）。 */
+  --success: #1b7e3f;   /* soft 4.66 · 白底 5.12 · surface-2 4.55 */
   --success-soft: #dcfce7;
-  --warning: #d97706;
+  --warning: #a55c12;   /* soft 4.56 · 白底 5.07 · surface-2 4.51 */
   --warning-soft: #fef3c7;
-  --danger: #dc2626;
+  --danger: #c92626;    /* soft 4.54 · 白底 5.54 · surface-2 4.93 */
   --danger-soft: #fee2e2;
-  --danger-hover: #b91c1c;
+  --danger-hover: #b91c1c;  /* 白字 6.47 / soft 5.30 */
 
   /* 圆角层级 */
   --radius-sm: 6px;
@@ -522,10 +531,13 @@ body {
   opacity: 0.35;
   cursor: not-allowed;
 }
-/* 工具栏选中态：浅蓝底 + 主色 */
+/* 工具栏选中态：浅蓝底 + 主色。
+   底用 --accent-soft（非 --active）：选中态里有 B/I/U 等文字按钮，主色文字须 ≥4.5，
+   accent-soft 4.56 ✅ / --active 仅 3.95 ✗。且 accent-soft 与 --active 明度接近，
+   与 hover（--hover）仍能区分：hover 比 accent-soft 更淡一档。 */
 .tool-btn-on,
 .tool-btn-on:hover {
-  background-color: var(--active);
+  background-color: var(--accent-soft);
   color: var(--accent);
 }
 

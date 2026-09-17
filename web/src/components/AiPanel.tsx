@@ -640,7 +640,7 @@ export function AiPanel({
           <Tooltip content="历史会话">
             <button
               onClick={() => setShowHistory((v) => !v)}
-              className={`btn-ghost ${showHistory ? "bg-active text-accent" : "text-muted"}`}
+              className={`btn-ghost ${showHistory ? "bg-accent-soft text-accent" : "text-muted"}`}
             >
               <HistoryIcon size={14} />
               历史
