@@ -1631,11 +1631,9 @@ export function MindMapEditor({
           清除关联
         </button>
 
-        <span className="mx-auto" />
-
-        <span className="hidden text-[11px] text-faint lg:inline">
-          Tab 子主题 · Enter 同级 · Delete 删除 · 双击编辑 · 拖拽重排
-        </span>
+        {/* 工具栏不再常驻快捷键提示（占位且随宽度换行）。
+            完整说明收在右侧「快捷键」按钮的面板里，需要时按需展开。 */}
+        <span className="ml-auto" />
 
         <button onClick={() => setOutline((o) => !o)} className={toolBtn(outline)} title="切换大纲 / 导图视图">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>
@@ -2266,17 +2264,8 @@ export function MindMapEditor({
         </svg>
         )}
 
-        {/* 空状态引导：仅根节点时，画布中央提示如何添加子/同级主题（不挡操作） */}
-        {!outline && nodes.length === 1 && (
-          <div
-            className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center text-center text-faint"
-          >
-            <div className="px-6 text-[15px] leading-relaxed">
-              选中节点后按 <span className="font-medium">Tab</span> 添加子主题、
-              <span className="font-medium">Enter</span> 添加同级主题
-            </div>
-          </div>
-        )}
+        {/* 画布中央不再常驻快捷键引导 —— 快捷键说明见工具栏「快捷键」面板。
+            根节点的 + 悬浮按钮已是可见的添加入口，无需再用一段文字重复。 */}
 
         {/* 备注气泡：HTML 绝对定位，屏幕坐标 = 世界坐标 * k + v */}
         {!outline && noteTarget && (() => {

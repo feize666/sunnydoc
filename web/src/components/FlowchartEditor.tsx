@@ -2300,7 +2300,7 @@ export function FlowchartEditor({
               </>
             )}
           </div>
-          <span className="hidden text-[11px] text-faint lg:inline">双击改文字 · 拖拽连线 · Ctrl+Z 撤销</span>
+          {/* 工具栏不再常驻快捷键提示（占位且窄屏折行）。完整说明收在左侧「?」按钮的面板里。 */}
           {/* 导出（PNG / SVG / PDF）下拉 */}
           <div className="relative shrink-0">
             <button
