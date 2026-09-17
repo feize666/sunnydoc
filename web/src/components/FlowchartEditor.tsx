@@ -900,10 +900,14 @@ export function FlowchartEditor({
   value,
   onChange,
   readOnly = false,
+  currentUserId,
+  isAdmin = false,
 }: {
   value: string;
   onChange: (json: string) => void;
   readOnly?: boolean;
+  currentUserId?: string;
+  isAdmin?: boolean;
 }) {
   const toast = useToast();
   const initial = useMemo(() => parseFlow(value), []);
@@ -2856,6 +2860,8 @@ export function FlowchartEditor({
         type="flowchart"
         currentData={JSON.stringify(buildStored())}
         onApply={applyLocalTemplate}
+        currentUserId={currentUserId}
+        isAdmin={isAdmin}
       />
       )}
     </div>

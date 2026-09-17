@@ -70,6 +70,7 @@ export function Editor({
   onOpenWikilink,
   backlinks,
   currentUserId,
+  isAdmin = false,
   onRemoteUpdate,
 }: {
   doc: Doc | null;
@@ -96,6 +97,8 @@ export function Editor({
   onOpenWikilink?: (title: string) => void;
   backlinks?: Backlink[];
   currentUserId?: string;
+  /** 管理员可删除任意用户发布的社区模板。 */
+  isAdmin?: boolean;
   onRemoteUpdate?: () => void;
 }) {
   const toast = useToast();
@@ -794,9 +797,21 @@ export function Editor({
                 ) : doc.type === "datasheet" ? (
                   <LazyDatasheetEditor key={doc.key} value={doc.body} onChange={setDraft} />
                 ) : doc.type === "flowchart" ? (
-                  <LazyFlowchartEditor key={doc.key} value={doc.body} onChange={setDraft} />
+                  <LazyFlowchartEditor
+                    key={doc.key}
+                    value={doc.body}
+                    onChange={setDraft}
+                    currentUserId={currentUserId}
+                    isAdmin={isAdmin}
+                  />
                 ) : doc.type === "mindmap" ? (
-                  <LazyMindMapEditor key={doc.key} value={doc.body} onChange={setDraft} />
+                  <LazyMindMapEditor
+                    key={doc.key}
+                    value={doc.body}
+                    onChange={setDraft}
+                    currentUserId={currentUserId}
+                    isAdmin={isAdmin}
+                  />
                 ) : doc.type === "html" ? (
                   <textarea
                     value={draft}

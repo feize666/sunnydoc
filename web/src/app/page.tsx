@@ -1144,6 +1144,7 @@ export default function Home() {
               onOpenWikilink={handleOpenWikilink}
               backlinks={activeKey ? backlinks : []}
               currentUserId={user?.id}
+              isAdmin={user?.role === "admin"}
               onRemoteUpdate={
                 activeKey ? () => refreshDoc(activeKey) : undefined
               }

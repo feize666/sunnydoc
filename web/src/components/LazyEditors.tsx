@@ -19,6 +19,10 @@ type EditorProps = {
   onChange: (v: string) => void;
   readOnly?: boolean;
   placeholder?: string;
+  /** 当前用户 id —— 用于判定社区模板「是否我发布的」。 */
+  currentUserId?: string;
+  /** 管理员可删除任意用户的社区模板。 */
+  isAdmin?: boolean;
 };
 
 const loading = () => (

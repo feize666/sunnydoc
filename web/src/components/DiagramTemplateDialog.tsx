@@ -11,16 +11,21 @@ import {
   listCommunityTemplates,
   publishCommunityTemplate,
   useCommunityTemplate,
+  deleteCommunityTemplate,
   type CommunityTemplate,
 } from "@/lib/api";
 import { useToast } from "./Toast";
 import { useModalFocus } from "@/lib/useModalFocus";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { FormatPaintIcon, ShareIcon } from "./icons";
 import { EmptyState } from "./EmptyState";
 
 /**
  * 流程图 / 思维导图「模板」对话框。
  * 三个 tab：保存为模板（本地 / 发布到社区）+ 我的模板（本地）+ 社区模板（云端）。
+ *
+ * `currentUserId` / `isAdmin` 决定社区模板能否被删除 —— 后端 `DELETE /templates/{id}`
+ * 只允许「作者或管理员」，前端据此决定是否渲染删除按钮（越权仍会被后端 403 拦下）。
  */
 export function DiagramTemplateDialog({
   open,
@@ -28,12 +33,16 @@ export function DiagramTemplateDialog({
   type,
   currentData,
   onApply,
+  currentUserId,
+  isAdmin = false,
 }: {
   open: boolean;
   onClose: () => void;
   type: DiagramType;
   currentData: string;
   onApply: (data: string) => void;
+  currentUserId?: string;
+  isAdmin?: boolean;
 }) {
   const toast = useToast();
   const [tab, setTab] = useState<"save" | "browse" | "community">("save");
@@ -42,6 +51,8 @@ export function DiagramTemplateDialog({
   const [community, setCommunity] = useState<CommunityTemplate[]>([]);
   const [communityLoading, setCommunityLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<CommunityTemplate | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const templates = useMemo(
     () => listDiagramTemplates(type),
@@ -128,13 +139,35 @@ export function DiagramTemplateDialog({
     handleApply(t.data, t.name);
   };
 
+  /** 是否可删除：作者本人或管理员（与后端 `delete_template` 的判定一致）。 */
+  const canDelete = (t: CommunityTemplate) =>
+    isAdmin || (!!currentUserId && t.author_id === currentUserId);
+
+  const handleConfirmDelete = async () => {
+    const t = pendingDelete;
+    if (!t || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteCommunityTemplate(t.id);
+      // 本地摘除，避免整表重取造成的闪烁
+      setCommunity((list) => list.filter((x) => x.id !== t.id));
+      toast.success(`已删除模板「${t.name}」`);
+      setPendingDelete(null);
+    } catch (e) {
+      toast.error(`删除失败：${e instanceof Error ? e.message : "未知错误"}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
-    <div className="dialog-overlay" onClick={onClose}>
-      <div
-        ref={panelRef}
-        className="dialog-panel w-[500px] max-w-[92vw]"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <>
+      <div className="dialog-overlay" onClick={onClose}>
+        <div
+          ref={panelRef}
+          className="dialog-panel w-[500px] max-w-[92vw]"
+          onClick={(e) => e.stopPropagation()}
+        >
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
           <span className="text-sm font-semibold">{label}模板</span>
           <button
@@ -281,6 +314,7 @@ export function DiagramTemplateDialog({
                         <span className="block truncate text-[14px] text-text">{t.name}</span>
                         <span className="block text-[11px] text-faint">
                           {t.author_name || "匿名"} · {t.use_count ?? 0} 次使用
+                          {canDelete(t) && t.author_id === currentUserId ? " · 我发布的" : ""}
                         </span>
                       </span>
                       <button
@@ -289,14 +323,41 @@ export function DiagramTemplateDialog({
                       >
                         应用
                       </button>
+                      {canDelete(t) && (
+                        <button
+                          onClick={() => setPendingDelete(t)}
+                          className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-danger-soft hover:text-danger"
+                          title="删除模板"
+                          aria-label={`删除模板 ${t.name}`}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                          </svg>
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
               )}
             </div>
           )}
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* 确认删除：放在 overlay 之外，避免点击其遮罩冒泡到模板对话框把它一起关掉 */}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="删除社区模板"
+        message={
+          pendingDelete
+            ? `确定删除「${pendingDelete.name}」吗？删除后其他用户将无法再从社区应用该模板，且不可恢复。`
+            : ""
+        }
+        confirmText={deleting ? "删除中…" : "删除"}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
+    </>
   );
 }

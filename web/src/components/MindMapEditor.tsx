@@ -667,10 +667,14 @@ export function MindMapEditor({
   value,
   onChange,
   readOnly = false,
+  currentUserId,
+  isAdmin = false,
 }: {
   value: string;
   onChange: (json: string) => void;
   readOnly?: boolean;
+  currentUserId?: string;
+  isAdmin?: boolean;
 }) {
   const toast = useToast();
   const [nodes, setNodes] = useState<MindNode[]>(() => {
@@ -2462,6 +2466,8 @@ export function MindMapEditor({
         type="mindmap"
         currentData={JSON.stringify({ nodes, links })}
         onApply={applyTemplate}
+        currentUserId={currentUserId}
+        isAdmin={isAdmin}
       />
       )}
     </div>

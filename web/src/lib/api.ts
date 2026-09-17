@@ -223,18 +223,6 @@ export async function deleteFolder(id: string): Promise<void> {
   await request(`/folders/${id}`, { method: "DELETE" });
 }
 
-export async function importDocument(
-  file: File,
-  kbId?: string | null,
-  folderId?: string | null,
-): Promise<{ imported: number; documents: { id: string; title: string }[] }> {
-  const form = new FormData();
-  form.append("file", file);
-  if (kbId) form.append("kb_id", kbId);
-  if (folderId) form.append("folder_id", folderId);
-  return request("/documents/import", { method: "POST", body: form });
-}
-
 export interface ImportTaskStatus {
   status: "queued" | "running" | "done" | "failed";
   progress: number;
@@ -976,26 +964,6 @@ export async function uploadAttachment(
     throw new Error(detail);
   }
   return res.json();
-}
-
-/** 人类可读的文件大小（附件徽标展示用）。 */
-export function formatBytes(n: number): string {
-  if (!n) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
-  const v = n / 1024 ** i;
-  return `${v >= 10 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
-}
-
-export async function register(
-  username: string,
-  password: string,
-): Promise<AuthResponse> {
-  return request("/auth/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
 }
 
 export async function login(
