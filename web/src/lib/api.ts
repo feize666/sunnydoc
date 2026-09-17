@@ -1304,7 +1304,14 @@ export async function deleteCommunityTemplate(id: string): Promise<void> {
   await request(`/templates/${id}`, { method: "DELETE" });
 }
 
-export async function useCommunityTemplate(id: string): Promise<void> {
+/**
+ * 记一次社区模板的使用（后端把 use_count +1）。
+ *
+ * 注意：这是个**普通 async 函数，不是 React Hook**。刻意不以 `use` 开头 ——
+ * 原名 `useCommunityTemplate` 会被 eslint-plugin-react-hooks 误判为 Hook 调用，
+ * 在 handleApplyCommunity 里报 rules-of-hooks 违规，噪声会掩盖真实违规。
+ */
+export async function trackTemplateUse(id: string): Promise<void> {
   await request(`/templates/${id}/use`, { method: "POST" });
 }
 

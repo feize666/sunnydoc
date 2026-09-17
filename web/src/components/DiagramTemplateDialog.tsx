@@ -10,7 +10,7 @@ import {
 import {
   listCommunityTemplates,
   publishCommunityTemplate,
-  useCommunityTemplate,
+  trackTemplateUse,
   deleteCommunityTemplate,
   type CommunityTemplate,
 } from "@/lib/api";
@@ -132,7 +132,7 @@ export function DiagramTemplateDialog({
 
   const handleApplyCommunity = async (t: CommunityTemplate) => {
     try {
-      await useCommunityTemplate(t.id);
+      await trackTemplateUse(t.id);
     } catch {
       /* 计数失败不影响应用 */
     }

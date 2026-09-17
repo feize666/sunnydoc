@@ -304,6 +304,28 @@ export function Editor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, draftTitle, draft, saving]);
 
+  /**
+   * 点击大纲跳转到第 index 个标题。
+   *
+   * 之前只查 contentRef（预览态容器），编辑态下 contentRef 为 null，
+   * 导致「编辑时点大纲没反应」。现改为在滚动容器内查找，三种模式通用。
+   *
+   * ⚠️ 必须定义在下面的 `loading` / `!doc` 两个早退**之前**：
+   * 否则未加载完成时组件提前返回、这个 useCallback 不会被调用，
+   * 加载完成后 hook 数量变化 → React 抛 #310
+   * "Rendered more hooks than during the previous render"。
+   */
+  const scrollToHeading = useCallback((index: number) => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const headings = scroller.querySelectorAll("h1, h2, h3, h4");
+    const el = headings[index] as HTMLElement | undefined;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    // 立刻反映选中态，不必等滚动事件回传
+    setActiveHeading(index);
+  }, []);
+
   if (loading && !doc) {
     return (
       <main className="flex flex-1 items-center justify-center bg-background text-muted">
@@ -395,23 +417,6 @@ export function Editor({
       setTimeout(() => setCopied(false), 2000);
     }
   };
-
-  /**
-   * 点击大纲跳转到第 index 个标题。
-   *
-   * 之前只查 contentRef（预览态容器），编辑态下 contentRef 为 null，
-   * 导致「编辑时点大纲没反应」。现改为在滚动容器内查找，三种模式通用。
-   */
-  const scrollToHeading = useCallback((index: number) => {
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-    const headings = scroller.querySelectorAll("h1, h2, h3, h4");
-    const el = headings[index] as HTMLElement | undefined;
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "start" });
-    // 立刻反映选中态，不必等滚动事件回传
-    setActiveHeading(index);
-  }, []);
 
   return (
     <main className="flex min-w-0 flex-1">
