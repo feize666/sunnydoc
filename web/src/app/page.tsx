@@ -388,15 +388,32 @@ export default function Home() {
     if (view === "kb") refreshList();
   }, [view, refreshList]);
 
-  // 全局拖拽文件导入：在知识库视图拖入文件时显示遮罩，释放后打开导入对话框
+  // 全局拖拽文件导入：在知识库视图拖入文件时显示遮罩，释放后打开导入对话框。
+  // 例外（两种）：
+  //  1) 落在编辑器正文内的文件 —— 交给富文本编辑器自己处理（图片插图 / 其他文件作附件），
+  //     拖到正文里却弹出「导入为文档」是反直觉的；用落点判断比 stopPropagation 更稳，
+  //     也不会把遮罩的 depth 计数搞乱导致遮罩卡住。
+  //  2) 纯图片拖放（落在编辑器外）—— 图片作为独立文档导入没有意义，直接忽略。
   useEffect(() => {
     const isFileDrag = (e: DragEvent) => {
       return Array.from(e.dataTransfer?.types ?? []).includes("Files");
+    };
+    const isOverEditor = (e: DragEvent) => {
+      const t = e.target as HTMLElement | null;
+      return !!t?.closest?.(".rich-editor");
+    };
+    const isImageOnlyDrag = (e: DragEvent) => {
+      const items = Array.from(e.dataTransfer?.items ?? []);
+      if (items.length === 0) return false;
+      // 只有「所有条目都是图片」才算图片拖放；混合拖入仍走导入流程
+      if (!items.every((it) => it.kind === "file")) return false;
+      return items.every((it) => it.type.startsWith("image/"));
     };
     let depth = 0;
     const onDragEnter = (e: DragEvent) => {
       if (!isFileDrag(e)) return;
       if (view !== "kb") return;
+      if (isOverEditor(e) || isImageOnlyDrag(e)) return;
       e.preventDefault();
       depth++;
       setDragOver(true);
@@ -404,6 +421,7 @@ export default function Home() {
     const onDragOver = (e: DragEvent) => {
       if (!isFileDrag(e)) return;
       if (view !== "kb") return;
+      if (isOverEditor(e) || isImageOnlyDrag(e)) return;
       e.preventDefault();
     };
     const onDragLeave = (e: DragEvent) => {
@@ -414,9 +432,10 @@ export default function Home() {
     const onDrop = (e: DragEvent) => {
       if (!isFileDrag(e)) return;
       if (view !== "kb") return;
-      e.preventDefault();
       depth = 0;
       setDragOver(false);
+      if (isOverEditor(e) || isImageOnlyDrag(e)) return; // 交给编辑器
+      e.preventDefault();
       const files = Array.from(e.dataTransfer?.files ?? []);
       if (files.length > 0) {
         setDragFiles(files);

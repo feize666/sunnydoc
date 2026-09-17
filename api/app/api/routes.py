@@ -118,6 +118,16 @@ UPLOAD_DIR = MEDIA_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"}
 
+# 正文附件允许的扩展名（编辑器内挂载非图片文件）。
+# 白名单而非黑名单：附件是要被下载/打开的原始文件，绝不能放行可执行脚本类型
+# （.sh/.py/.exe/.dll/.js/.html 等一律拒绝），否则等于给知识库开了个文件托管后门。
+ALLOWED_ATTACHMENT_EXTS = {
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".csv", ".tsv",
+    ".txt", ".md", ".markdown", ".json", ".zip", ".tar", ".gz", ".7z",
+}
+# 单个附件大小上限（30MB）：附件走内存读取后内容寻址落盘，不设上限会打爆进程
+MAX_ATTACHMENT_BYTES = 30 * 1024 * 1024
+
 # 异步导入任务状态（进程内全局，线程安全）
 _import_tasks: dict[str, dict] = {}
 _import_lock = threading.Lock()
@@ -1225,8 +1235,13 @@ def get_import_progress(task_id: str):
 
 
 @router.get("/media/{filename}")
-def get_media(filename: str):
-    """返回媒体文件（图片/动图/视频），带路径穿越防护"""
+def get_media(filename: str, name: str | None = None):
+    """返回媒体文件（图片/动图/视频/附件），带路径穿越防护。
+
+    `name` 为可选原始文件名（附件上传时写入 URL 的 query）。图片是内联展示，
+    不需要它；附件（pdf/zip 等）则据此设 Content-Disposition，使用户下载到的
+    是「项目方案.pdf」而不是「a1b2c3d4e5f6.pdf」。
+    """
     if not filename or "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(status_code=404, detail="文件不存在")
 
@@ -1238,7 +1253,18 @@ def get_media(filename: str):
     if not path.is_file():
         raise HTTPException(status_code=404, detail="文件不存在")
 
-    return FileResponse(path, media_type=media.content_type(parser.ext_of(filename)))
+    ext = parser.ext_of(filename)
+    ctype = media.content_type(ext)
+    # 仅对非媒体类（即附件）附加下载文件名；图片/视频保持内联可预览
+    is_inline = ctype.startswith("image/") or ctype.startswith("video/")
+    if name and not is_inline:
+        safe = name.replace('"', "").replace("\\", "").replace("\r", "").replace("\n", "")
+        return FileResponse(
+            path,
+            media_type=ctype,
+            headers={"Content-Disposition": f'attachment; filename*=UTF-8\'\'{quote(safe)}'},
+        )
+    return FileResponse(path, media_type=ctype)
 
 
 @router.post("/chat")
@@ -2678,3 +2704,37 @@ async def upload_image(
     with dest.open("wb") as f:
         shutil.copyfileobj(file.file, f)
     return {"url": f"/uploads/{name}"}
+
+
+@router.post("/upload/attachment")
+async def upload_attachment(
+    file: UploadFile = File(...), current_user: dict = Depends(get_current_user)
+):
+    """编辑器上传正文附件（pdf/docx/xlsx/zip 等），返回可访问 URL 与原始文件名。
+
+    复用 media.save 的内容寻址存储：相同文件只落一份盘，并由 /media/{filename}
+    提供下载。文件名另存为查询参数 `name`，让下载时能还原用户看到的原始名。
+    """
+    raw_name = (file.filename or "").strip()
+    ext = Path(raw_name).suffix.lower()
+    if ext not in ALLOWED_ATTACHMENT_EXTS:
+        allowed = "、".join(sorted(e.lstrip(".") for e in ALLOWED_ATTACHMENT_EXTS))
+        raise HTTPException(status_code=400, detail=f"不支持的附件格式，仅支持：{allowed}")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="附件内容为空")
+    if len(data) > MAX_ATTACHMENT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"附件过大（上限 {MAX_ATTACHMENT_BYTES // 1024 // 1024}MB）",
+        )
+
+    filename = media.save(data, ext)
+    # 原始文件名放进 query，下载端点据此还原；需 URL 编码以容纳中文/空格
+    display = quote(raw_name or f"attachment{ext}")
+    return {
+        "url": f"/api/v1/media/{filename}?name={display}",
+        "name": raw_name or f"attachment{ext}",
+        "size": len(data),
+    }

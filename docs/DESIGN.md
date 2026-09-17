@@ -260,6 +260,19 @@ API 不变：`<Tooltip content="提示" side="top|bottom">触发元素</Tooltip>
 > 不能是 `bg-white/20`。原名/大小两行中，**大小行原用 `opacity-70` 只有 2.54:1，已提到 `opacity-90`（6.42:1）**。
 > 原因是它叠在 `--accent-grad` 渐变的**最亮档**上，白玻璃会把底提亮到白字 3.58:1。详见 §6.3。
 
+### 5.9b 正文附件链接（`.md-body a[href*="/media/"]`）
+
+编辑器插入的正文附件在 Markdown 里表示为链接 `[📎 文件名](/api/v1/media/<hash>?name=<原名>)`，
+由 `globals.css` 里 `a[href*="/media/"]` 选中渲染为**文件芯片**（`--line-strong` 边框 +
+`--surface-2` 弱底 + 圆角 + hover 转 `--accent` 边框与 `--accent-soft` 底）。
+
+> **为什么用 href 前缀选中而不是加 class**：附件是 Markdown 链接，经
+> 富文本 ↔ markdown ↔ 预览三处往返（tiptap-markdown 序列化 / 解析）后，
+> 自定的 `class` 会被丢弃，只有 `href` 能稳定存活。用属性选择器是唯一可靠的做法。
+>
+> **为什么附件用「链接」而非自定义 TipTap 节点**：链接是 Markdown 原生构件，
+> 三处往返无损；自定义节点需给 tiptap-markdown 另写序列化与解析，收益不抵复杂度。
+
 ### 5.10 品牌标识（`.logo-mark`）
 渐变蓝底（`--accent-grad`）白字 + 微光，用于「知」Logo 标识，替代硬编码 `from-[#5b8dff] to-[#2b5ce6]`。
 白字 5.07:1（亮/暗同值）。

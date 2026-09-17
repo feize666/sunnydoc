@@ -954,6 +954,39 @@ export async function uploadImage(file: File): Promise<string> {
   return data.url;
 }
 
+/** 正文附件上传（pdf/docx/xlsx/zip 等非图片文件）。返回可访问 URL 与原始文件名。 */
+export async function uploadAttachment(
+  file: File,
+): Promise<{ url: string; name: string; size: number }> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(`${BASE}/upload/attachment`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: fd,
+  });
+  if (!res.ok) {
+    let detail = `附件上传失败（${res.status}）`;
+    try {
+      const body = await res.json();
+      if (body.detail) detail = body.detail;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+/** 人类可读的文件大小（附件徽标展示用）。 */
+export function formatBytes(n: number): string {
+  if (!n) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
+  const v = n / 1024 ** i;
+  return `${v >= 10 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+}
+
 export async function register(
   username: string,
   password: string,

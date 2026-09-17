@@ -1241,6 +1241,27 @@ body {
   border-bottom-color: var(--accent);
 }
 
+/* 正文附件链接：链接指向 /media/<hash>?name=<原名>。
+   以「📎 文件名」形态出现，做成文件芯片（边框 + 弱底 + 不断行），
+   让它一眼区别于普通正文链接，而不会被误读成站外地址。
+   用 href 前缀选中，无需给链接加额外 class（Markdown 往返时 class 会丢）。 */
+.md-body a[href*="/media/"] {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 1px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background-color: var(--surface-2);
+  font-size: 0.95em;
+  word-break: break-all;
+}
+.md-body a[href*="/media/"]:hover {
+  border-color: var(--accent);
+  background-color: var(--accent-soft);
+  border-bottom-color: var(--accent);
+}
+
 /* 表格：斑马纹 + 行 hover + 圆角边框 */
 .md-body table {
   border-collapse: separate;

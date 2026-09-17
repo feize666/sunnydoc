@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { renderMarkdown, extractToc, sanitizeHtml, type TocItem } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
@@ -111,6 +111,10 @@ export function Editor({
   const [collabPresence, setCollabPresence] = useState<{ id: string; nickname: string; avatar?: string | null }[]>([]);
   const [collabNotice, setCollabNotice] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  // 滚动容器（正文外层，key={doc.key} 那个 div）：大纲的滚动高亮与跳转都基于它
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // 大纲当前高亮项；-1 表示尚未定位（滚动到首个标题之前）
+  const [activeHeading, setActiveHeading] = useState(-1);
   const { width: tocWidth, onMouseDown: onTocResize } = useResizable(224, 180, 400, "toc_width", -1);
 
   // 划词批注：记录选中文字及浮动按钮位置
@@ -156,6 +160,61 @@ export function Editor({
     return body ? extractToc(body) : [];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode === "preview" ? doc?.body : draft]);
+
+  /**
+   * 大纲滚动高亮（scroll-spy）。
+   *
+   * 三种模式下标题所在的 DOM 容器不同：
+   *  - 预览态：contentRef 内的 `h1~h4`（renderMarkdown 产出）
+   *  - 富文本态：TipTap 的 `.ProseMirror` 内的 `h1~h4`（其 DOM 归 ProseMirror 管，
+   *    不能用 contentRef——那会把 ref 交给 React 与 PM 双方争抢）
+   *  - 源码态：纯文本域，没有语义标题，跳过
+   * 因此这里统一从「滚动容器内」查询标题节点，与模式解耦。
+   *
+   * 判定「当前章节」用标题相对滚动容器顶部的偏移：取最后一个已滚过
+   * 阈值线（顶部 + 80px）的标题；若一个都没滚过，则高亮第一个。
+   */
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller || toc.length === 0 || mode === "source") {
+      setActiveHeading(-1);
+      return;
+    }
+    const headings = Array.from(
+      scroller.querySelectorAll<HTMLElement>("h1, h2, h3, h4"),
+    );
+    if (headings.length === 0) {
+      setActiveHeading(-1);
+      return;
+    }
+
+    let raf = 0;
+    const compute = () => {
+      raf = 0;
+      const line = scroller.getBoundingClientRect().top + 80;
+      let idx = 0;
+      for (let i = 0; i < headings.length; i++) {
+        if (headings[i].getBoundingClientRect().top <= line) idx = i;
+        else break;
+      }
+      setActiveHeading(idx);
+    };
+    // 滚动用 rAF 节流，避免长文档下每帧都触发重排读取
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(compute);
+    };
+
+    compute();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      scroller.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+    // previewHtml / draft 变化意味着 DOM 重建，需重新采集标题节点
+  }, [toc, mode, previewHtml, draft]);
 
   // 渲染预览（代码块 shiki 高亮）；切换文档 / 保存 / 主题变化后重渲染
   useEffect(() => {
@@ -334,12 +393,22 @@ export function Editor({
     }
   };
 
-  const scrollToHeading = (index: number) => {
-    const container = contentRef.current;
-    if (!container) return;
-    const headings = container.querySelectorAll("h1, h2, h3, h4");
-    headings[index]?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+  /**
+   * 点击大纲跳转到第 index 个标题。
+   *
+   * 之前只查 contentRef（预览态容器），编辑态下 contentRef 为 null，
+   * 导致「编辑时点大纲没反应」。现改为在滚动容器内查找，三种模式通用。
+   */
+  const scrollToHeading = useCallback((index: number) => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const headings = scroller.querySelectorAll("h1, h2, h3, h4");
+    const el = headings[index] as HTMLElement | undefined;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    // 立刻反映选中态，不必等滚动事件回传
+    setActiveHeading(index);
+  }, []);
 
   return (
     <main className="flex min-w-0 flex-1">
@@ -557,7 +626,7 @@ export function Editor({
         </div>
 
         {/* 正文（key 按文档变化：切换文档时重新挂载 + 淡入） */}
-        <div key={doc.key} className="anim-fade-in flex-1 overflow-y-auto py-8">
+        <div key={doc.key} ref={scrollRef} className="anim-fade-in flex-1 overflow-y-auto py-8">
           {mode === "preview" ? (
             <div className="mx-auto max-w-[1080px] px-4 sm:px-10">
               <h1 className="text-[32px] font-bold leading-[1.25] tracking-[-0.01em] text-text">
@@ -769,7 +838,12 @@ export function Editor({
               <li key={i}>
                 <button
                   onClick={() => scrollToHeading(i)}
-                  className="flex w-full items-center rounded-md py-1 text-left text-[15px] leading-snug text-text transition-colors hover:bg-hover"
+                  aria-current={activeHeading === i ? "location" : undefined}
+                  className={`flex w-full items-center rounded-md py-1 text-left text-[15px] leading-snug transition-colors ${
+                    activeHeading === i
+                      ? "bg-accent-soft font-medium text-accent"
+                      : "text-text hover:bg-hover"
+                  }`}
                   style={{ paddingLeft: 8 + (item.level - 1) * 12 }}
                 >
                   <span className="line-clamp-1">{item.text}</span>

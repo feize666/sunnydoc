@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
+import { Selection } from "@tiptap/pm/state";
+import type { EditorView } from "@tiptap/pm/view";
 import { Mark, Node, Extension, mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
 import { Markdown } from "tiptap-markdown";
-import { uploadImage, aiAssist, type AIAssistAction } from "@/lib/api";
+import { uploadImage, uploadAttachment, aiAssist, type AIAssistAction } from "@/lib/api";
 import { Tooltip } from "./Tooltip";
 import { useToast } from "./Toast";
 import {
@@ -28,7 +30,60 @@ import {
   ClearFormatIcon,
   IndentIcon,
   OutdentIcon,
+  PaperclipIcon,
 } from "./icons";
+
+/* ---------- 上传插入图片（粘贴 / 拖拽共用） ---------- */
+
+/**
+ * 上传图片并插入到当前光标处。
+ *
+ * 失败时给出 toast 提示，不再像原先那样静默吞掉——拖了半天没反应是最糟的体验。
+ */
+function insertUploadedImage(
+  view: EditorView,
+  file: File,
+  onError: (msg: string) => void,
+) {
+  uploadImage(file)
+    .then((url) => {
+      const { state, dispatch } = view;
+      const node = state.schema.nodes.image.create({ src: url });
+      dispatch(state.tr.replaceSelectionWith(node));
+    })
+    .catch((e: unknown) => {
+      onError(e instanceof Error ? e.message : "图片上传失败");
+    });
+}
+
+/**
+ * 上传附件并插入到光标处，表示为 Markdown 链接 `[📎 文件名](url)`。
+ *
+ * 为什么用链接而不是自定义 TipTap 节点：链接是 Markdown 的原生构件，
+ * 富文本 ↔ markdown ↔ 预览三处都能无损往返；自定义节点则要给
+ * tiptap-markdown 另写序列化/解析，收益不抵复杂度。
+ * 文件名由后端在 URL query 里带回，下载时还原为原始文件名。
+ */
+function insertUploadedAttachment(
+  view: EditorView,
+  file: File,
+  toast: { error: (m: string) => void; success: (m: string) => void },
+) {
+  uploadAttachment(file)
+    .then(({ url, name }) => {
+      const { state, dispatch } = view;
+      const linkMark = state.schema.marks.link;
+      const label = `📎 ${name}`;
+      const node = linkMark
+        ? state.schema.text(label, [linkMark.create({ href: url })])
+        : state.schema.text(label);
+      dispatch(state.tr.replaceSelectionWith(node));
+      toast.success(`已插入附件：${name}`);
+    })
+    .catch((e: unknown) => {
+      toast.error(e instanceof Error ? e.message : "附件上传失败");
+    });
+}
 
 /* ---------- 自写扩展（不引第三方，@tiptap/core 已内置） ---------- */
 
@@ -360,6 +415,8 @@ export function RichEditor({
   // 「更多」下拉 + 对齐下拉
   const [moreOpen, setMoreOpen] = useState(false);
   const [alignOpen, setAlignOpen] = useState(false);
+  // 附件选择用的隐藏 file input（工具栏「插入附件」按钮触发）
+  const attachInputRef = useRef<HTMLInputElement>(null);
 
   const editor = useEditor({
     extensions: [
@@ -463,20 +520,40 @@ export function RichEditor({
           if (item.type.startsWith("image/")) {
             const file = item.getAsFile();
             if (file) {
-              uploadImage(file)
-                .then((url) => {
-                  const { state, dispatch } = view;
-                  const node = state.schema.nodes.image.create({ src: url });
-                  dispatch(state.tr.replaceSelectionWith(node));
-                })
-                .catch(() => {
-                  /* 上传失败静默忽略 */
-                });
+              insertUploadedImage(view, file, (m) => toast.error(m));
             }
             return true;
           }
         }
         return false;
+      },
+      // 拖拽文件进编辑器正文 → 图片插入正文，其他文件作为附件插入。
+      // 与 page.tsx 的分工：page.tsx 按「落点是否在 .rich-editor 内」判断，
+      // 落在正文里的文件一律不弹「导入文档」，由这里处理。
+      handleDrop: (view, event) => {
+        const files = Array.from((event as DragEvent).dataTransfer?.files ?? []);
+        if (files.length === 0) return false;
+        event.preventDefault();
+        const d = event as DragEvent;
+        const coords = view.posAtCoords({ left: d.clientX, top: d.clientY });
+        if (coords) {
+          try {
+            // Selection.near 比 TextSelection.create 宽容：坐标落在非文本位置
+            // （如表格边框、图片旁）时也能取到最近的合法光标位，不会抛异常。
+            const sel = Selection.near(view.state.doc.resolve(coords.pos));
+            view.dispatch(view.state.tr.setSelection(sel));
+          } catch {
+            /* 定位失败则插在当前选区，不影响功能 */
+          }
+        }
+        files.forEach((file) => {
+          if (file.type.startsWith("image/")) {
+            insertUploadedImage(view, file, (m) => toast.error(m));
+          } else {
+            insertUploadedAttachment(view, file, toast);
+          }
+        });
+        return true;
       },
     },
     onUpdate: ({ editor }) => {
@@ -1147,6 +1224,30 @@ export function RichEditor({
             <path d="M6 12l3 3 5-6" />
           </svg>
         </ToolBtn>
+        {/* 正文附件：选文件 → 上传 → 以 📎 链接插入（pdf/docx/xlsx/zip…） */}
+        <Tooltip content="插入附件（PDF / Word / Excel / zip…）">
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => attachInputRef.current?.click()}
+            className="tool-btn"
+            aria-label="插入附件"
+          >
+            <PaperclipIcon size={17} />
+          </button>
+        </Tooltip>
+        <input
+          ref={attachInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            // 重置 input，否则连续插同一个文件不会触发 change
+            e.target.value = "";
+            files.forEach((f) => insertUploadedAttachment(editor.view, f, toast));
+          }}
+        />
         <ToolBtn title="插入表格" tone="text-accent" onClick={insertTable}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="1" />
