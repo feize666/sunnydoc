@@ -23,6 +23,8 @@ type EditorProps = {
   currentUserId?: string;
   /** 管理员可删除任意用户的社区模板。 */
   isAdmin?: boolean;
+  /** 文档标题 —— 图表编辑器用它命名导出文件（缺省回退到类型名）。 */
+  title?: string;
 };
 
 const loading = () => (

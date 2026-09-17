@@ -1,11 +1,19 @@
 "use client";
 
 import { useState, useRef, useCallback, useMemo } from "react";
-import { toPng, toSvg } from "html-to-image";
 import JSZip from "jszip";
 import { generateDiagram } from "@/lib/api";
 import { useColorTheme } from "@/lib/useColorTheme";
 import { readableOnCanvas } from "@/lib/colorContrast";
+import {
+  canvasBackground,
+  captureNode,
+  downloadDataUrl,
+  exportFilename,
+  printImageAsPdf,
+  type ExportFormat,
+} from "@/lib/diagramExport";
+import { useHistory } from "@/hooks/useHistory";
 import { DiagramTemplateDialog } from "./DiagramTemplateDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useToast } from "./Toast";
@@ -701,12 +709,15 @@ export function MindMapEditor({
   readOnly = false,
   currentUserId,
   isAdmin = false,
+  title,
 }: {
   value: string;
   onChange: (json: string) => void;
   readOnly?: boolean;
   currentUserId?: string;
   isAdmin?: boolean;
+  /** 文档标题：仅用于导出文件名，缺省回退到「思维导图」 */
+  title?: string;
 }) {
   const toast = useToast();
   const [nodes, setNodes] = useState<MindNode[]>(() => {
@@ -767,17 +778,29 @@ export function MindMapEditor({
 
   // —— 撤销/重做（同时记录 nodes 与 links）——
   type Snapshot = { nodes: MindNode[]; links: LinkPair[] };
-  const [past, setPast] = useState<Snapshot[]>([]);
-  const [future, setFuture] = useState<Snapshot[]>([]);
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
   const linksRef = useRef(links);
   linksRef.current = links;
 
-  const pushHistory = useCallback(() => {
-    setPast((p) => [...p.slice(-(MAX_HISTORY - 1)), { nodes: nodesRef.current, links: linksRef.current }]);
-    setFuture([]);
-  }, []);
+  // 双栈历史引擎由 useHistory 统一提供，这里只注入「怎么读当前态 / 怎么写回」。
+  // 与流程图共用同一份实现，避免两处截断逻辑各自漂移。
+  const readSnapshot = useCallback((): Snapshot => ({ nodes: nodesRef.current, links: linksRef.current }), []);
+  const applySnapshot = useCallback(
+    (s: Snapshot) => {
+      setNodes(s.nodes);
+      setLinks(s.links);
+      onChange(JSON.stringify({ nodes: s.nodes, links: s.links }));
+      setSelected(null);
+      setLinkingFrom(null);
+    },
+    [onChange],
+  );
+  const { push: pushHistory, undo, redo, canUndo, canRedo } = useHistory(
+    readSnapshot,
+    applySnapshot,
+    MAX_HISTORY,
+  );
 
   // commit：统一入口。next 为新的 nodes；nextLinks 可选，省略则沿用当前 links
   const commit = useCallback(
@@ -825,34 +848,6 @@ export function MindMapEditor({
     },
     [commit],
   );
-
-  const undo = useCallback(() => {
-    setPast((p) => {
-      if (p.length === 0) return p;
-      const prev = p[p.length - 1];
-      setFuture((f) => [...f, { nodes: nodesRef.current, links: linksRef.current }]);
-      setNodes(prev.nodes);
-      setLinks(prev.links);
-      onChange(JSON.stringify({ nodes: prev.nodes, links: prev.links }));
-      setSelected(null);
-      setLinkingFrom(null);
-      return p.slice(0, -1);
-    });
-  }, [onChange]);
-
-  const redo = useCallback(() => {
-    setFuture((f) => {
-      if (f.length === 0) return f;
-      const next = f[f.length - 1];
-      setPast((p) => [...p.slice(-(MAX_HISTORY - 1)), { nodes: nodesRef.current, links: linksRef.current }]);
-      setNodes(next.nodes);
-      setLinks(next.links);
-      onChange(JSON.stringify({ nodes: next.nodes, links: next.links }));
-      setSelected(null);
-      setLinkingFrom(null);
-      return f.slice(0, -1);
-    });
-  }, [onChange]);
 
   const mapNode = (id: string) => nodes.find((n) => n.id === id);
 
@@ -1359,11 +1354,9 @@ export function MindMapEditor({
   };
 
   // 生成 dataUrl（PNG 或 SVG），复用 fit 视图
-  const captureDataUrl = (format: "png" | "svg"): Promise<string> => {
+  const captureDataUrl = (format: ExportFormat): Promise<string> => {
     const el = containerRef.current!;
-    const bg = getComputedStyle(document.body).backgroundColor || "#ffffff";
-    if (format === "png") return toPng(el, { backgroundColor: bg, pixelRatio: 2 });
-    return toSvg(el, { backgroundColor: bg });
+    return captureNode(el, format, { backgroundColor: canvasBackground(colorTheme) });
   };
 
   // —— 导入 Xmind ——
@@ -1403,18 +1396,11 @@ export function MindMapEditor({
     e.target.value = "";
   };
 
-  const downloadDataUrl = (dataUrl: string, filename: string) => {
-    const a = document.createElement("a");
-    a.download = filename;
-    a.href = dataUrl;
-    a.click();
-  };
-
   const exportPng = async () => {
     setExporting(true);
     try {
       const dataUrl = await withFitView(() => captureDataUrl("png"));
-      downloadDataUrl(dataUrl, "思维导图.png");
+      downloadDataUrl(dataUrl, exportFilename(title, "思维导图", "png"));
     } catch (err) {
       toast.error(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
     } finally {
@@ -1426,7 +1412,7 @@ export function MindMapEditor({
     setExporting(true);
     try {
       const dataUrl = await withFitView(() => captureDataUrl("svg"));
-      downloadDataUrl(dataUrl, "思维导图.svg");
+      downloadDataUrl(dataUrl, exportFilename(title, "思维导图", "svg"));
     } catch (err) {
       toast.error(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
     } finally {
@@ -1435,29 +1421,19 @@ export function MindMapEditor({
   };
 
   // 导出 PDF：不引入新依赖，复用 PNG dataUrl，打开打印窗口（用户选「另存为 PDF」）；
-  // 若 window.open 被拦截，退化为下载 PNG 并提示。
+  // 打印弹出被拦截 / 写入失败时，退化为下载 PNG 并提示。
   const exportPdf = async () => {
     setExporting(true);
     try {
       const dataUrl = await withFitView(() => captureDataUrl("png"));
-      const w = window.open("", "_blank");
-      if (!w) {
-        downloadDataUrl(dataUrl, "思维导图.png");
-        toast.info("浏览器拦截了打印窗口，已为您下载 PNG，可在打印对话框选择另存为 PDF");
-        return;
-      }
-      try {
-        w.document.write(
-          `<!DOCTYPE html><html><head><meta charset="utf-8"><title>思维导图</title>` +
-            `<style>html,body{margin:0;padding:0;}img{display:block;width:100%;height:auto;}</style>` +
-            `</head><body><img src="${dataUrl}" onload="window.print()" /></body></html>`,
+      const result = printImageAsPdf(dataUrl, title || "思维导图");
+      if (result !== "printed") {
+        downloadDataUrl(dataUrl, exportFilename(title, "思维导图", "png"));
+        toast.info(
+          result === "popup-blocked"
+            ? "浏览器拦截了打印窗口，已为您下载 PNG，可在打印对话框选择另存为 PDF"
+            : "打印窗口打开失败，已为您下载 PNG，可在打印对话框选择另存为 PDF",
         );
-        w.document.close();
-      } catch {
-        // 写窗口失败：退化下载 PNG
-        downloadDataUrl(dataUrl, "思维导图.png");
-        toast.info("打印窗口打开失败，已为您下载 PNG，可在打印对话框选择另存为 PDF");
-        w.close();
       }
     } catch (err) {
       toast.error(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
@@ -1584,9 +1560,6 @@ export function MindMapEditor({
     `flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] transition-colors ${
       active ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"
     } disabled:opacity-40 disabled:cursor-not-allowed`;
-
-  const canUndo = past.length > 0;
-  const canRedo = future.length > 0;
 
   return (
     <div className="flex h-[calc(100vh-300px)] min-h-[400px] flex-col rounded-lg border border-line bg-background">

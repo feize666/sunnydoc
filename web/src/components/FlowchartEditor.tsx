@@ -24,11 +24,18 @@ import {
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { toPng, toSvg } from "html-to-image";
 import JSZip from "jszip";
 import { generateDiagram } from "@/lib/api";
 import { useColorTheme } from "@/lib/useColorTheme";
 import { readableOnCanvas } from "@/lib/colorContrast";
+import {
+  canvasBackground,
+  captureNode,
+  downloadDataUrl,
+  exportFilename,
+  printImageAsPdf,
+} from "@/lib/diagramExport";
+import { useHistory } from "@/hooks/useHistory";
 import { DiagramTemplateDialog } from "./DiagramTemplateDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useToast } from "./Toast";
@@ -991,12 +998,15 @@ export function FlowchartEditor({
   readOnly = false,
   currentUserId,
   isAdmin = false,
+  title,
 }: {
   value: string;
   onChange: (json: string) => void;
   readOnly?: boolean;
   currentUserId?: string;
   isAdmin?: boolean;
+  /** 文档标题：仅用于导出文件名，缺省回退到「流程图」 */
+  title?: string;
 }) {
   const toast = useToast();
   const initial = useMemo(() => parseFlow(value), []);
@@ -1059,8 +1069,6 @@ export function FlowchartEditor({
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; type: "node" | "edge" | "pane"; id?: string } | null>(null);
 
   // —— 撤销/重做 ——
-  const [past, setPast] = useState<StoredFlow[]>([]);
-  const [future, setFuture] = useState<StoredFlow[]>([]);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
   nodesRef.current = nodes;
@@ -1108,12 +1116,6 @@ export function FlowchartEditor({
     };
   }, []);
 
-  const pushHistory = useCallback(() => {
-    const s = snapshot();
-    setPast((p) => [...p.slice(-(MAX_HISTORY - 1)), s]);
-    setFuture([]);
-  }, [snapshot]);
-
   const applyFlow = useCallback((s: StoredFlow) => {
     setNodes(
       s.nodes.map((n) => ({
@@ -1145,25 +1147,13 @@ export function FlowchartEditor({
     );
   }, [setNodes, setEdges]);
 
-  const undo = useCallback(() => {
-    setPast((p) => {
-      if (p.length === 0) return p;
-      const prev = p[p.length - 1];
-      setFuture((f) => [...f, snapshot()]);
-      applyFlow(prev);
-      return p.slice(0, -1);
-    });
-  }, [snapshot, applyFlow]);
-
-  const redo = useCallback(() => {
-    setFuture((f) => {
-      if (f.length === 0) return f;
-      const next = f[f.length - 1];
-      setPast((p) => [...p.slice(-(MAX_HISTORY - 1)), snapshot()]);
-      applyFlow(next);
-      return f.slice(0, -1);
-    });
-  }, [snapshot, applyFlow]);
+  // 双栈历史引擎由 useHistory 统一提供（与思维导图共用同一份实现）。
+  // 状态形状不同，故注入本编辑器的「读快照 / 写回」两个回调。
+  const { push: pushHistory, pushSnapshot, undo, redo, canUndo, canRedo } = useHistory(
+    snapshot,
+    applyFlow,
+    MAX_HISTORY,
+  );
 
   useEffect(() => setMounted(true), []);
 
@@ -1865,8 +1855,8 @@ export function FlowchartEditor({
     const W = 1400;
     const H = Math.max(500, Math.round((bounds.height / Math.max(bounds.width, 1)) * W));
     const viewport = getViewportForBounds(bounds, W, H, 0.5, 2, 0.08);
-    const bg = getComputedStyle(document.body).backgroundColor || "#ffffff";
-    return { viewportEl, W, H, viewport, bg };
+    // 底色取当前主题的画布色（不要读 document.body —— 那会被弹层/遮罩等瞬时样式影响）
+    return { viewportEl, W, H, viewport, bg: canvasBackground(colorTheme) };
   };
 
   // —— 导入 VISIO（.vsdx = zip + visio/pages/*.xml）——
@@ -1901,28 +1891,25 @@ export function FlowchartEditor({
     e.target.value = "";
   };
 
-  // —— 导出 PNG ——
+  // —— 导出 PNG / SVG / PDF ——
+  // 截图与打印窗口的具体做法收敛在 @/lib/diagramExport，与思维导图共用同一实现。
   const exportPng = async () => {
     const meta = computeExportMeta();
     if (!meta) return;
     const { viewportEl, W, H, viewport, bg } = meta;
     setExporting(true);
     try {
-      const dataUrl = await toPng(viewportEl, {
+      const dataUrl = await captureNode(viewportEl, "png", {
         backgroundColor: bg,
         width: W,
         height: H,
-        pixelRatio: 2,
         style: {
           width: `${W}px`,
           height: `${H}px`,
           transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
         },
       });
-      const a = document.createElement("a");
-      a.download = "流程图.png";
-      a.href = dataUrl;
-      a.click();
+      downloadDataUrl(dataUrl, exportFilename(title, "流程图", "png"));
     } catch (err) {
       toast.error(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
     } finally {
@@ -1930,14 +1917,13 @@ export function FlowchartEditor({
     }
   };
 
-  // —— 导出 SVG ——
   const exportSvg = async () => {
     const meta = computeExportMeta();
     if (!meta) return;
     const { viewportEl, W, H, viewport, bg } = meta;
     setExporting(true);
     try {
-      const dataUrl = await toSvg(viewportEl, {
+      const dataUrl = await captureNode(viewportEl, "svg", {
         backgroundColor: bg,
         width: W,
         height: H,
@@ -1947,10 +1933,7 @@ export function FlowchartEditor({
           transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
         },
       });
-      const a = document.createElement("a");
-      a.download = "流程图.svg";
-      a.href = dataUrl;
-      a.click();
+      downloadDataUrl(dataUrl, exportFilename(title, "流程图", "svg"));
     } catch (err) {
       toast.error(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
     } finally {
@@ -1958,49 +1941,32 @@ export function FlowchartEditor({
     }
   };
 
-  // —— 导出 PDF ——
-  // 与思维导图保持一致的做法：不引入新依赖，复用 PNG 走浏览器打印窗口（另存为 PDF）；
-  // 打印窗口被拦截时退化为下载 PNG，并明确告知用户。
+  // 导出 PDF：不引入 PDF 库，复用 PNG 走浏览器打印窗口（另存为 PDF）；
+  // 打印弹出被拦截 / 写入失败时，退化为下载 PNG 并提示。
   const exportPdf = async () => {
     const meta = computeExportMeta();
     if (!meta) return;
     const { viewportEl, W, H, viewport, bg } = meta;
     setExporting(true);
     try {
-      const dataUrl = await toPng(viewportEl, {
+      const dataUrl = await captureNode(viewportEl, "png", {
         backgroundColor: bg,
         width: W,
         height: H,
-        pixelRatio: 2,
         style: {
           width: `${W}px`,
           height: `${H}px`,
           transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
         },
       });
-      const w = window.open("", "_blank");
-      if (!w) {
-        const a = document.createElement("a");
-        a.download = "流程图.png";
-        a.href = dataUrl;
-        a.click();
-        toast.info("浏览器拦截了打印窗口，已为您下载 PNG，可在打印对话框选择另存为 PDF");
-        return;
-      }
-      try {
-        w.document.write(
-          `<!DOCTYPE html><html><head><meta charset="utf-8"><title>流程图</title>` +
-            `<style>@page{margin:12mm;}html,body{margin:0;padding:0;}img{display:block;width:100%;height:auto;}</style>` +
-            `</head><body><img src="${dataUrl}" onload="window.print()" /></body></html>`,
+      const result = printImageAsPdf(dataUrl, title || "流程图");
+      if (result !== "printed") {
+        downloadDataUrl(dataUrl, exportFilename(title, "流程图", "png"));
+        toast.info(
+          result === "popup-blocked"
+            ? "浏览器拦截了打印窗口，已为您下载 PNG，可在打印对话框选择另存为 PDF"
+            : "打印窗口打开失败，已为您下载 PNG，可在打印对话框选择另存为 PDF",
         );
-        w.document.close();
-      } catch {
-        const a = document.createElement("a");
-        a.download = "流程图.png";
-        a.href = dataUrl;
-        a.click();
-        toast.info("打印窗口打开失败，已为您下载 PNG，可在打印对话框选择另存为 PDF");
-        w.close();
       }
     } catch (err) {
       toast.error(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
@@ -2204,9 +2170,6 @@ export function FlowchartEditor({
   );
 
   if (!mounted) return <div className="flex-1" />;
-
-  const canUndo = past.length > 0;
-  const canRedo = future.length > 0;
 
   return (
     <div className="flex h-[calc(100vh-300px)] min-h-[400px] flex-col rounded-lg border border-line bg-background">
@@ -2711,10 +2674,10 @@ export function FlowchartEditor({
                 }
               }
             }
-            // 记录拖拽历史（含归属变化，可撤销）
+            // 记录拖拽历史（含归属变化，可撤销）。
+            // 压入 pointerdown 时记下的起点快照 —— 不能读当前态，否则中途的撤销点会丢。
             if (dragStartRef.current) {
-              setPast((p) => [...p.slice(-(MAX_HISTORY - 1)), dragStartRef.current!]);
-              setFuture([]);
+              pushSnapshot(dragStartRef.current);
               dragStartRef.current = null;
             }
           }}

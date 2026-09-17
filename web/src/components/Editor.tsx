@@ -684,11 +684,11 @@ export function Editor({
                 </div>
               ) : doc.type === "flowchart" ? (
                 <div className="mt-6 overflow-hidden rounded-lg border border-line">
-                  <LazyFlowchartEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly />
+                  <LazyFlowchartEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly title={doc.title} />
                 </div>
               ) : doc.type === "mindmap" ? (
                 <div className="mt-6 overflow-hidden rounded-lg border border-line">
-                  <LazyMindMapEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly />
+                  <LazyMindMapEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly title={doc.title} />
                 </div>
               ) : doc.type === "board" ? (
                 <div className="mt-6 overflow-hidden rounded-lg border border-line">
@@ -808,6 +808,7 @@ export function Editor({
                     onChange={setDraft}
                     currentUserId={currentUserId}
                     isAdmin={isAdmin}
+                    title={doc.title}
                   />
                 ) : doc.type === "mindmap" ? (
                   <LazyMindMapEditor
@@ -816,6 +817,7 @@ export function Editor({
                     onChange={setDraft}
                     currentUserId={currentUserId}
                     isAdmin={isAdmin}
+                    title={doc.title}
                   />
                 ) : doc.type === "html" ? (
                   <textarea
