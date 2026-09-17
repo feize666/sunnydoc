@@ -7,6 +7,7 @@ import {
   BackgroundVariant,
   Controls,
   MiniMap,
+  NodeResizer,
   Handle,
   Position,
   useNodesState,
@@ -19,13 +20,16 @@ import {
   type Connection,
   type NodeProps,
   type EdgeMarker,
+  type NodeChange,
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { toPng, toSvg } from "html-to-image";
 import JSZip from "jszip";
 import { generateDiagram } from "@/lib/api";
+import { useColorTheme } from "@/lib/useColorTheme";
 import { DiagramTemplateDialog } from "./DiagramTemplateDialog";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { useToast } from "./Toast";
 
 // —— 数据结构 ——
@@ -348,19 +352,57 @@ const CTX_ITEM = "flex w-full items-center rounded-md px-3 py-1.5 text-left text
 const CTX_ITEM_DANGER = "flex w-full items-center rounded-md px-3 py-1.5 text-left text-xs text-danger transition-colors hover:bg-danger-soft";
 const CTX_SEP = "my-1 h-px bg-line";
 
+/**
+ * 节点填充色板：亮色 / 暗色两套，**索引一一对应**，切换主题时同一索引换色即可。
+ *
+ * 为什么必须拆两套：节点填充是**存进文档的裸色值**（可随导出带走），不走 CSS 变量；
+ * 而 `--text`（节点文字色）会随主题翻转成近白 `#e2e8f0`。若填充仍是亮色系，
+ * 暗色下就是白字压浅底 —— 实测对比度只有 1.01~1.23（等于文字不可见）。
+ * 暗色一套取对应的深色调，`--text` 在其上 11.2~13.1，且与画布底（#0b1120）可辨。
+ */
 const FILL_COLORS = ["#ffffff", "#fee2e2", "#fef3c7", "#dcfce7", "#dbeafe", "#f3e8ff", "#e0f2fe", "#ffe4e6"];
-const STROKE_COLORS = ["#78716c", "#ef4444", "#f97316", "#22c55e", "#3b82f6", "#a855f7", "#0ea5e9", "#ec4899"];
+const FILL_COLORS_DARK = ["#1e293b", "#450a0a", "#451a03", "#052e16", "#172554", "#3b0764", "#082f49", "#4c0519"];
 
-// —— 整图主题（一键换色，全部用十六进制，不使用 CSS 变量）——
-const THEMES: { name: string; nodeFill: string; nodeStroke: string; edgeColor: string }[] = [
-  { name: "默认蓝", nodeFill: "#dbeafe", nodeStroke: "#3b82f6", edgeColor: "#3b82f6" },
-  { name: "商务灰", nodeFill: "#f1f5f9", nodeStroke: "#64748b", edgeColor: "#64748b" },
-  { name: "科技青", nodeFill: "#cffafe", nodeStroke: "#06b6d4", edgeColor: "#06b6d4" },
-  { name: "暖橙", nodeFill: "#ffedd5", nodeStroke: "#f97316", edgeColor: "#f97316" },
-  { name: "墨绿", nodeFill: "#dcfce7", nodeStroke: "#16a34a", edgeColor: "#16a34a" },
-  { name: "紫罗兰", nodeFill: "#ede9fe", nodeStroke: "#8b5cf6", edgeColor: "#8b5cf6" },
-  { name: "玫瑰红", nodeFill: "#ffe4e6", nodeStroke: "#f43f5e", edgeColor: "#f43f5e" },
+/** 描边色板：亮/暗同样按索引对应。亮色一套同时满足「白字 4.5+」与「在浅底上可辨」。 */
+const STROKE_COLORS = ["#78716c", "#ef4444", "#f97316", "#22c55e", "#3b82f6", "#a855f7", "#0ea5e9", "#ec4899"];
+const STROKE_COLORS_DARK = ["#a8a29e", "#f87171", "#fb923c", "#4ade80", "#60a5fa", "#c084fc", "#38bdf8", "#f472b6"];
+
+// —— 整图主题（一键换色）——
+// 每套主题含亮/暗两份 nodeFill（描边色在两套主题下都已达标：vs 暗底 3.96~7.76），
+// 故 nodeStroke / edgeColor 只需一份。
+const THEMES: {
+  name: string;
+  nodeFill: string;
+  nodeFillDark: string;
+  nodeStroke: string;
+  edgeColor: string;
+}[] = [
+  { name: "默认蓝", nodeFill: "#dbeafe", nodeFillDark: "#172554", nodeStroke: "#3b82f6", edgeColor: "#3b82f6" },
+  { name: "商务灰", nodeFill: "#f1f5f9", nodeFillDark: "#1e293b", nodeStroke: "#64748b", edgeColor: "#64748b" },
+  { name: "科技青", nodeFill: "#cffafe", nodeFillDark: "#0c4a6e", nodeStroke: "#06b6d4", edgeColor: "#06b6d4" },
+  { name: "暖橙", nodeFill: "#ffedd5", nodeFillDark: "#431407", nodeStroke: "#f97316", edgeColor: "#f97316" },
+  { name: "墨绿", nodeFill: "#dcfce7", nodeFillDark: "#052e16", nodeStroke: "#16a34a", edgeColor: "#16a34a" },
+  { name: "紫罗兰", nodeFill: "#ede9fe", nodeFillDark: "#2e1065", nodeStroke: "#8b5cf6", edgeColor: "#8b5cf6" },
+  { name: "玫瑰红", nodeFill: "#ffe4e6", nodeFillDark: "#4c0519", nodeStroke: "#f43f5e", edgeColor: "#f43f5e" },
 ];
+
+/**
+ * 把色板里的某个亮色填充映射到当前主题对应的那一档。
+ * 用户存下来的填充是**亮色档**，暗色下按索引换到深色档；
+ * 用户自选（不在色板内）或已清空（无填充）的值原样返回，绝不擅自改动用户数据。
+ */
+function fillForTheme(fill: string | undefined, theme: "light" | "dark"): string | undefined {
+  if (!fill || theme === "light") return fill;
+  const i = FILL_COLORS.indexOf(fill);
+  return i >= 0 ? FILL_COLORS_DARK[i] : fill;
+}
+
+/** 描边同理：色板内按索引换到暗色亮版，保证深底上仍看得见。 */
+function strokeForTheme(stroke: string | undefined, theme: "light" | "dark"): string | undefined {
+  if (!stroke || theme === "light") return stroke;
+  const i = STROKE_COLORS.indexOf(stroke);
+  return i >= 0 ? STROKE_COLORS_DARK[i] : stroke;
+}
 
 // —— 内置模板库（静态预设，套用即可，不调后端 / 不调 AI）——
 const FLOW_TEMPLATES: { name: string; flow: { nodes: StoredNode[]; edges: StoredEdge[] } }[] = [
@@ -668,23 +710,34 @@ function buildMarker(type: ArrowType | undefined, color: string): EdgeMarker | s
   return "url(#rf-diamond)";
 }
 
-// 通过闭包把当前主题传入节点：未手动设色时使用主题色，手动色优先
-function createShapeNode(theme: { nodeFill: string; nodeStroke: string }) {
+// 通过闭包把当前主题与配色主题传入节点：
+// 未手动设色时使用主题色，手动色优先；用户在色板里选过的色按当前明暗换档
+// （否则暗色下「白字压浅底」，文字对比度仅 1.0~1.2）。
+function createShapeNode(
+  theme: { nodeFill: string; nodeStroke: string },
+  colorTheme: "light" | "dark",
+) {
   return function ShapeNode({ data, selected }: NodeProps) {
     const d = data as unknown as FlowData;
     const w = d.width ?? NODE_W;
     const h = d.height ?? NODE_H;
     const isContainerShape = d.shape === "container" || d.shape === "group" || d.shape === "lane";
+    // 手动色按当前明暗换档；主题色直接用主题里对应的那一档
+    const themeFill = colorTheme === "dark" && "nodeFillDark" in theme
+      ? (theme as unknown as { nodeFillDark: string }).nodeFillDark
+      : theme.nodeFill;
+    const userFill = fillForTheme(d.fill, colorTheme);
+    const userStroke = strokeForTheme(d.stroke, colorTheme);
     // 容器类：更淡的半透明填充（基于主题边框色，低透明度），让容器更清晰且不喧宾夺主
     const containerFill = (() => {
       const hex = theme.nodeStroke;
       const r = parseInt(hex.slice(1, 3), 16);
       const g = parseInt(hex.slice(3, 5), 16);
       const b = parseInt(hex.slice(5, 7), 16);
-      return `rgba(${r}, ${g}, ${b}, 0.06)`;
+      return `rgba(${r}, ${g}, ${b}, ${colorTheme === "dark" ? 0.18 : 0.06})`;
     })();
-    const fill = d.fill ?? (selected ? "var(--accent-soft)" : isContainerShape ? containerFill : theme.nodeFill);
-    const stroke = d.stroke ?? (selected ? "var(--accent)" : theme.nodeStroke);
+    const fill = userFill ?? (selected ? "var(--accent-soft)" : isContainerShape ? containerFill : themeFill);
+    const stroke = userStroke ?? (selected ? "var(--accent)" : theme.nodeStroke);
     const dashed = d.shape === "container" || d.shape === "group";
     // 选中态加粗到 2.5；容器类非选中态 2，其它 1.5
     const strokeW = selected ? 2.5 : isContainerShape ? 2 : 1.5;
@@ -711,6 +764,14 @@ function createShapeNode(theme: { nodeFill: string; nodeStroke: string }) {
       const titleBarPath = `M ${r} 0 H ${BAR_W} V ${h} H ${r} Q 0 ${h} 0 ${h - r} V ${r} Q 0 0 ${r} 0 Z`;
       return (
       <div style={{ width: w, height: h, filter: selected ? "drop-shadow(0 0 4px var(--accent))" : undefined }} className="relative" title={d.label}>
+        {/* 拖角缩放节点：minsize 保证形状与文字仍放得下 */}
+        <NodeResizer
+          isVisible={selected}
+          minWidth={60}
+          minHeight={36}
+          lineClassName="!border-accent"
+          handleClassName="!h-2 !w-2 !rounded-sm !border !border-accent !bg-background"
+        />
         <svg width={w} height={h} className="overflow-visible">
           <path d={shapePath(d.shape, w, h)} fill={fill} stroke={stroke} strokeWidth={strokeW} />
           <path d={titleBarPath} fill="rgba(100,116,139,0.2)" stroke="none" />
@@ -767,6 +828,13 @@ function createShapeNode(theme: { nodeFill: string; nodeStroke: string }) {
         ));
       return (
         <div style={{ width: w, height: h, filter: selected ? "drop-shadow(0 0 4px var(--accent))" : undefined }} className="relative" title={d.label}>
+          <NodeResizer
+            isVisible={selected}
+            minWidth={80}
+            minHeight={50}
+            lineClassName="!border-accent"
+            handleClassName="!h-2 !w-2 !rounded-sm !border !border-accent !bg-background"
+          />
           <svg width={w} height={h} className="overflow-visible">
             <path d={shapePath(d.shape, w, h)} fill={fill} stroke={stroke} strokeWidth={strokeW} />
             <text x={w / 2} y={colH / 2} textAnchor="middle" dominantBaseline="central" fontSize={fontSize} fontWeight={700} fill="var(--text)" style={{ userSelect: "none" }}>
@@ -790,6 +858,13 @@ function createShapeNode(theme: { nodeFill: string; nodeStroke: string }) {
       const cx = w / 2;
       return (
         <div style={{ width: w, height: h, filter: selected ? "drop-shadow(0 0 4px var(--accent))" : undefined }} className="relative" title={d.label}>
+          <NodeResizer
+            isVisible={selected}
+            minWidth={60}
+            minHeight={120}
+            lineClassName="!border-accent"
+            handleClassName="!h-2 !w-2 !rounded-sm !border !border-accent !bg-background"
+          />
           <svg width={w} height={h} className="overflow-visible">
             <circle cx={cx} cy={24} r={13} fill="none" stroke={stroke} strokeWidth={strokeW} />
             <line x1={cx} y1={37} x2={cx} y2={70} stroke={stroke} strokeWidth={strokeW} />
@@ -810,6 +885,13 @@ function createShapeNode(theme: { nodeFill: string; nodeStroke: string }) {
 
     return (
       <div style={{ width: w, height: h, filter: selected ? "drop-shadow(0 0 4px var(--accent))" : undefined }} className="relative" title={d.label}>
+        <NodeResizer
+          isVisible={selected}
+          minWidth={60}
+          minHeight={36}
+          lineClassName="!border-accent"
+          handleClassName="!h-2 !w-2 !rounded-sm !border !border-accent !bg-background"
+        />
         <svg width={w} height={h} className="overflow-visible">
           <path
             d={shapePath(d.shape, w, h)}
@@ -945,6 +1027,8 @@ export function FlowchartEditor({
   const [aiText, setAiText] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [themeIndex, setThemeIndex] = useState(0);
   // 网格吸附开关
@@ -1076,6 +1160,57 @@ export function FlowchartEditor({
 
   useEffect(() => setMounted(true), []);
 
+  // 当前明暗主题：决定节点填充/描边取「浅色档」还是「深色档」
+  const colorTheme = useColorTheme();
+
+  /**
+   * 包装 React Flow 的变更处理，把「拖角缩放」的尺寸落到 data.width/height 上。
+   *
+   * NodeResizer 在 React Flow v12 里不写 node.width/height、也不进 data；
+   * 而本编辑器的尺寸事实源是 `data.width/height`（渲染、导出、快照、匹配大小都读它）。
+   * 所以这里把 dimensions 变更同步进 data，并过滤掉已消费的变更项，
+   * 否则 node.width/height 与 data.width/height 会各持一份、后续以谁为准说不清。
+   */
+  const handleNodesChange = useCallback(
+    (changes: NodeChange<Node>[]) => {
+      const rest: NodeChange<Node>[] = [];
+      const sizeById = new Map<string, { w: number; h: number }>();
+      for (const c of changes) {
+        if (c.type === "dimensions" && c.dimensions && c.resizing) {
+          sizeById.set(c.id, {
+            w: Math.round(c.dimensions.width),
+            h: Math.round(c.dimensions.height),
+          });
+        } else {
+          rest.push(c);
+        }
+      }
+      if (sizeById.size === 0) {
+        if (rest.length) onNodesChange(rest);
+        return;
+      }
+      // 由 ref 取「最新一次已提交的数据」，再把新尺寸盖上去 ——
+      // 不能等到 setNodes 之后读 state（那是异步的，此处读到的仍是旧尺寸）。
+      const base = snapshot();
+      const next: StoredFlow = {
+        ...base,
+        nodes: base.nodes.map((n) => {
+          const s = sizeById.get(n.id);
+          return s ? { ...n, width: s.w, height: s.h } : n;
+        }),
+      };
+      onChange(JSON.stringify(next));
+      setNodes((nds) =>
+        nds.map((n) => {
+          const s = sizeById.get(n.id);
+          return s ? { ...n, data: { ...n.data, width: s.w, height: s.h } } : n;
+        }),
+      );
+      if (rest.length) onNodesChange(rest);
+    },
+    [onNodesChange, setNodes, onChange, snapshot],
+  );
+
   const defaultEdgeOptions = useMemo(
     () => ({
       type: edgeKind,
@@ -1089,8 +1224,11 @@ export function FlowchartEditor({
     [edgeKind, themeIndex],
   );
 
-  // 节点类型随主题重建，使所有未手动设色节点即时换色
-  const nodeTypes = useMemo(() => ({ shape: createShapeNode(THEMES[themeIndex]) }), [themeIndex]);
+  // 节点类型随主题 / 明暗配色重建，使所有未手动设色节点即时换色
+  const nodeTypes = useMemo(
+    () => ({ shape: createShapeNode(THEMES[themeIndex], colorTheme) }),
+    [themeIndex, colorTheme],
+  );
 
   // 切换主题时更新已有连线颜色（保留被手动设色的连线）。箭头由 viewEdges 的 decorate 统一生成。
   useEffect(() => {
@@ -1411,7 +1549,13 @@ export function FlowchartEditor({
 
   const clearAll = () => {
     if (nodes.length === 0 && edges.length === 0) return;
-    if (!window.confirm("清空整个流程图？")) return;
+    // 用统一 ConfirmDialog 而非 window.confirm：原生确认框样式脱离主题、
+    // 在暗色下是刺眼的系统白框，且阻塞主线程、无法用键盘焦点环。
+    setClearConfirmOpen(true);
+  };
+
+  const doClearAll = () => {
+    setClearConfirmOpen(false);
     pushHistory();
     setNodes([]);
     setEdges([]);
@@ -1806,6 +1950,57 @@ export function FlowchartEditor({
     }
   };
 
+  // —— 导出 PDF ——
+  // 与思维导图保持一致的做法：不引入新依赖，复用 PNG 走浏览器打印窗口（另存为 PDF）；
+  // 打印窗口被拦截时退化为下载 PNG，并明确告知用户。
+  const exportPdf = async () => {
+    const meta = computeExportMeta();
+    if (!meta) return;
+    const { viewportEl, W, H, viewport, bg } = meta;
+    setExporting(true);
+    try {
+      const dataUrl = await toPng(viewportEl, {
+        backgroundColor: bg,
+        width: W,
+        height: H,
+        pixelRatio: 2,
+        style: {
+          width: `${W}px`,
+          height: `${H}px`,
+          transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+        },
+      });
+      const w = window.open("", "_blank");
+      if (!w) {
+        const a = document.createElement("a");
+        a.download = "流程图.png";
+        a.href = dataUrl;
+        a.click();
+        toast.info("浏览器拦截了打印窗口，已为您下载 PNG，可在打印对话框选择另存为 PDF");
+        return;
+      }
+      try {
+        w.document.write(
+          `<!DOCTYPE html><html><head><meta charset="utf-8"><title>流程图</title>` +
+            `<style>@page{margin:12mm;}html,body{margin:0;padding:0;}img{display:block;width:100%;height:auto;}</style>` +
+            `</head><body><img src="${dataUrl}" onload="window.print()" /></body></html>`,
+        );
+        w.document.close();
+      } catch {
+        const a = document.createElement("a");
+        a.download = "流程图.png";
+        a.href = dataUrl;
+        a.click();
+        toast.info("打印窗口打开失败，已为您下载 PNG，可在打印对话框选择另存为 PDF");
+        w.close();
+      }
+    } catch (err) {
+      toast.error(`导出失败：${err instanceof Error ? err.message : "未知错误"}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // —— 多选对齐 / 分布 ——
   const nodeSizeOf = (n: Node): { w: number; h: number } => {
     const d = n.data as unknown as FlowData;
@@ -2091,7 +2286,7 @@ export function FlowchartEditor({
         <button onClick={() => deleteSelected()} className="rounded-md px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger-soft" title="删除选中 (Delete)">
           删除
         </button>
-        <button onClick={clearAll} className="rounded-md px-2.5 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text">
+        <button onClick={clearAll} className="rounded-md px-2.5 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="清空画布（可撤销）">
           清空
         </button>
         <button onClick={autoLayoutBtn} className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover" title="自动整理布局">
@@ -2135,22 +2330,45 @@ export function FlowchartEditor({
             )}
           </div>
           <span className="hidden text-[11px] text-faint lg:inline">双击改文字 · 拖拽连线 · Ctrl+Z 撤销</span>
-          <button
-            onClick={exportPng}
-            disabled={exporting}
-            className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-50"
-            title="导出 PNG 图片"
-          >
-            {exporting ? "导出中…" : "导出 PNG"}
-          </button>
-          <button
-            onClick={exportSvg}
-            disabled={exporting}
-            className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-50"
-            title="导出 SVG 矢量图"
-          >
-            导出 SVG
-          </button>
+          {/* 导出（PNG / SVG / PDF）下拉 */}
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setExportOpen((o) => !o)}
+              disabled={exporting}
+              className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-50"
+              title="导出图片 / 矢量图 / PDF"
+            >
+              {exporting ? "导出中…" : "导出"}
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${exportOpen ? "rotate-180" : ""}`}>
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+            {exportOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setExportOpen(false)} />
+                <div className="menu-panel absolute right-0 top-full z-40 mt-1 w-36 p-1.5">
+                  <button
+                    onClick={() => { setExportOpen(false); exportPng(); }}
+                    className="flex w-full items-center rounded-md px-2.5 py-1.5 text-xs text-text transition-colors hover:bg-hover"
+                  >
+                    导出 PNG
+                  </button>
+                  <button
+                    onClick={() => { setExportOpen(false); exportSvg(); }}
+                    className="flex w-full items-center rounded-md px-2.5 py-1.5 text-xs text-text transition-colors hover:bg-hover"
+                  >
+                    导出 SVG
+                  </button>
+                  <button
+                    onClick={() => { setExportOpen(false); exportPdf(); }}
+                    className="flex w-full items-center rounded-md px-2.5 py-1.5 text-xs text-text transition-colors hover:bg-hover"
+                  >
+                    导出 PDF
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           <button
             onClick={() => visioFileRef.current?.click()}
             disabled={importingVisio}
@@ -2374,7 +2592,7 @@ export function FlowchartEditor({
           }}
           nodes={nodes}
           edges={viewEdges}
-          onNodesChange={onNodesChange}
+          onNodesChange={handleNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onNodeDoubleClick={(_, node) => editLabel(node.id)}
@@ -2863,6 +3081,18 @@ export function FlowchartEditor({
         currentUserId={currentUserId}
         isAdmin={isAdmin}
       />
+      )}
+
+      {/* 清空确认：与模板对话框并列（不能嵌套，否则点遮罩会连带关闭外层） */}
+      {!readOnly && (
+        <ConfirmDialog
+          open={clearConfirmOpen}
+          title="清空画布"
+          message="将删除画布上的全部节点与连线。此操作可撤销（Ctrl+Z）。"
+          confirmText="清空"
+          onConfirm={doClearAll}
+          onCancel={() => setClearConfirmOpen(false)}
+        />
       )}
     </div>
   );

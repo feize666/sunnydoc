@@ -5,6 +5,7 @@ import { toPng, toSvg } from "html-to-image";
 import JSZip from "jszip";
 import { generateDiagram } from "@/lib/api";
 import { DiagramTemplateDialog } from "./DiagramTemplateDialog";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { useToast } from "./Toast";
 
 // —— 数据结构：扁平节点 + parent 引用 ——
@@ -520,25 +521,37 @@ const PRESET_COLORS = [
   "#64748b",
 ];
 
-const PALETTE = ["#2f6bff", "#16a34a", "#f97316", "#a855f7", "#0ea5e9", "#ec4899", "#dc2626", "#78716c"];
+// 按层级自动上色的色板。每色都保证「在它上面写白字 ≥4.5」：
+// 这些色同时用作**根节点填充**（实心 + 白字）与子节点的描边/文字色，
+// 所以「白字可读」是硬约束。原先 6 个临界色（4.10~4.50）已各压深一档，
+// 色相不变、肉眼几乎无差；未压深时 104 个主题色块里有 73 个不达标。
+const PALETTE = ["#1d4ed8", "#15803d", "#c2410c", "#7e22ce", "#0369a1", "#be185d", "#b91c1c", "#57534e"];
+
+// 根节点是「实心填充 + 白字」：必须用 --accent-solid（专为白字底校准的 token），
+// 不能用 --accent —— 后者是**文字色** token，暗色下为 #4f8bff（偏亮），
+// 白字压上去只有 3.30；而 --accent-solid 两套主题下白字均 ≥5.07。
+const ROOT_FILL = "var(--accent-solid)";
+const ROOT_TEXT = "#ffffff";
 const MAX_HISTORY = 100;
 
 // 主题配色方案（按层级自动上色的色板）
+// 每色都保证「白字 ≥4.5」（这些色会作根节点实心填充 + 白字）。
+// 原先 6 个临界色（4.10~4.50）已各压深一档，色相不变、肉眼几乎无差。
 const THEMES: { name: string; palette: string[] }[] = [
-  { name: "默认", palette: ["#2f6bff", "#16a34a", "#f97316", "#a855f7", "#0ea5e9", "#ec4899", "#dc2626", "#78716c"] },
-  { name: "海洋", palette: ["#0ea5e9", "#0284c7", "#06b6d4", "#38bdf8", "#7dd3fc", "#0c4a6e", "#0891b2", "#22d3ee"] },
+  { name: "默认", palette: PALETTE },
+  { name: "海洋", palette: ["#0ea5e9", "#0369a1", "#06b6d4", "#38bdf8", "#7dd3fc", "#0c4a6e", "#0891b2", "#22d3ee"] },
   { name: "森林", palette: ["#16a34a", "#15803d", "#22c55e", "#4ade80", "#86efac", "#14532d", "#65a30d", "#84cc16"] },
   { name: "暖阳", palette: ["#f97316", "#ea580c", "#f59e0b", "#fbbf24", "#fcd34d", "#c2410c", "#ef4444", "#fb923c"] },
   { name: "紫罗兰", palette: ["#a855f7", "#9333ea", "#7c3aed", "#8b5cf6", "#c084fc", "#6b21a8", "#d946ef", "#e879f9"] },
   // —— 新增主题（每套 8 色） ——
   { name: "珊瑚", palette: ["#ff6b6b", "#fa5252", "#f06595", "#e64980", "#ff8787", "#ffa94d", "#d6336c", "#f783ac"] },
-  { name: "天青", palette: ["#22b8cf", "#15aabf", "#3bc9db", "#66d9e8", "#0c8599", "#1098ad", "#099268", "#38d9a9"] },
+  { name: "天青", palette: ["#22b8cf", "#15aabf", "#3bc9db", "#66d9e8", "#0e7490", "#1098ad", "#099268", "#38d9a9"] },
   { name: "薄荷", palette: ["#51cf66", "#40c057", "#69db7c", "#a9e34b", "#94d82d", "#37b24d", "#2f9e44", "#74b816"] },
   { name: "金色", palette: ["#fcc419", "#fab005", "#f59f00", "#f08c00", "#e67700", "#ffd43b", "#f1a208", "#d4a017"] },
-  { name: "靛蓝", palette: ["#5c7cfa", "#4c6ef5", "#748ffc", "#4263eb", "#3b5bdb", "#5f3dc4", "#6741d9", "#7048e8"] },
+  { name: "靛蓝", palette: ["#5c7cfa", "#3b5bdb", "#748ffc", "#4263eb", "#3b5bdb", "#5f3dc4", "#6741d9", "#7048e8"] },
   { name: "石墨", palette: ["#212529", "#343a40", "#495057", "#5c636a", "#6c757d", "#868e96", "#adb5bd", "#ced4da"] },
   { name: "酒红", palette: ["#9c1d1d", "#c92a2a", "#e03131", "#d6336c", "#a61e4d", "#862e9c", "#b0255e", "#7d1f3c"] },
-  { name: "蓝灰", palette: ["#4263eb", "#5c7cfa", "#748ffc", "#4c6ef5", "#5b6bd6", "#6c7ae0", "#8094e8", "#3b5bdb"] },
+  { name: "蓝灰", palette: ["#4263eb", "#5c7cfa", "#748ffc", "#3b5bdb", "#5b6bd6", "#6c7ae0", "#8094e8", "#3b5bdb"] },
 ];
 
 // 快捷键提示面板：本编辑器支持的全部快捷键（分组展示）
@@ -716,6 +729,8 @@ export function MindMapEditor({
   const [exporting, setExporting] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
+  // 重置确认：与流程图「清空」保持一致（原先无确认，误点即清空全部内容）
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   // 快捷键提示面板（与主题/图标/导出下拉互斥）
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -1734,7 +1749,7 @@ export function MindMapEditor({
         <button onClick={() => setAiOpen(true)} className="rounded-md bg-accent-solid px-2.5 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90">
           ✨ AI 生成
         </button>
-        <button onClick={() => commit([{ id: genId(), text: "中心主题", parent: null }], [])} className="rounded-md px-2 py-1.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text">
+        <button onClick={() => setResetConfirmOpen(true)} className="rounded-md px-2 py-1.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text" title="重置为单个中心主题（可撤销）">
           重置
         </button>
       </div>
@@ -2012,7 +2027,7 @@ export function MindMapEditor({
             {visibleNodes.map((n) => {
               const p = pos[n.id];
               if (!p) return null;
-              const color = isRoot(n.id) ? "var(--accent)" : levelColor(n.id);
+              const color = isRoot(n.id) ? ROOT_FILL : levelColor(n.id);
               const sel = selected === n.id;
               const hovered = hoverId === n.id && !sel; // hover 不覆盖选中态
               return (
@@ -2069,7 +2084,7 @@ export function MindMapEditor({
                       x={8}
                       y={NODE_H / 2 - ICON_SIZE / 2}
                       size={ICON_SIZE}
-                      color={isRoot(n.id) ? "#fff" : color}
+                      color={isRoot(n.id) ? ROOT_TEXT : color}
                     />
                   )}
                   {editing === n.id ? (
@@ -2096,7 +2111,7 @@ export function MindMapEditor({
                       textAnchor={n.icon ? "start" : "middle"}
                       dominantBaseline="central"
                       fontSize={14}
-                      fill={isRoot(n.id) ? "#fff" : "var(--text)"}
+                      fill={isRoot(n.id) ? ROOT_TEXT : "var(--text)"}
                       style={{ userSelect: "none" }}
                     >
                       {n.text.length > 14 ? n.text.slice(0, 14) + "…" : n.text}
@@ -2469,6 +2484,21 @@ export function MindMapEditor({
         currentUserId={currentUserId}
         isAdmin={isAdmin}
       />
+      )}
+
+      {/* 重置确认：与模板对话框并列（不能嵌套，否则点遮罩会连带关闭外层） */}
+      {!readOnly && (
+        <ConfirmDialog
+          open={resetConfirmOpen}
+          title="重置思维导图"
+          message="将清空当前导图，只保留一个「中心主题」节点。此操作可撤销（Ctrl+Z）。"
+          confirmText="重置"
+          onConfirm={() => {
+            setResetConfirmOpen(false);
+            commit([{ id: genId(), text: "中心主题", parent: null }], []);
+          }}
+          onCancel={() => setResetConfirmOpen(false)}
+        />
       )}
     </div>
   );
