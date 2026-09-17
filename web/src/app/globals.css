@@ -73,7 +73,12 @@
   --warning-soft: #fef3c7;
   --danger: #c92626;    /* soft 4.54 · 白底 5.54 · surface-2 4.93 */
   --danger-soft: #fee2e2;
-  --danger-hover: #b91c1c;  /* 白字 6.47 / soft 5.30 */
+  --danger-hover: #b91c1c;  /* 文字用 hover（soft 5.30） */
+  /* 实底红（bg-danger-solid + text-white）：危险确认按钮 / 未读角标。
+     与 --accent/--accent-solid 同一道理——--danger 兼任 text-danger 文字色（暗色须「亮」），
+     不能同时又当白字底。亮色下两者相近，暗色下 #f87171 白字仅 2.77，必须分离。 */
+  --danger-solid: #dc2626;        /* 白字 4.83（亮/暗皆同） */
+  --danger-solid-hover: #c92626;  /* 白字 5.54 · 亮白底 5.54 · 暗暗底 3.40 */
 
   /* 圆角层级 */
   --radius-sm: 6px;
@@ -164,7 +169,11 @@
   --warning-soft: #3a2e05;
   --danger: #f87171;
   --danger-soft: #3b1216;
-  --danger-hover: #ef4444;
+  --danger-hover: #ef4444;   /* 文字用 hover */
+  /* 暗色 --danger #f87171 是「亮红」，白字仅 2.77，绝不能作白字底；
+     实底统一改用亮色的深红，白字 4.83，与页面深底也有 3.90 的可辨度。 */
+  --danger-solid: #dc2626;        /* 白字 4.83 */
+  --danger-solid-hover: #c92626;  /* 白字 5.54 · 暗底可辨 3.40 */
 
   --radius-sm: 6px;
   --radius-md: 8px;

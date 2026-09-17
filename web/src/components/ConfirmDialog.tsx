@@ -56,7 +56,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             className={`btn text-white ${
               danger
-                ? "bg-danger hover:bg-danger-hover"
+                ? "bg-danger-solid hover:bg-danger-solid-hover"
                 : "btn-accent"
             }`}
           >

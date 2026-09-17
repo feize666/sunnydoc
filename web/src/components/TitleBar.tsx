@@ -165,7 +165,7 @@ export function TitleBar({
               <path d="M13.73 21a2 2 0 0 1-3.46 0" />
             </svg>
             {unreadCount ? (
-              <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[9px] font-semibold leading-none text-white">
+              <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-danger-solid px-1 text-[9px] font-semibold leading-none text-white">
                 {unreadCount > 99 ? "99+" : unreadCount}
               </span>
             ) : null}

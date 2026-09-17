@@ -72,9 +72,20 @@
 | `--success` / `--success-soft` | `#1b7e3f` / `#dcfce7` | `#34d399` / `#052e1f` | 成功 / 在线（徽标底 4.66 · 白底 5.12 · surface-2 4.55） |
 | `--warning` / `--warning-soft` | `#a55c12` / `#fef3c7` | `#fbbf24` / `#3a2e05` | 警告 / 检测中（徽标底 4.56 · 白底 5.07 · surface-2 4.51） |
 | `--danger` / `--danger-soft` | `#c92626` / `#fee2e2` | `#f87171` / `#3b1216` | 危险 / 删除 / 错误（徽标底 4.54 · 白底 5.54 · surface-2 4.93） |
-| `--danger-hover` | `#b91c1c` | `#ef4444` | 危险按钮 hover（白字 6.47 / 徽标底 5.30） |
+| `--danger-hover` | `#b91c1c` | `#ef4444` | 危险**文字** hover（白字 6.47 / 徽标底 5.30） |
+| `--danger-solid` | `#dc2626` | `#dc2626` | **实底红**：`bg-danger-solid` + `text-white`（危险确认按钮 / 未读角标）。白字 4.83 |
+| `--danger-solid-hover` | `#c92626` | `#c92626` | 实底红 hover（白字 5.54） |
 
-深色主题的状态色一律通过（最低 danger 5.91），无需调整。
+深色主题的状态色作**文字**一律通过（最低 danger 5.91），无需调整。
+
+> **`--danger` 与 `--danger-solid` 为何必须分开**（同 `--accent` 的道理）：
+> `--danger` 兼任 `text-danger` 文字色，暗色下必须是**亮红** `#f87171` 才看得清；
+> 但同一个值当**白字底**时白字只有 **2.77**，实为不可读。
+> 故实底场景（危险确认按钮 `ConfirmDialog`、未读角标 `TitleBar`）改用 `--danger-solid`。
+> 亮色下 `#c92626` 与 `#dc2626` 观感接近，但为保持 token 语义一致，两个主题都用同一个实底值。
+>
+> **新增实底状态色时照此办理**：任何「`bg-<status>` + `text-white`」的场景，
+> 都不要复用文字色 token——先算白字对比度，不够就单列 `-solid`。
 
 ---
 
@@ -433,9 +444,14 @@ Tailwind 4 的层级顺序为 `theme < base < components < utilities`。
 | `--success` | `--success-soft`（自身徽标底） | 3.00 ❌ | 4.66 ✅ |
 | `--warning` | `--warning-soft` | 2.86 ❌ | 4.56 ✅ |
 | `--danger` | `--danger-soft` | 3.95 ❌ | 4.54 ✅ |
+| 白字 | `--danger`（暗色，作实底） | 2.77 ❌ | 4.83 ✅（改用 `--danger-solid`） |
 
 **通用规则**：任何 `text-X` 若与 `bg-X-soft` 成对出现，必须按该 `-soft` 底校准。
 这是本项目的**主徽标范式**（浅色底 + 同色深字），也是最容易被漏算的一类。
+
+**对称的规则**：任何 `bg-X` + `text-white` 的实底场景，**同样不能复用文字色 token**——
+文字色为了可读必须够亮，白字底必须够暗，方向相反。§2.1 的 `--accent-solid` 与
+§2.3 的 `--danger-solid` 都是为拆开这个矛盾而存在。
 
 #### 选中态底色：为什么 `--active` 不能配 `--accent` 文字
 
