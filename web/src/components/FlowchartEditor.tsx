@@ -25,7 +25,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import JSZip from "jszip";
-import { generateDiagram } from "@/lib/api";
+import { generateDiagram, searchIcons, type SearchedIcon } from "@/lib/api";
 import { useColorTheme } from "@/lib/useColorTheme";
 import { readableOnCanvas } from "@/lib/colorContrast";
 import {
@@ -64,7 +64,11 @@ type ShapeKind =
   | "note"
   | "umlClass"
   | "entity"
-  | "actor";
+  | "actor"
+  // 纯文本块：无边框、无填充，只承载文字（对应 ProcessOn 的「文本」工具）
+  | "text"
+  // 联网检索来的矢量图标：以 SVG 内联渲染，可作为图元参与连线
+  | "icon";
 
 type EdgeKind = "default" | "straight" | "step" | "smoothstep";
 
@@ -82,6 +86,27 @@ interface FlowData {
   fontSize?: number;
   bold?: boolean;
   textAlign?: TextAlign;
+  /**
+   * 联网检索来的图标（仅 shape === "icon" 时有值）。
+   *
+   * 为什么把矢量路径存进文档而不是只存图标名：导出走 html-to-image 内联 computed style，
+   * 图片类外链会因跨域污染画布而导出失败；内联 `<path d>` 是自包含的，
+   * PNG / SVG / PDF 三种导出都能带走，离线打开也不会丢图。
+   */
+  icon?: IconRef;
+}
+
+/** 联网图标的文档内表示：来源集合 + 图标名 + 视口尺寸 + 路径正文 */
+interface IconRef {
+  /** Iconify 集合前缀，如 mdi */
+  prefix: string;
+  /** 集合内图标名，如 rocket-launch */
+  name: string;
+  /** 原始 viewBox 宽高（多数集合为 24，部分为 16/32…） */
+  w: number;
+  h: number;
+  /** SVG 正文（已白名单净化，只含 path/circle/rect/line/polygon 等绘图元素） */
+  body: string;
 }
 
 // 连线的箭头记录（序列化用），存于 edge.data
@@ -105,6 +130,8 @@ interface StoredNode {
   bold?: boolean;
   textAlign?: TextAlign;
   parentId?: string;
+  /** 联网图标（仅 icon 形状）：随文档保存，导出可带走 */
+  icon?: IconRef;
 }
 interface StoredEdge {
   id: string;
@@ -138,6 +165,7 @@ function parseFlow(value: string): StoredFlow {
           bold: typeof n.bold === "boolean" ? n.bold : undefined,
           textAlign: (n.textAlign as TextAlign) || undefined,
           parentId: typeof n.parentId === "string" ? n.parentId : undefined,
+          icon: parseIconRef(n.icon),
         })),
         edges: Array.isArray(p.edges)
           ? p.edges.map((e: any, i: number) => ({
@@ -158,8 +186,183 @@ function parseFlow(value: string): StoredFlow {
   return { nodes: [], edges: [] };
 }
 
+// —— 联网图标（Iconify）：解析与净化 ——
+
+/**
+ * 允许出现在图标正文里的绘图元素与属性白名单。
+ *
+ * Iconify 返回的是**第三方内容**，会被原样塞进本页 SVG。即便来源可信，
+ * 也不能直接 `dangerouslySetInnerHTML` 全文 —— 只要有一个集合被投毒写成
+ * `<script>` 或 `<foreignObject>`，就是本页的 XSS。这里只放行纯几何绘图元素，
+ * 且属性名必须命中白名单（`on*` 事件、`href`/`xlink:href` 天然不在其中）。
+ */
+const ICON_ALLOWED_TAGS = new Set([
+  "path",
+  "circle",
+  "ellipse",
+  "rect",
+  "line",
+  "polyline",
+  "polygon",
+  "g",
+]);
+/** 允许的属性：几何 + 呈现类。刻意不含 href / xlink:href / style / class / id */
+const ICON_ALLOWED_ATTRS = new Set([
+  "d",
+  "cx",
+  "cy",
+  "r",
+  "rx",
+  "ry",
+  "x",
+  "y",
+  "x1",
+  "y1",
+  "x2",
+  "y2",
+  "width",
+  "height",
+  "points",
+  "transform",
+  "fill",
+  "fill-rule",
+  "fill-opacity",
+  "stroke",
+  "stroke-width",
+  "stroke-linecap",
+  "stroke-linejoin",
+  "stroke-opacity",
+  "stroke-dasharray",
+  "stroke-miterlimit",
+  "opacity",
+]);
+
+/**
+ * 净化 Iconify 图标正文。
+ *
+ * 流程：DOMParser 解析 → 逐节点过滤标签与属性 → 序列化回字符串。
+ * 任何白名单外的元素（script / foreignObject / image / use / a …）连同其子树一起丢弃。
+ * 解析失败或结果为空时返回空串，调用方据此放弃插入，宁可不显示也不放行未知内容。
+ */
+function sanitizeIconBody(raw: string): string {
+  if (typeof window === "undefined" || !raw) return "";
+  let doc: Document;
+  try {
+    doc = new DOMParser().parseFromString(`<svg>${raw}</svg>`, "image/svg+xml");
+  } catch {
+    return "";
+  }
+  // 解析错误时浏览器会返回含 <parsererror> 的文档，直接判失败
+  if (doc.querySelector("parsererror")) return "";
+  const root = doc.documentElement;
+  if (!root) return "";
+
+  const strip = (el: Element): boolean => {
+    for (const child of Array.from(el.children)) {
+      if (!strip(child)) continue;
+      const tag = child.tagName.toLowerCase();
+      if (!ICON_ALLOWED_TAGS.has(tag)) {
+        // 白名单外的元素：若内部还有绘图子元素（如 <a><path/></a>），
+        // 把自身替换成 <g> 保住子树；纯危险元素（script 等）直接整段删除。
+        const hasDrawable = child.querySelector("path,circle,ellipse,rect,line,polyline,polygon,g");
+        const DANGEROUS = new Set(["script", "foreignobject", "style", "iframe", "image"]);
+        if (!hasDrawable || DANGEROUS.has(tag)) {
+          child.remove();
+        } else {
+          const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+          while (child.firstChild) g.appendChild(child.firstChild);
+          child.replaceWith(g);
+        }
+        continue;
+      }
+      for (const attr of Array.from(child.attributes)) {
+        if (!ICON_ALLOWED_ATTRS.has(attr.name.toLowerCase())) child.removeAttribute(attr.name);
+      }
+    }
+    return true;
+  };
+  strip(root);
+  return root.innerHTML;
+}
+
+/** 从文档里读回图标引用；形状不合法时返回 undefined（旧数据不受影响） */
+function parseIconRef(v: unknown): IconRef | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  // 入参来自 JSON.parse 的未知结构，逐字段收窄而不是断言类型
+  const o = v as Record<string, unknown>;
+  const prefix = typeof o.prefix === "string" ? o.prefix : "";
+  const name = typeof o.name === "string" ? o.name : "";
+  const body = typeof o.body === "string" ? o.body : "";
+  if (!prefix || !name || !body) return undefined;
+  const w = Number(o.w);
+  const h = Number(o.h);
+  return {
+    prefix,
+    name,
+    w: w > 0 ? w : 24,
+    h: h > 0 ? h : 24,
+    // 重新净化一遍：文档可能来自他人分享，不能假定存进去时是干净的
+    body: sanitizeIconBody(body),
+  };
+}
+
 // —— VISIO 导入：解析 .vsdx（zip + visio/pages/*.xml）——
 const VSDX_SCALE = 96; // 1 英寸 -> 96 像素
+
+/**
+ * 节点数据的字段映射：`StoredNode`（文档格式）⇄ React Flow 的 `data` 载荷。
+ *
+ * 为什么单独抽出来：这两个方向各有 4~5 个调用点（初始化、应用模板、撤销重做回写、
+ * 复制粘贴、AI 生成、滚动快照、尺寸回写…），此前每处都手抄一份字段清单。
+ * 新增字段（如 `icon`）时只要漏掉其中任何一处，就会出现「某种路径下丢字段」的隐形 bug ——
+ * 例如撤销后图标消失、或复制出的节点丢掉图标。收敛到一处后只改这里。
+ */
+function nodeToData(n: StoredNode): Record<string, unknown> {
+  return {
+    label: n.label,
+    shape: n.shape,
+    fill: n.fill,
+    stroke: n.stroke,
+    width: n.width,
+    height: n.height,
+    fontSize: n.fontSize,
+    bold: n.bold,
+    textAlign: n.textAlign,
+    icon: n.icon,
+  };
+}
+
+/** 反向：React Flow 节点 → 文档格式。读取的是渲染中的实际值。 */
+function dataToStored(n: Node): StoredNode {
+  const d = n.data as unknown as FlowData;
+  return {
+    id: n.id,
+    label: d.label,
+    parentId: n.parentId,
+    shape: d.shape,
+    x: n.position.x,
+    y: n.position.y,
+    fill: d.fill,
+    stroke: d.stroke,
+    width: d.width,
+    height: d.height,
+    fontSize: d.fontSize,
+    bold: d.bold,
+    textAlign: d.textAlign,
+    icon: d.icon,
+  };
+}
+
+/** 文档格式 → React Flow 节点。剪贴板 / 模板 / 回写三处共用，避免各自漂移。 */
+function storedToNode(n: StoredNode): Node {
+  return {
+    id: n.id,
+    type: "shape",
+    parentId: n.parentId,
+    position: { x: n.x, y: n.y },
+    data: nodeToData(n),
+  };
+}
 
 // 从 VISIO 的 Cell 元素提取数值（优先 V 属性，其次文本节点里的数字）
 function vsdxCellValue(cells: Element[], name: string): number | null {
@@ -252,8 +455,10 @@ function parseVsdxPage(xmlText: string): { nodes: StoredNode[]; edges: StoredEdg
 // 形状库（分类组织）。容器类/备注类默认尺寸更大，由 addNode 处理。
 const SHAPE_GROUPS: { cat: string; items: { kind: ShapeKind; label: string; icon: string }[] }[] = [
   {
-    cat: "流程类",
+    // 「文本」参照 ProcessOn 置于基础图形之前，是画布上最常用的非形状图元
+    cat: "基础图形",
     items: [
+      { kind: "text", label: "文本", icon: "M3 3h10M8 3v10" },
       { kind: "ellipse", label: "起止", icon: "M8 3 A5 5 0 1 1 8 13 A5 5 0 1 1 8 3" },
       { kind: "rect", label: "处理", icon: "M2 4h12v8H2z" },
       { kind: "diamond", label: "判断", icon: "M8 1 15 8 8 15 1 8Z" },
@@ -277,7 +482,7 @@ const SHAPE_GROUPS: { cat: string; items: { kind: ShapeKind; label: string; icon
     items: [
       { kind: "container", label: "容器框", icon: "M3 3h10v10H3z" },
       { kind: "group", label: "分组框", icon: "M4 3h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z M2 5h4v1.5H2z" },
-      { kind: "lane", label: "泳道", icon: "M2 3h12v10H2z M4 3v10" },
+      { kind: "lane", label: "泳池/泳道", icon: "M2 3h12v10H2z M4 3v10" },
     ],
   },
   {
@@ -320,6 +525,35 @@ const SHAPE_LABEL: Record<string, string> = Object.fromEntries(ALL_SHAPES.map((s
 
 // 容器类默认尺寸（更大）
 const CONTAINER_SHAPES: ShapeKind[] = ["container", "group"];
+
+/** 「我的组件」收藏的 localStorage 键。存个人偏好，不随文档走。 */
+const FAV_STORAGE_KEY = "sunnydoc.flowchart.favorites";
+
+/**
+ * 读取收藏。放在模块级而非 effect 里，是为了让 useState 惰性初始化能直接用 ——
+ * 首帧即带上收藏，避免「先渲染空收藏、effect 再填」导致的可见闪烁。
+ * 任何异常（隐私模式、数据损坏）都退化为空收藏，不影响编辑器可用性。
+ */
+function readFavorites(): { shapes: ShapeKind[]; icons: IconRef[] } {
+  const empty = { shapes: [] as ShapeKind[], icons: [] as IconRef[] };
+  if (typeof window === "undefined") return empty;
+  try {
+    const raw = localStorage.getItem(FAV_STORAGE_KEY);
+    if (!raw) return empty;
+    const p = JSON.parse(raw);
+    const shapes = Array.isArray(p?.shapes)
+      ? (p.shapes.filter((s: unknown) => typeof s === "string") as ShapeKind[])
+      : [];
+    const icons = Array.isArray(p?.icons)
+      ? p.icons
+          .map(parseIconRef)
+          .filter((x: IconRef | undefined): x is IconRef => !!x)
+      : [];
+    return { shapes, icons };
+  } catch {
+    return empty;
+  }
+}
 
 const EDGE_KINDS: { kind: EdgeKind; label: string }[] = [
   { kind: "default", label: "曲线" },
@@ -897,6 +1131,103 @@ function createShapeNode(
       );
     }
 
+    // 纯文本块：无边框、无填充，只渲染文字（对应 ProcessOn 的「文本」工具）。
+    // 选中态用一层淡底 + 虚线轮廓标示，未选中时在画布上完全"隐形"，与图形区别开。
+    if (d.shape === "text") {
+      // 注意：不复用外层的 displayLines —— 那套逻辑会对超 11 字符的**单行**做省略号截断
+      // （为形状内短标签设计），而文本块的语义正是承载长句，必须完整显示、按 \n 分行。
+      const lines = (d.label || "").split("\n");
+      const tLineH = lineH;
+      const tStartY = h / 2 - (lines.length * tLineH) / 2 + tLineH / 2;
+      return (
+        <div style={{ width: w, height: h }} className="relative" title={d.label}>
+          <NodeResizer
+            isVisible={selected}
+            minWidth={40}
+            minHeight={24}
+            lineClassName="!border-accent"
+            handleClassName="!h-2 !w-2 !rounded-sm !border !border-accent !bg-background"
+          />
+          <svg width={w} height={h} className="overflow-visible">
+            {selected && (
+              <rect
+                x={0.75}
+                y={0.75}
+                width={Math.max(0, w - 1.5)}
+                height={Math.max(0, h - 1.5)}
+                rx={4}
+                fill="var(--accent-soft)"
+                stroke="var(--accent)"
+                strokeWidth={1}
+                strokeDasharray="4 3"
+              />
+            )}
+            <text
+              x={tx}
+              y={tStartY}
+              textAnchor={anchor}
+              dominantBaseline="central"
+              fontSize={fontSize}
+              fontWeight={fontWeight}
+              fill="var(--text)"
+              style={{ userSelect: "none" }}
+            >
+              {lines.map((ln, i) => (
+                <tspan key={i} x={tx} y={tStartY + i * tLineH}>
+                  {ln}
+                </tspan>
+              ))}
+            </text>
+          </svg>
+          <Handle type="target" position={Position.Left} style={{ background: "var(--accent)" }} />
+          <Handle type="source" position={Position.Right} style={{ background: "var(--accent)" }} />
+          <Handle type="source" position={Position.Top} style={{ background: "var(--accent)" }} />
+          <Handle type="target" position={Position.Bottom} style={{ background: "var(--accent)" }} />
+        </div>
+      );
+    }
+
+    // 联网检索来的矢量图标：等比内联绘制，保持原始 viewBox 比例居中。
+    // 用 `currentColor` 已被净化时保留，这里显式给 fill，使图标随主题文字色走。
+    if (d.shape === "icon" && d.icon) {
+      const ic = d.icon;
+      // 等比缩放：图标占节点较短边的 68%，留出文字与边距空间
+      const box = Math.min(w, h) * 0.68;
+      const scale = box / Math.max(ic.w, ic.h);
+      const iw = ic.w * scale;
+      const ih = ic.h * scale;
+      return (
+        <div style={{ width: w, height: h, filter: selected ? "drop-shadow(0 0 4px var(--accent))" : undefined }} className="relative" title={d.label || `${ic.prefix}:${ic.name}`}>
+          <NodeResizer
+            isVisible={selected}
+            minWidth={32}
+            minHeight={32}
+            lineClassName="!border-accent"
+            handleClassName="!h-2 !w-2 !rounded-sm !border !border-accent !bg-background"
+          />
+          <svg width={w} height={h} className="overflow-visible">
+            {selected && (
+              <rect x={0.75} y={0.75} width={Math.max(0, w - 1.5)} height={Math.max(0, h - 1.5)} rx={6} fill="none" stroke="var(--accent)" strokeWidth={1.5} />
+            )}
+            {/* 图标正文已在写入时白名单净化（sanitizeIconBody），此处仅内联展示 */}
+            <svg
+              x={(w - iw) / 2}
+              y={(h - ih) / 2}
+              width={iw}
+              height={ih}
+              viewBox={`0 0 ${ic.w} ${ic.h}`}
+              fill="var(--text)"
+              dangerouslySetInnerHTML={{ __html: ic.body }}
+            />
+          </svg>
+          <Handle type="target" position={Position.Left} style={{ background: "var(--accent)" }} />
+          <Handle type="source" position={Position.Right} style={{ background: "var(--accent)" }} />
+          <Handle type="source" position={Position.Top} style={{ background: "var(--accent)" }} />
+          <Handle type="target" position={Position.Bottom} style={{ background: "var(--accent)" }} />
+        </div>
+      );
+    }
+
     return (
       <div style={{ width: w, height: h, filter: selected ? "drop-shadow(0 0 4px var(--accent))" : undefined }} className="relative" title={d.label}>
         <NodeResizer
@@ -1010,25 +1341,7 @@ export function FlowchartEditor({
 }) {
   const toast = useToast();
   const initial = useMemo(() => parseFlow(value), []);
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(
-    initial.nodes.map((n) => ({
-      id: n.id,
-      type: "shape",
-      parentId: n.parentId,
-      position: { x: n.x, y: n.y },
-      data: {
-        label: n.label,
-        shape: n.shape,
-        fill: n.fill,
-        stroke: n.stroke,
-        width: n.width,
-        height: n.height,
-        fontSize: n.fontSize,
-        bold: n.bold,
-        textAlign: n.textAlign,
-      },
-    })),
-  );
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(initial.nodes.map(storedToNode));
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(
     initial.edges.map((e) => ({
       id: e.id,
@@ -1054,8 +1367,23 @@ export function FlowchartEditor({
   const [editTarget, setEditTarget] = useState<{ type: "node" | "edge"; id: string; draft: string; cur: string } | null>(null);
   // 快捷键提示面板开关
   const [helpOpen, setHelpOpen] = useState(false);
-  // 左侧侧栏 tab：图形库 / 风格
-  const [leftTab, setLeftTab] = useState<"shapes" | "style">("shapes");
+  // 左侧侧栏 tab：图形库 / 我的组件 / 风格
+  const [leftTab, setLeftTab] = useState<"shapes" | "mine" | "style">("shapes");
+  // 图形库搜索关键词：同时驱动「本地图形过滤」与「联网搜图」
+  const [shapeQuery, setShapeQuery] = useState("");
+  // 被折叠的分类（点击分类标题切换）。默认展开，用户的收起意图在本次会话内保留
+  const [collapsedCats, setCollapsedCats] = useState<Set<string>>(new Set());
+  // 联网搜图结果与状态
+  const [webIcons, setWebIcons] = useState<SearchedIcon[]>([]);
+  const [webLoading, setWebLoading] = useState(false);
+  const [webError, setWebError] = useState<string | null>(null);
+  // 本次关键词是否已发起过联网检索（用于区分「初始空态」与「搜完为空」）
+  const [webSearched, setWebSearched] = useState(false);
+  // 我的组件：收藏的图形（kind 列表）。存 localStorage，属个人偏好而非文档内容
+  // 惰性初始化：首帧就带上收藏，避免「先渲染空收藏、effect 里再填」造成的闪一下
+  const [favShapes, setFavShapes] = useState<ShapeKind[]>(() => readFavorites().shapes);
+  // 我的组件：收藏的联网图标
+  const [favIcons, setFavIcons] = useState<IconRef[]>(() => readFavorites().icons);
   // 左右侧栏折叠开关（扩大画布空间）
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
@@ -1084,24 +1412,7 @@ export function FlowchartEditor({
 
   const snapshot = useCallback((): StoredFlow => {
     return {
-      nodes: nodesRef.current.map((n) => {
-        const d = n.data as unknown as FlowData;
-        return {
-          id: n.id,
-          label: d.label,
-          parentId: n.parentId,
-          shape: d.shape,
-          x: n.position.x,
-          y: n.position.y,
-          fill: d.fill,
-          stroke: d.stroke,
-          width: d.width,
-          height: d.height,
-          fontSize: d.fontSize,
-          bold: d.bold,
-          textAlign: d.textAlign,
-        };
-      }),
+      nodes: nodesRef.current.map(dataToStored),
       edges: edgesRef.current.map((e) => {
         const ad = (e.data as EdgeArrowData) || {};
         return {
@@ -1117,25 +1428,7 @@ export function FlowchartEditor({
   }, []);
 
   const applyFlow = useCallback((s: StoredFlow) => {
-    setNodes(
-      s.nodes.map((n) => ({
-        id: n.id,
-        type: "shape",
-        parentId: n.parentId,
-        position: { x: n.x, y: n.y },
-        data: {
-          label: n.label,
-          shape: n.shape,
-          fill: n.fill,
-          stroke: n.stroke,
-          width: n.width,
-          height: n.height,
-          fontSize: n.fontSize,
-          bold: n.bold,
-          textAlign: n.textAlign,
-        },
-      })),
-    );
+    setNodes(s.nodes.map(storedToNode));
     setEdges(
       s.edges.map((e) => ({
         id: e.id,
@@ -1261,24 +1554,7 @@ export function FlowchartEditor({
 
   const buildStored = useCallback((): StoredFlow => {
     return {
-      nodes: nodes.map((n) => {
-        const d = n.data as unknown as FlowData;
-        return {
-          id: n.id,
-          label: d.label,
-          parentId: n.parentId,
-          shape: d.shape,
-          x: n.position.x,
-          y: n.position.y,
-          fill: d.fill,
-          stroke: d.stroke,
-          width: d.width,
-          height: d.height,
-          fontSize: d.fontSize,
-          bold: d.bold,
-          textAlign: d.textAlign,
-        };
-      }),
+      nodes: nodes.map(dataToStored),
       edges: edges.map((e) => {
         const ad = (e.data as EdgeArrowData) || {};
         return {
@@ -1303,25 +1579,7 @@ export function FlowchartEditor({
       try {
         const p = parseFlow(data);
         pushHistory();
-        setNodes(
-          p.nodes.map((n) => ({
-            id: n.id,
-            type: "shape",
-            parentId: n.parentId,
-            position: { x: n.x, y: n.y },
-            data: {
-              label: n.label,
-              shape: n.shape,
-              fill: n.fill,
-              stroke: n.stroke,
-              width: n.width,
-              height: n.height,
-              fontSize: n.fontSize,
-              bold: n.bold,
-              textAlign: n.textAlign,
-            },
-          })),
-        );
+        setNodes(p.nodes.map(storedToNode));
         setEdges(
           p.edges.map((e) => ({
             id: e.id,
@@ -1343,6 +1601,88 @@ export function FlowchartEditor({
     const t = setTimeout(commit, 200);
     return () => clearTimeout(t);
   }, [nodes, edges, mounted, commit]);
+
+  // —— 我的组件（收藏）：读写 localStorage ——
+  // 存个人偏好而非文档内容：同一个图形库在不同人手里各有所好，不该随文档共享。
+
+  const persistFavorites = useCallback((shapes: ShapeKind[], icons: IconRef[]) => {
+    try {
+      localStorage.setItem(FAV_STORAGE_KEY, JSON.stringify({ shapes, icons }));
+    } catch {
+      /* 隐私模式 / 配额满时静默降级为「本次会话有效」 */
+    }
+  }, []);
+
+  const toggleFavShape = useCallback(
+    (kind: ShapeKind) => {
+      setFavShapes((prev) => {
+        const next = prev.includes(kind) ? prev.filter((k) => k !== kind) : [...prev, kind];
+        persistFavorites(next, favIcons);
+        return next;
+      });
+    },
+    [favIcons, persistFavorites],
+  );
+
+  const toggleFavIcon = useCallback(
+    (icon: IconRef) => {
+      setFavIcons((prev) => {
+        const key = `${icon.prefix}:${icon.name}`;
+        const exists = prev.some((x) => `${x.prefix}:${x.name}` === key);
+        const next = exists ? prev.filter((x) => `${x.prefix}:${x.name}` !== key) : [icon, ...prev];
+        persistFavorites(favShapes, next);
+        return next;
+      });
+    },
+    [favShapes, persistFavorites],
+  );
+
+  // —— 联网搜索图形：关键词防抖 450ms 后请求后端 ——
+  // 只在「图形库」页签且关键词非空时触发；请求带序号丢弃过期响应，避免快速输入时的竞态覆盖。
+  //
+  // 所有 setState 都发生在防抖回调内（异步），不在 effect 同步路径上 ——
+  // 同步 setState 会引发级联重渲染，且重置逻辑本身也没必要抢在输入的空档执行。
+  const iconReqSeqRef = useRef(0);
+  useEffect(() => {
+    const q = shapeQuery.trim();
+    const seq = ++iconReqSeqRef.current;
+    const active = leftTab === "shapes" && !!q;
+    const t = setTimeout(async () => {
+      if (seq !== iconReqSeqRef.current) return;
+      if (!active) {
+        // 离开图形库页签或清空关键词：收起联网结果（本地图形不受影响）
+        setWebIcons([]);
+        setWebError(null);
+        setWebLoading(false);
+        setWebSearched(false);
+        return;
+      }
+      setWebLoading(true);
+      setWebError(null);
+      try {
+        const icons = await searchIcons(q);
+        if (seq !== iconReqSeqRef.current) return; // 已有更新的请求发出，丢弃本次结果
+        setWebIcons(
+          icons.map((i) => ({
+            prefix: i.prefix,
+            name: i.name,
+            w: i.w,
+            h: i.h,
+            body: sanitizeIconBody(i.body),
+          })).filter((i) => !!i.body),
+        );
+        setWebSearched(true);
+      } catch (e) {
+        if (seq !== iconReqSeqRef.current) return;
+        setWebError(e instanceof Error ? e.message : "联网搜索失败");
+        setWebIcons([]);
+        setWebSearched(true);
+      } finally {
+        if (seq === iconReqSeqRef.current) setWebLoading(false);
+      }
+    }, 450);
+    return () => clearTimeout(t);
+  }, [shapeQuery, leftTab]);
 
   const onConnect = useCallback(
     (c: Connection) => {
@@ -1371,23 +1711,61 @@ export function FlowchartEditor({
             ? { width: 180, height: 120 }
             : shape === "actor"
               ? { width: 120, height: 130 }
-              : isContainer
-                ? { width: 220, height: 140 }
-                : {};
+              : shape === "text"
+                // 文本块默认更宽更矮，贴近一行文字的形态；字号稍大以便直接开始输入
+                ? { width: 140, height: 32, fontSize: 14 }
+                : isContainer
+                  ? { width: 220, height: 140 }
+                  : {};
+    const label =
+      shape === "text"
+        ? "双击编辑文本"
+        : shape === "icon"
+          ? ""
+          : SHAPE_LABEL[shape] || "节点";
     setNodes((nds) => [
       ...nds,
       {
         id,
         type: "shape",
         position: { x: 80 + offset, y: 80 + offset },
-        data: {
-          label: SHAPE_LABEL[shape] || "节点",
-          shape,
-          ...defaultSize,
-        },
+        data: { label, shape, ...defaultSize },
       },
     ]);
   };
+
+  /** 插入一个联网检索来的图标节点（矢量内联，可缩放、可连线） */
+  const addIconNode = useCallback(
+    (icon: IconRef) => {
+      // 二次净化：搜索结果虽已由后端净化，但收藏项可能来自历史 localStorage，
+      // 不能假定其内容始终干净。
+      const safe: IconRef = { ...icon, body: sanitizeIconBody(icon.body) };
+      if (!safe.body) {
+        toast.error("该图标内容无法安全解析，已跳过");
+        return;
+      }
+      pushHistory();
+      const id = genId("n");
+      const offset = (nodesRef.current.length % 5) * 40;
+      setNodes((nds) => [
+        ...nds,
+        {
+          id,
+          type: "shape",
+          position: { x: 80 + offset, y: 80 + offset },
+          data: {
+            // 标签留空：图标节点以图形表意，需要配文字时用「文本」工具另加
+            label: "",
+            shape: "icon" as ShapeKind,
+            icon: safe,
+            width: 64,
+            height: 64,
+          },
+        },
+      ]);
+    },
+    [pushHistory, setNodes, toast],
+  );
 
   const editLabel = (id: string) => {
     const n = nodes.find((x) => x.id === id);
@@ -1574,24 +1952,7 @@ export function FlowchartEditor({
       ? nodesRef.current.filter((n) => onlyIds.includes(n.id))
       : nodesRef.current.filter((n) => n.selected);
     if (sel.length === 0) return;
-    clipboardRef.current = sel.map((n) => {
-      const d = n.data as unknown as FlowData;
-      return {
-        id: n.id,
-        label: d.label,
-        shape: d.shape,
-        parentId: n.parentId,
-        x: n.position.x,
-        y: n.position.y,
-        fill: d.fill,
-        stroke: d.stroke,
-        width: d.width,
-        height: d.height,
-        fontSize: d.fontSize,
-        bold: d.bold,
-        textAlign: d.textAlign,
-      };
-    });
+    clipboardRef.current = sel.map(dataToStored);
   }, []);
 
   const pasteClipboard = useCallback(() => {
@@ -1626,17 +1987,7 @@ export function FlowchartEditor({
         parentId,
         position,
         selected: true,
-        data: {
-          label: n.label,
-          shape: n.shape,
-          fill: n.fill,
-          stroke: n.stroke,
-          width: n.width,
-          height: n.height,
-          fontSize: n.fontSize,
-          bold: n.bold,
-          textAlign: n.textAlign,
-        },
+        data: nodeToData(n),
       };
     });
     // 粘贴后默认选中新节点，取消旧选中
@@ -1831,17 +2182,7 @@ export function FlowchartEditor({
           parentId: n.parentId,
           // 已是子节点（分组内）的保持相对坐标，仅顶层节点参与自动布局，分组整体随之移动
           position: isChild ? { x: orig!.position.x, y: orig!.position.y } : { x: n.x, y: n.y },
-          data: {
-            label: n.label,
-            shape: n.shape,
-            fill: n.fill,
-            stroke: n.stroke,
-            width: n.width,
-            height: n.height,
-            fontSize: n.fontSize,
-            bold: n.bold,
-            textAlign: n.textAlign,
-          },
+          data: nodeToData(n),
         };
       }),
     );
@@ -2171,6 +2512,81 @@ export function FlowchartEditor({
 
   if (!mounted) return <div className="flex-1" />;
 
+  // —— 图形库内的可复用卡片渲染 ——
+  // 抽成局部函数而不是内联：同一个「图形卡片」要在「分类列表」和「我的组件」两处渲染，
+  // 联网图标卡片同样要在「搜索结果」与「我的组件」复用，内联会复制两份、日后必然漂移。
+
+  /** 本地图形卡片：图标 + 名称，右下角收藏星标（hover / 聚焦 / 已收藏时显形） */
+  const renderShapeCard = (s: { kind: ShapeKind; label: string; icon: string }) => {
+    const faved = favShapes.includes(s.kind);
+    return (
+      <div key={`${s.kind}-${s.label}`} className="group relative">
+        <button
+          onClick={() => addNode(s.kind)}
+          className="flex w-full flex-col items-center gap-1 rounded-lg px-1 py-2 text-[10px] text-muted transition-colors hover:bg-hover hover:text-text"
+          title={`添加 ${s.label}`}
+        >
+          <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d={s.icon} />
+          </svg>
+          <span className="leading-none">{s.label}</span>
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleFavShape(s.kind);
+          }}
+          // 已收藏时常显，未收藏时沿用 .reveal-on-hover（触屏常显、键盘聚焦可见）
+          className={`absolute right-0 top-0 grid h-5 w-5 place-items-center rounded-md text-[10px] transition-colors hover:bg-active ${faved ? "text-accent" : "reveal-on-hover text-faint hover:text-accent"}`}
+          title={faved ? `取消收藏 ${s.label}` : `收藏 ${s.label} 到我的组件`}
+          aria-label={faved ? `取消收藏 ${s.label}` : `收藏 ${s.label}`}
+        >
+          {faved ? "★" : "☆"}
+        </button>
+      </div>
+    );
+  };
+
+  /** 联网图标卡片：内联渲染矢量正文（新增节点与卡片预览共用同一份已被净化的 body） */
+  const renderIconCard = (ic: IconRef) => {
+    const key = `${ic.prefix}:${ic.name}`;
+    const faved = favIcons.some((x) => `${x.prefix}:${x.name}` === key);
+    return (
+      <div key={key} className="group relative" title={`${key}（点击插入画布）`}>
+        <button
+          onClick={() => addIconNode(ic)}
+          className="flex w-full flex-col items-center gap-1 rounded-lg px-1 py-2 text-muted transition-colors hover:bg-hover hover:text-text"
+          title={`插入 ${key}`}
+        >
+          <svg width="20" height="20" viewBox={`0 0 ${ic.w} ${ic.h}`} fill="currentColor">
+            {/* body 已经白名单净化（后端 + 前端双重） */}
+            <g dangerouslySetInnerHTML={{ __html: ic.body }} />
+          </svg>
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleFavIcon(ic);
+          }}
+          className={`absolute right-0 top-0 grid h-5 w-5 place-items-center rounded-md text-[10px] transition-colors hover:bg-active ${faved ? "text-accent" : "reveal-on-hover text-faint hover:text-accent"}`}
+          title={faved ? `取消收藏 ${key}` : `收藏 ${key} 到我的组件`}
+          aria-label={faved ? `取消收藏 ${key}` : `收藏 ${key}`}
+        >
+          {faved ? "★" : "☆"}
+        </button>
+      </div>
+    );
+  };
+
+  // 本地图形按关键词过滤：名称命中即可（简单子串，中文标签直接可用）
+  const q = shapeQuery.trim().toLowerCase();
+  const filteredGroups = q
+    ? SHAPE_GROUPS.map((g) => ({
+        ...g,
+        items: g.items.filter((s) => s.label.toLowerCase().includes(q) || s.kind.includes(q)),
+      })).filter((g) => g.items.length > 0)
+    : SHAPE_GROUPS;
+
   return (
     <div className="flex h-[calc(100vh-300px)] min-h-[400px] flex-col rounded-lg border border-line bg-background">
       {/* 工具栏 */}
@@ -2461,46 +2877,155 @@ export function FlowchartEditor({
 
       {/* 主体：左侧栏 + 画布 */}
       <div className="flex min-h-0 flex-1">
-        {/* 左侧侧栏：图形库 / 风格 */}
+        {/* 左侧侧栏：图形库 / 我的组件 / 风格 */}
         {!leftCollapsed && !readOnly && (
         <div className="flex w-44 shrink-0 flex-col border-r border-line bg-background">
           <div className="flex border-b border-line">
-            <button
-              onClick={() => setLeftTab("shapes")}
-              className={`flex-1 border-b-2 py-2.5 text-xs transition-colors ${leftTab === "shapes" ? "border-accent font-medium text-accent" : "border-transparent text-muted hover:text-text"}`}
-            >
-              图形库
-            </button>
-            <button
-              onClick={() => setLeftTab("style")}
-              className={`flex-1 border-b-2 py-2.5 text-xs transition-colors ${leftTab === "style" ? "border-accent font-medium text-accent" : "border-transparent text-muted hover:text-text"}`}
-            >
-              风格
-            </button>
+            {([["shapes", "图形库"], ["mine", "我的组件"], ["style", "风格"]] as const).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setLeftTab(k)}
+                className={`flex-1 border-b-2 py-2.5 text-[11px] transition-colors ${leftTab === k ? "border-accent font-medium text-accent" : "border-transparent text-muted hover:text-text"}`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
+
+          {/* 搜索框：仅图形库页签需要（同时驱动本地过滤与联网搜图） */}
+          {leftTab === "shapes" && (
+            <div className="relative border-b border-line px-2 py-1.5">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-faint">
+                <circle cx="11" cy="11" r="7" />
+                <path d="M20 20l-3.5-3.5" />
+              </svg>
+              <input
+                value={shapeQuery}
+                onChange={(e) => setShapeQuery(e.target.value)}
+                placeholder="搜索图形 / 联网"
+                aria-label="搜索图形（本地图形与联网图标）"
+                className="h-7 w-full rounded-md border border-line bg-background pl-6 pr-6 text-[11px] text-text outline-none transition-colors placeholder:text-faint focus:border-accent"
+              />
+              {shapeQuery && (
+                <button
+                  onClick={() => setShapeQuery("")}
+                  className="absolute right-4 top-1/2 grid h-4 w-4 -translate-y-1/2 place-items-center rounded text-faint transition-colors hover:text-text"
+                  title="清空搜索"
+                  aria-label="清空搜索"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="flex-1 overflow-y-auto p-2">
-            {leftTab === "shapes" ? (
-              SHAPE_GROUPS.map((g) => (
-                <div key={g.cat} className="mb-3 last:mb-0">
-                  <div className="mb-1.5 px-1 text-[10px] font-medium text-faint">{g.cat}</div>
-                  <div className="grid grid-cols-2 gap-1">
-                    {g.items.map((s) => (
+            {leftTab === "shapes" && (
+              <>
+                {/* 本地图形：分类可折叠，命中搜索时自动全部展开 */}
+                {filteredGroups.map((g) => {
+                  const collapsed = !q && collapsedCats.has(g.cat);
+                  return (
+                    <div key={g.cat} className="mb-3 last:mb-0">
                       <button
-                        key={s.kind}
-                        onClick={() => addNode(s.kind)}
-                        className="flex flex-col items-center gap-1 rounded-lg px-1 py-2 text-[10px] text-muted transition-colors hover:bg-hover hover:text-text"
-                        title={`添加 ${s.label}`}
+                        onClick={() =>
+                          setCollapsedCats((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(g.cat)) next.delete(g.cat);
+                            else next.add(g.cat);
+                            return next;
+                          })
+                        }
+                        className="mb-1.5 flex w-full items-center gap-1 px-1 text-[10px] font-medium text-faint transition-colors hover:text-text"
+                        title={collapsed ? `展开「${g.cat}」` : `收起「${g.cat}」`}
+                        aria-expanded={!collapsed}
                       >
-                        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                          <path d={s.icon} />
+                        <svg
+                          width="8"
+                          height="8"
+                          viewBox="0 0 12 12"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          className={`shrink-0 transition-transform ${collapsed ? "-rotate-90" : ""}`}
+                        >
+                          <path d="M2 4l4 4 4-4" />
                         </svg>
-                        <span className="leading-none">{s.label}</span>
+                        {g.cat}
                       </button>
-                    ))}
+                      {!collapsed && (
+                        <div className="grid grid-cols-2 gap-1">{g.items.map(renderShapeCard)}</div>
+                      )}
+                    </div>
+                  );
+                })}
+                {q && filteredGroups.length === 0 && (
+                  <div className="px-1 py-2 text-[10px] text-faint">本地图形无匹配</div>
+                )}
+
+                {/* 联网搜索图形：关键词非空时实时检索 */}
+                {q && (
+                  <div className="mt-3 border-t border-line pt-2.5">
+                    <div className="mb-1.5 flex items-center gap-1 px-1 text-[10px] font-medium text-faint">
+                      联网图形
+                      {webLoading && <span className="text-accent">搜索中…</span>}
+                    </div>
+                    {webLoading && webIcons.length === 0 ? (
+                      /* 骨架屏：避免面板高度塌陷导致下方内容跳动 */
+                      <div className="grid grid-cols-3 gap-1">
+                        {Array.from({ length: 9 }).map((_, i) => (
+                          <div key={i} className="skeleton h-9 rounded-lg" />
+                        ))}
+                      </div>
+                    ) : webError ? (
+                      <div className="px-1 py-1 text-[10px] leading-relaxed text-faint">
+                        {webError}
+                        <button onClick={() => setShapeQuery((v) => v)} className="ml-1 text-accent hover:underline">
+                          重试
+                        </button>
+                      </div>
+                    ) : webIcons.length > 0 ? (
+                      <div className="grid grid-cols-3 gap-1">{webIcons.map(renderIconCard)}</div>
+                    ) : webSearched ? (
+                      <div className="px-1 py-1 text-[10px] text-faint">联网无匹配结果</div>
+                    ) : null}
                   </div>
-                </div>
-              ))
-            ) : (
+                )}
+              </>
+            )}
+
+            {leftTab === "mine" && (
+              <div>
+                {favShapes.length === 0 && favIcons.length === 0 ? (
+                  <div className="px-1 py-2 text-[10px] leading-relaxed text-faint">
+                    暂无收藏。在图形库或联网结果里点 ☆ 收藏，常用图形会集中在这里。
+                  </div>
+                ) : (
+                  <>
+                    {favShapes.length > 0 && (
+                      <>
+                        <div className="mb-1.5 px-1 text-[10px] font-medium text-faint">图形</div>
+                        <div className="grid grid-cols-2 gap-1">
+                          {favShapes.map((kind) => {
+                            const found = ALL_SHAPES.find((s) => s.kind === kind);
+                            return found ? renderShapeCard(found) : null;
+                          })}
+                        </div>
+                      </>
+                    )}
+                    {favIcons.length > 0 && (
+                      <>
+                        <div className="mb-1.5 mt-3 px-1 text-[10px] font-medium text-faint">图标</div>
+                        <div className="grid grid-cols-3 gap-1">{favIcons.map(renderIconCard)}</div>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {leftTab === "style" && (
               <div>
                 <div className="mb-1.5 px-1 text-[10px] font-medium text-faint">主题</div>
                 {THEMES.map((t, i) => (

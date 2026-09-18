@@ -518,6 +518,30 @@ export async function generateDiagram(
   });
 }
 
+/** 联网检索到的单个图标：来源集合 + 名称 + 原始 viewBox 尺寸 + 已净化的 SVG 正文 */
+export interface SearchedIcon {
+  prefix: string;
+  name: string;
+  w: number;
+  h: number;
+  body: string;
+}
+
+/**
+ * 联网搜索图形（图标）。
+ *
+ * 走后端 `/icons/search` 而不是前端直连 Iconify：一屏图标需先检索再逐个取正文，
+ * 前端直连要几十次往返；后端合并成一次并统一做超时降级与安全净化。
+ */
+export async function searchIcons(query: string, limit = 36): Promise<SearchedIcon[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const data = await request<{ icons: SearchedIcon[] }>(
+    `/icons/search?q=${encodeURIComponent(q)}&limit=${limit}`,
+  );
+  return Array.isArray(data?.icons) ? data.icons : [];
+}
+
 export async function duplicateDocument(docId: string): Promise<{ id: string; title: string }> {
   return request(`/documents/${docId}/duplicate`, { method: "POST" });
 }

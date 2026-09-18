@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.core.config import DEFAULT_TOP_K, MEDIA_DIR, DATA_DIR, TEXT_EXTS, ai_config
-from app.services import media, parser, qa, llm, web_search, exporter, auth, settings
+from app.services import media, parser, qa, llm, web_search, exporter, auth, settings, icon_search
 from app.services.store import store
 
 router = APIRouter(prefix="/api/v1")
@@ -2738,3 +2738,33 @@ async def upload_attachment(
         "name": raw_name or f"attachment{ext}",
         "size": len(data),
     }
+
+
+# ---------- 联网图形搜索（图库 → 图标）----------
+
+@router.get("/icons/search")
+def search_icons_endpoint(
+    q: str,
+    limit: int = icon_search.DEFAULT_LIMIT,
+    user: dict = Depends(get_current_user),
+):
+    """按关键词联网检索 SVG 图标（Iconify），返回已净化的路径正文。
+
+    为什么经后端而不是前端直连 Iconify：
+    - 前端直连需先 search 再逐个取路径，一屏 24 个图标 ≈ 25 次往返；这里服务端合并成 1 次。
+    - 服务端出口稳定，可统一设超时（8s）并对单集合失败降级，不把上游抖动透传给用户。
+
+    安全：上游返回的 SVG 正文属**不可信内容**，此处已按白名单净化；
+    前端写入文档前会再净化一次（双重防线），因此本端点只返回净化后的 `body`。
+    """
+    if not icon_search.available():
+        raise HTTPException(status_code=503, detail="图形搜索服务未启用")
+    import httpx
+
+    try:
+        return icon_search.search_icons(q, limit)
+    except httpx.HTTPError:
+        # 上游超时 / 连不上：明确告知是用不了「联网」，本次可直接用本地图形库
+        raise HTTPException(status_code=502, detail="联网图形搜索暂时不可用，请稍后重试")
+    except Exception:
+        raise HTTPException(status_code=502, detail="联网图形搜索失败")
