@@ -254,7 +254,7 @@ export function CommentPanel({
                       <p className="mt-0.5 whitespace-pre-wrap break-words text-[14px] leading-relaxed text-text">
                         {c.content}
                       </p>
-                      <div className="mt-1 flex items-center gap-3 opacity-0 transition-opacity group-hover:opacity-100">
+                      <div className="reveal-on-hover mt-1 flex items-center gap-3">
                         {canComment && (
                           <button
                             onClick={() =>

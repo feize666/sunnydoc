@@ -612,6 +612,61 @@ body {
   padding: 12px;
 }
 
+/* 行内次级操作（列表行 / 卡片上的共享、编辑、删除、复制等）：
+   平时隐去、hover 才浮现，让列表保持干净 —— 但必须解决两个可达性问题：
+
+   ① 触屏设备没有 hover。Tailwind 的 `group-hover:` 变体被编译进
+      `@media (hover: hover)` 内，在触屏上整条规则永不匹配，元素会**永远停在
+      opacity:0**，功能实际不可达。故这里显式用 `@media (hover: none)` 兜底为常显。
+   ② 键盘聚焦时必须显形。这些元素可 Tab 到达，若只靠 `:hover` 显形，
+      连聚焦光圈都会被 `opacity:0` 一起吃掉 —— 用户 Tab 过去只看到一片空白，
+      违反 WCAG 2.4.7「焦点可见」。故对 `:focus-visible` 与父级 `:focus-within` 显形。
+
+   用法：把 `opacity-0 transition-opacity group-hover:opacity-100` 换成
+   `reveal-on-hover`（父级保留 `group`）。文字型操作可用 `reveal-on-hover`
+   的兄弟类 `.reveal-on-hover-text`（显形伴随轻微右移）。 */
+.reveal-on-hover {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.reveal-on-hover-text {
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+/* 触屏 / 无 hover 能力设备：常显，否则操作不可达 */
+@media (hover: none) {
+  .reveal-on-hover,
+  .reveal-on-hover-text {
+    opacity: 1;
+  }
+  .reveal-on-hover-text {
+    transform: none;
+  }
+}
+/* 显形条件：hover 父级 · 自身聚焦 · 父级内有焦点 */
+.group:hover .reveal-on-hover,
+.group:hover .reveal-on-hover-text,
+.reveal-on-hover:focus-visible,
+.reveal-on-hover:focus-within,
+.reveal-on-hover-text:focus-visible,
+.reveal-on-hover-text:focus-within,
+.group:focus-within .reveal-on-hover,
+.group:focus-within .reveal-on-hover-text {
+  opacity: 1;
+}
+.group:hover .reveal-on-hover-text,
+.group:focus-within .reveal-on-hover-text {
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal-on-hover,
+  .reveal-on-hover-text {
+    transition: none;
+    transform: none;
+  }
+}
+
 } /* @layer components 结束 */
 
 /* ==========================================================================
@@ -1072,12 +1127,19 @@ body {
   border-bottom: none;
   transition: opacity 0.15s ease, color 0.15s ease;
 }
+/* 标题锚点：hover 显形 + 触屏常显 + 聚焦可见（同 .reveal-on-hover 的可达性理由） */
 .md-body h1:hover .md-anchor,
 .md-body h2:hover .md-anchor,
 .md-body h3:hover .md-anchor,
-.md-body h4:hover .md-anchor {
+.md-body h4:hover .md-anchor,
+.md-body .md-anchor:focus-visible {
   opacity: 1;
   color: var(--accent);
+}
+@media (hover: none) {
+  .md-body .md-anchor {
+    opacity: 0.6;
+  }
 }
 
 .md-body p {

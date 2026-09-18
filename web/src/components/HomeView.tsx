@@ -412,7 +412,7 @@ export function HomeView({
                                   onShareKb(kb);
                                 }
                               }}
-                              className="grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-hover hover:text-accent group-hover:opacity-100"
+                              className="reveal-on-hover grid h-6 w-6 place-items-center rounded-md text-faint hover:bg-hover hover:text-accent"
                             >
                               <ShareIcon size={13} />
                             </span>
@@ -431,7 +431,7 @@ export function HomeView({
                                   onEditKb(kb);
                                 }
                               }}
-                              className="grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-hover hover:text-accent group-hover:opacity-100"
+                              className="reveal-on-hover grid h-6 w-6 place-items-center rounded-md text-faint hover:bg-hover hover:text-accent"
                             >
                               <EditIcon size={13} />
                             </span>
@@ -450,7 +450,7 @@ export function HomeView({
                                   setPendingDelete(kb);
                                 }
                               }}
-                              className="grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-danger-soft hover:text-danger group-hover:opacity-100"
+                              className="reveal-on-hover grid h-6 w-6 place-items-center rounded-md text-faint hover:bg-danger-soft hover:text-danger"
                             >
                               <TrashIcon size={13} />
                             </span>
@@ -475,7 +475,7 @@ export function HomeView({
                       <span className="text-[12px] text-faint">
                         <span className="font-medium tabular-nums text-muted">{kb.doc_count ?? 0}</span> 篇文档
                       </span>
-                      <span className="flex items-center gap-0.5 text-[12px] font-medium text-accent opacity-0 transition-opacity group-hover:opacity-100">
+                      <span className="reveal-on-hover-text flex items-center gap-0.5 text-[12px] font-medium text-accent">
                         打开
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M9 6l6 6-6 6" />
@@ -553,7 +553,7 @@ export function HomeView({
                         strokeWidth="2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        className="shrink-0 text-faint opacity-0 transition-opacity group-hover:opacity-100"
+                        className="reveal-on-hover shrink-0 text-faint"
                       >
                         <path d="M9 6l6 6-6 6" />
                       </svg>
@@ -617,7 +617,7 @@ export function HomeView({
                         strokeWidth="2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        className="shrink-0 text-faint opacity-0 transition-opacity group-hover:opacity-100"
+                        className="reveal-on-hover shrink-0 text-faint"
                       >
                         <path d="M9 6l6 6-6 6" />
                       </svg>

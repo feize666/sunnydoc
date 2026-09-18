@@ -721,7 +721,7 @@ export function AiPanel({
                       <button
                         onClick={() => requestDelete(s.id)}
                         disabled={loading && s.id === currentId}
-                        className="grid h-6 w-6 place-items-center rounded-md text-faint opacity-0 transition-opacity hover:bg-danger-soft hover:text-danger group-hover:opacity-100 disabled:opacity-0"
+                        className="reveal-on-hover grid h-6 w-6 place-items-center rounded-md text-faint hover:bg-danger-soft hover:text-danger disabled:opacity-0"
                       >
                         <TrashIcon size={12} />
                       </button>
@@ -766,9 +766,7 @@ export function AiPanel({
                     <button
                       onClick={() => copyMessage(i)}
                       className={`flex items-center gap-0.5 rounded px-1 py-0.5 text-[12px] text-faint transition-opacity hover:text-muted ${
-                        copiedIndex === i
-                          ? "text-accent opacity-100"
-                          : "opacity-0 group-hover:opacity-100"
+                        copiedIndex === i ? "text-accent opacity-100" : "reveal-on-hover"
                       }`}
                     >
                       {copiedIndex === i ? <CheckIcon size={11} /> : <CopyIcon size={11} />}

@@ -345,7 +345,35 @@ API 不变：`<Tooltip content="提示" side="top|bottom">触发元素</Tooltip>
 - **不适用本组件**：紧贴正文的一行旁白（文件树节点下的「暂无文件夹」、卡片字段占位
   「暂无描述」、节点备注「暂无备注」），直接用一行 `text-[12px] text-faint` 即可。
 
-### 5.15 加载态 / 骨架屏
+### 5.15 悬停显形的行内操作（`.reveal-on-hover`）
+
+列表行 / 卡片上的次级操作（共享、编辑、删除、复制、行尾箭头）平时隐去、hover 才浮现，
+保持列表干净。**必须用 `.reveal-on-hover`（或文字型 `.reveal-on-hover-text`），
+不要手写 `opacity-0 transition-opacity group-hover:opacity-100`** —— 手写写法有两个可达性缺陷：
+
+| 缺陷 | 后果 |
+| --- | --- |
+| Tailwind 的 `group-hover:` 被编译进 `@media (hover: hover)` | **触屏设备上规则永不匹配**，元素永远停在 `opacity:0`，操作实际不可达 |
+| 只靠 `:hover` 显形，无聚焦兜底 | 元素可 Tab 到达，但**聚焦光圈也被 `opacity:0` 一起吃掉** —— 用户 Tab 过去只看到一片空白，违反 WCAG 2.4.7「焦点可见」 |
+
+`.reveal-on-hover` 一次性覆盖四种显形条件：`@media (hover:none)` 常显、`.group:hover`、
+`:focus-visible` / `:focus-within`、`.group:focus-within`。父级仍需保留 `group` 类。
+
+```tsx
+<li className="group flex items-center gap-1 ...">
+  <span className="... flex-1">标题</span>
+  <button className="reveal-on-hover grid h-6 w-6 place-items-center ...">
+    <TrashIcon size={12} />
+  </button>
+</li>
+```
+
+- 文字型操作（如「打开 →」）用 `.reveal-on-hover-text`，显形时伴随 4px 右移的细微动效。
+- 正文标题锚点 `.md-anchor` 同理：hover 显形之外，另在 `@media (hover:none)` 下以
+  `opacity:.6` 常显，并对 `:focus-visible` 显形。
+- 均受 `prefers-reduced-motion` 兜底（位移与过渡一并关闭）。
+
+### 5.16 加载态 / 骨架屏
 
 替换裸文字「加载中…」，按场景选用：
 
@@ -549,6 +577,20 @@ Tailwind 4 的层级顺序为 `theme < base < components < utilities`。
   的单个元素时，自动把 `content` 注入为其 `aria-label`，并在气泡打开时用 `aria-describedby` 关联。
   **因此被 `<Tooltip>` 包裹的图标按钮无需再写 `aria-label`**；含可见文本的按钮不会被覆盖。
 - 新写图标按钮统一用 `.icon-btn`（32px），不要另造 `grid h-6 w-6` / `h-7 w-7` 尺寸。
+
+#### 焦点必须可见（WCAG 2.4.7）
+
+统一聚焦态由 `globals.css` 的 `:where(...):focus-visible` 提供（蓝色 outline）。
+但**仅靠全局 outline 不够**——它会被下列写法吃掉：
+
+- **`opacity-0` 的元素**：聚焦环与内容一起消失。凡「悬停才显形」的操作必须加聚焦兜底，
+  统一用 `.reveal-on-hover`（见 §5.15）。
+- **`overflow: hidden` 的祖先**：位于容器边缘的控件，其 `outline-offset` 部分可能被裁切。
+  若控件紧贴裁切边界，需改用内描边（`ring-inset`）或给容器留出边距。
+
+> 判定方法：用**真实键盘 Tab** 走一遍（`press Tab`，不要用 `el.focus()` 代替——
+> 后者不触发 `:focus-visible`），逐项读 `getComputedStyle(el).opacity` 与
+> `el.matches(':focus-visible')`，确认「聚焦 → 可见」成立。
 
 #### 模态对话框必须可访问
 
