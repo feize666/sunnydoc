@@ -8,7 +8,7 @@ import { EmptyState } from "./EmptyState";
 import { useResizable } from "@/hooks/useResizable";
 import type { TreeNode, SortBy } from "@/data/docs";
 import type { Folder, SearchResult } from "@/lib/api";
-import { NewNodeMenu, type NodeType } from "./NewNodeMenu";
+import { NewNodeMenu, PORTAL_MENU_ATTR, type NodeType } from "./NewNodeMenu";
 
 function escapeHtml(s: string): string {
   return s
@@ -223,14 +223,22 @@ export function Sidebar({
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-      if (
-        sortMenuRef.current &&
-        !sortMenuRef.current.contains(e.target as Node)
-      ) {
-        setSortMenuOpen(false);
+      const target = e.target as Node;
+      // createPortal 菜单挂在 body 上，DOM 不在 menuRef 子树内，
+      // 不能只靠 contains 判定「点击外部」——否则 mousedown 会先卸载菜单，
+      // mouseup/click 失去目标，菜单项永远点不动。命中 portal 标记时放行。
+      const inPortalMenu =
+        target instanceof Element && !!target.closest(`[${PORTAL_MENU_ATTR}]`);
+      if (!inPortalMenu) {
+        if (menuRef.current && !menuRef.current.contains(target)) {
+          setMenuOpen(false);
+        }
+        if (
+          sortMenuRef.current &&
+          !sortMenuRef.current.contains(target)
+        ) {
+          setSortMenuOpen(false);
+        }
       }
     };
     document.addEventListener("mousedown", onClick);

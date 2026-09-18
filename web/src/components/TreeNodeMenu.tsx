@@ -2,6 +2,7 @@
 
 import { useLayoutEffect, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import { PORTAL_MENU_ATTR } from "./NewNodeMenu";
 
 export interface MenuItem {
   label: string;
@@ -46,7 +47,11 @@ export function TreeNodeMenu({
   return createPortal(
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="anim-fade-in menu-panel fixed z-50 w-44 max-h-[70vh] rounded-xl py-1" style={{ ...(pos ?? {}), overflowY: "auto", overflowX: "hidden" }}>
+      <div
+        {...{ [PORTAL_MENU_ATTR]: "" }}
+        className="anim-fade-in menu-panel fixed z-50 w-44 max-h-[70vh] rounded-xl py-1"
+        style={{ ...(pos ?? {}), overflowY: "auto", overflowX: "hidden" }}
+      >
         {items.map((item, i) => (
           <button
             key={i}

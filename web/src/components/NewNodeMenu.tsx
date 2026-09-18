@@ -3,6 +3,18 @@
 import { useLayoutEffect, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
+/**
+ * portal 到 body 的浮层菜单容器标记。
+ *
+ * 菜单用 createPortal 渲染到 body 后，DOM 上已不在触发按钮的 ref 子树内，
+ * 父级若用 `ref.contains(target)` 判定「点击外部」就会把「点击菜单项」
+ * 误判为外部点击 —— mousedown 阶段先卸载菜单，导致 mouseup/click 失去
+ * 目标、click 事件永不派发，表现为「菜单能弹出但点不动」。
+ * 因此父级的关闭逻辑必须用此标记放行（同 Editor 划词浮层的
+ * `data-annotate-btn` 思路）。
+ */
+export const PORTAL_MENU_ATTR = "data-portal-menu";
+
 export type NodeType =
   | "doc"
   | "folder"
@@ -85,7 +97,11 @@ export function NewNodeMenu({
   if (typeof document === "undefined") return null;
 
   const menu = (
-    <div className="anim-fade-in menu-panel fixed z-50 w-[320px] max-h-[70vh] rounded-xl p-1.5" style={{ ...(pos ?? {}), overflowY: "auto", overflowX: "hidden" }}>
+    <div
+      {...{ [PORTAL_MENU_ATTR]: "" }}
+      className="anim-fade-in menu-panel fixed z-50 w-[320px] max-h-[70vh] rounded-xl p-1.5"
+      style={{ ...(pos ?? {}), overflowY: "auto", overflowX: "hidden" }}
+    >
       <div className="grid grid-cols-2 gap-0.5">
         {TYPES.map((t) => (
           <button
