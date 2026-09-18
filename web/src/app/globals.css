@@ -224,6 +224,11 @@
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --color-danger-hover: var(--danger-hover);
+  /* 实底红：与 accent-solid / accent-solid-hover 成对登记。
+     缺了这两个，Tailwind 不会生成 bg-danger-solid(-hover) 工具类 ——
+     确认框的危险按钮会变成「白字 + 无背景」，在浅色主题下完全隐形。 */
+  --color-danger-solid: var(--danger-solid);
+  --color-danger-solid-hover: var(--danger-solid-hover);
 
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
