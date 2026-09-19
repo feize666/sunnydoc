@@ -786,3 +786,46 @@ readableOnCanvas(hex, theme, target = 3.0): string
 `shape:"text"` 的节点画裸 `<text>`，仅选中时叠加虚线轮廓（`--accent` 描边 + `--accent-soft` 底），
 让它在深色/浅色画布上都能被定位。**不要**套用其他图形那套「11 字符省略号截断」——
 文本块存在的意义就是完整显示多行文字。
+
+### 6.6 文字编辑＝画布内就地编辑（不弹对话框）
+
+双击节点/连线直接在原位浮出输入框，**不再弹模态对话框**。理由是可预期性：
+弹窗把「改哪个对象」的上下文切走了，用户得先读完对话框标题才知道自己在改谁；
+就地编辑则让输入框本身成为「选中态」的可视反馈。
+
+#### 坐标必须实测 DOM，不能手算
+
+节点是 SVG，画布整体带 `transform: scale()`。节点的屏幕位置同时受
+viewport（pan/zoom）、自身尺寸、以及泳道父节点偏移影响——任何在 JS 里手写的
+换算公式，一旦用户缩放就会偏。改为把「正在编辑的 id」交给一个
+`useLayoutEffect`，由它 `querySelector` 命中真实元素后读 `getBoundingClientRect()`，
+再换算成相对容器的坐标。
+
+- 用 **`useLayoutEffect` 而非 `useEffect`**：必须在浏览器绘制前算好位置，
+  否则输入框会先出现在错误位置再跳一下（可见闪动）。
+- 依赖数组要带 `viewport / nodes / edges`，否则缩放、拖拽后输入框不跟随。
+- 编辑未测到矩形前用 `visibility:hidden`，避免在左上角闪一帧。
+- 连线没有盒模型（是 `<path>`），取 `.react-flow__edge-textwrapper` 的包围盒；
+  无标签时退回 `<path>` 本身。
+- 编辑框尺寸设下限（宽 90 / 高 28 屏幕像素）：缩得很小时节点只有几十像素，
+  再贴身就窄到打不出字。故**缩放小于约 0.64 时框会比节点略大，这是刻意的**。
+
+#### 用 Context 广播「谁在编辑」，不要进 `nodeTypes` 依赖
+
+编辑期间要隐藏节点自带的 `<text>`（否则和输入框文字重影）。这个状态通过
+`EditingNodeContext` 下发，节点组件 `useContext` 取用。
+**不能**把它塞进 `nodeTypes` 的 `useMemo` 依赖：`nodeTypes` 一变，React Flow
+会重建节点组件类型并**重新挂载**全部节点，拖拽会当场中断。
+
+#### 编辑期间必须冻结画布交互
+
+`nodesDraggable / elementsSelectable / panOnDrag / zoomOnDoubleClick` 在编辑时全置 `false`。
+否则在输入框里按住拖动选文字，事件穿透到画布会被判成画布平移：输入框跟着漂、选区也断。
+
+#### 键位：Enter 与 Esc 的语义按输入框类型分岔
+
+- 节点文字是多行 `textarea` → **Enter 换行**，提交用 `Cmd/Ctrl+Enter`。
+- 连线文字是单行 `input` → **Enter 直接提交**。
+- 两者 **Esc 一律取消**（丢弃草稿），失焦（`onBlur`）一律提交。
+- 输入框的 `onKeyDown` 必须 `stopPropagation()`：否则画布快捷键会吃掉
+  `Backspace/Delete`（删节点）与方向键。

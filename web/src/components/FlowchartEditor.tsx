@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect, createContext, useContext } from "react";
 import {
   ReactFlow,
   Background,
@@ -827,6 +827,18 @@ function genId(prefix: string): string {
 const NODE_W = 160;
 const NODE_H = 64;
 
+/**
+ * 正在就地编辑的节点 id（null = 无）。
+ *
+ * 为什么用 Context 而不是把状态塞进 nodeTypes：nodeTypes 由 useMemo 以
+ * [themeIndex, colorTheme] 重建，往里加一个每次渲染都变的依赖会让节点类型频繁重建 ——
+ * React Flow 会因此重挂所有节点，正在进行的拖拽会直接中断。
+ * Context 让节点按需订阅「我是不是正在被编辑」，不污染 nodeTypes 的依赖。
+ *
+ * 触发入口仍走 React Flow 已有的 onNodeDoubleClick（见 <ReactFlow>），不重复造轮子。
+ */
+const EditingNodeContext = createContext<string | null>(null);
+
 function shapePath(shape: ShapeKind, w: number, h: number): string {
   switch (shape) {
     case "ellipse":
@@ -959,8 +971,9 @@ function createShapeNode(
   theme: { nodeFill: string; nodeStroke: string },
   colorTheme: "light" | "dark",
 ) {
-  return function ShapeNode({ data, selected }: NodeProps) {
+  return function ShapeNode({ data, selected, id }: NodeProps) {
     const d = data as unknown as FlowData;
+    const editing = useContext(EditingNodeContext) === id;
     const w = d.width ?? NODE_W;
     const h = d.height ?? NODE_H;
     const isContainerShape = d.shape === "container" || d.shape === "group" || d.shape === "lane";
@@ -1033,6 +1046,7 @@ function createShapeNode(
               fontSize={fontSize}
               fontWeight={fontWeight}
               fill="var(--text)"
+              visibility={editing ? "hidden" : undefined}
             >
               {d.label}
             </text>
@@ -1070,6 +1084,8 @@ function createShapeNode(
             fontSize={fs}
             fill="var(--text)"
             style={{ userSelect: "none" }}
+            // 就地编辑时隐藏原文字，避免与浮层输入框重影
+            visibility={editing ? "hidden" : undefined}
           >
             {ln}
           </text>
@@ -1085,7 +1101,7 @@ function createShapeNode(
           />
           <svg width={w} height={h} className="overflow-visible">
             <path d={shapePath(d.shape, w, h)} fill={fill} stroke={stroke} strokeWidth={strokeW} />
-            <text x={w / 2} y={colH / 2} textAnchor="middle" dominantBaseline="central" fontSize={fontSize} fontWeight={700} fill="var(--text)" style={{ userSelect: "none" }}>
+            <text x={w / 2} y={colH / 2} textAnchor="middle" dominantBaseline="central" fontSize={fontSize} fontWeight={700} fill="var(--text)" style={{ userSelect: "none" }} visibility={editing ? "hidden" : undefined}>
               {title}
             </text>
             {hasBody1 && <line x1={0} y1={colH} x2={w} y2={colH} stroke={stroke} strokeWidth={1} />}
@@ -1171,6 +1187,8 @@ function createShapeNode(
               fontWeight={fontWeight}
               fill="var(--text)"
               style={{ userSelect: "none" }}
+              // 就地编辑时隐藏原文字，避免与浮层输入框重影
+              visibility={editing ? "hidden" : undefined}
             >
               {lines.map((ln, i) => (
                 <tspan key={i} x={tx} y={tStartY + i * tLineH}>
@@ -1255,6 +1273,8 @@ function createShapeNode(
             fontWeight={fontWeight}
             fill="var(--text)"
             style={{ userSelect: "none" }}
+            // 就地编辑时隐藏原文字，避免与浮层输入框重影
+            visibility={editing ? "hidden" : undefined}
           >
             {displayLines.map((ln, i) => (
               <tspan key={i} x={tx} y={startY + i * lineH}>
@@ -1363,8 +1383,20 @@ export function FlowchartEditor({
   const [themeIndex, setThemeIndex] = useState(0);
   // 网格吸附开关
   const [snap, setSnap] = useState(false);
-  // 自定义编辑对话框（替代 window.prompt，支持多行、样式统一）
-  const [editTarget, setEditTarget] = useState<{ type: "node" | "edge"; id: string; draft: string; cur: string } | null>(null);
+  // 就地编辑（替代弹窗）：直接在原位浮出输入框，所见即所得
+  const [inlineEdit, setInlineEdit] = useState<{
+    type: "node" | "edge";
+    id: string;
+    draft: string;
+    cur: string;
+  } | null>(null);
+  // 就地编辑框相对画布容器的屏幕矩形（由 useLayoutEffect 实测 DOM 得到）
+  const [editorRect, setEditorRect] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
   // 快捷键提示面板开关
   const [helpOpen, setHelpOpen] = useState(false);
   // 左侧侧栏 tab：图形库 / 我的组件 / 风格
@@ -1767,23 +1799,30 @@ export function FlowchartEditor({
     [pushHistory, setNodes, toast],
   );
 
+  /**
+   * 进入就地编辑。不再弹对话框 —— 直接在节点/连线的原位置浮出一个输入框。
+   *
+   * 坐标不在这里算：节点是 SVG + 缩放画布，位置随 pan/zoom/父节点（泳道）变化，
+   * 任何在 React 侧手算的公式都会在缩放后偏掉。改为把「正在编辑的 id」交给
+   * useLayoutEffect，由它实测真实 DOM 的 boundingRect（见 editorRect 那一段）。
+   */
   const editLabel = (id: string) => {
     const n = nodes.find((x) => x.id === id);
     if (!n) return;
     const cur = (n.data as unknown as FlowData).label;
-    setEditTarget({ type: "node", id, draft: cur, cur });
+    setInlineEdit({ type: "node", id, draft: cur, cur });
   };
 
   const editEdgeLabel = (id: string) => {
     const e = edges.find((x) => x.id === id);
     if (!e) return;
     const cur = typeof e.label === "string" ? e.label : "";
-    setEditTarget({ type: "edge", id, draft: cur, cur });
+    setInlineEdit({ type: "edge", id, draft: cur, cur });
   };
 
   const commitEdit = () => {
-    if (!editTarget) return;
-    const { type, id, draft, cur } = editTarget;
+    if (!inlineEdit) return;
+    const { type, id, draft, cur } = inlineEdit;
     pushHistory();
     if (type === "node") {
       const val = draft || cur; // 空内容保留原文字（与原 prompt 行为一致）
@@ -1791,10 +1830,49 @@ export function FlowchartEditor({
     } else {
       setEdges((eds) => eds.map((x) => (x.id === id ? { ...x, label: draft } : x)));
     }
-    setEditTarget(null);
+    setInlineEdit(null);
   };
 
-  const closeEdit = () => setEditTarget(null);
+  const closeEdit = () => setInlineEdit(null);
+
+  /**
+   * 实测就地编辑框该出现在哪里。
+   *
+   * 之所以不手算坐标：画布是 SVG + transform 缩放的，节点的屏幕位置同时受
+   * viewport（pan/zoom）、自身尺寸、泳道父节点偏移影响；任何静态公式一旦用户缩放
+   * 就会偏。读取真实 DOM 的 boundingRect 是唯一在任意 zoom 下都正确的方式。
+   *
+   * 用 useLayoutEffect 而非 useEffect：必须在浏览器绘制前算好位置，
+   * 否则输入框会先出现在错误位置再跳一下（可见的闪动）。
+   */
+  useLayoutEffect(() => {
+    if (!inlineEdit) return;
+    const host = containerRef.current;
+    if (!host) return;
+    const selector =
+      inlineEdit.type === "node"
+        ? `.react-flow__node[data-id="${CSS.escape(inlineEdit.id)}"]`
+        : `.react-flow__edge[data-id="${CSS.escape(inlineEdit.id)}"]`;
+    // 连线没有盒子（是 path），取其标签的包围盒；无标签时退回找 path
+    const el =
+      inlineEdit.type === "edge"
+        ? (host.querySelector(`${selector} .react-flow__edge-textwrapper`) ??
+           host.querySelector(selector))
+        : host.querySelector(selector);
+    if (!el) return;
+    const r = (el as Element).getBoundingClientRect();
+    const hostRect = host.getBoundingClientRect();
+    setEditorRect({
+      left: r.left - hostRect.left,
+      top: r.top - hostRect.top,
+      width: r.width,
+      height: r.height,
+    });
+    // 节点尺寸变化 / 缩放 / 平移都要重算，否则输入框会与节点错位
+  }, [inlineEdit, viewport, nodes, edges]);
+
+  // 就地编辑期间禁用画布拖拽与缩放：否则在输入框里拖选文字会连带拖动整个画布
+  const editing = !!inlineEdit;
 
   const deleteSelected = (onlyNodeIds?: string[], onlyEdgeIds?: string[]) => {
     const sel = onlyNodeIds ? nodes.filter((n) => onlyNodeIds.includes(n.id)) : nodes.filter((n) => n.selected);
@@ -2809,72 +2887,6 @@ export function FlowchartEditor({
         </div>
       )}
 
-      {/* 自定义文字编辑对话框（替代 window.prompt） */}
-      {editTarget && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
-          onClick={closeEdit}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.preventDefault();
-              closeEdit();
-            }
-          }}
-        >
-          <div
-            className="w-[420px] max-w-[92vw] rounded-xl border border-line bg-background p-4 shadow-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-2 text-[14px] font-semibold text-text">
-              {editTarget.type === "node" ? "编辑节点文字" : "编辑连线文字"}
-            </div>
-            {editTarget.type === "node" ? (
-              <textarea
-                autoFocus
-                value={editTarget.draft}
-                onChange={(e) => setEditTarget({ ...editTarget, draft: e.target.value })}
-                rows={3}
-                placeholder="支持多行，用换行分隔"
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    e.preventDefault();
-                    closeEdit();
-                  } else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                    e.preventDefault();
-                    commitEdit();
-                  }
-                }}
-                className="textarea textarea-sm mb-3 resize-none"
-              />
-            ) : (
-              <input
-                autoFocus
-                value={editTarget.draft}
-                onChange={(e) => setEditTarget({ ...editTarget, draft: e.target.value })}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    e.preventDefault();
-                    closeEdit();
-                  } else if (e.key === "Enter") {
-                    e.preventDefault();
-                    commitEdit();
-                  }
-                }}
-                className="input mb-3"
-              />
-            )}
-            <div className="flex justify-end gap-2">
-              <button onClick={closeEdit} className="rounded-md px-3 py-1.5 text-[13px] text-muted hover:bg-hover">
-                取消
-              </button>
-              <button onClick={commitEdit} className="rounded-md bg-accent-solid px-3 py-1.5 text-[13px] font-medium text-white">
-                确定
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 主体：左侧栏 + 画布 */}
       <div className="flex min-h-0 flex-1">
         {/* 左侧侧栏：图形库 / 我的组件 / 风格 */}
@@ -3082,6 +3094,8 @@ export function FlowchartEditor({
             </marker>
           </defs>
         </svg>
+        {/* 就地编辑时把「正在编辑的节点 id」广播下去，让该节点隐藏自己的文字 */}
+        <EditingNodeContext.Provider value={inlineEdit?.type === "node" ? inlineEdit.id : null}>
         <ReactFlow
           ref={(r) => {
             rfRef.current = r as unknown as { zoomIn: () => void; zoomOut: () => void; fitView: () => void } | null;
@@ -3211,6 +3225,14 @@ export function FlowchartEditor({
           defaultEdgeOptions={defaultEdgeOptions}
           deleteKeyCode={null}
           disableKeyboardA11y
+          /*
+            就地编辑期间冻结拖拽/框选：在输入框里按住拖动文字，若事件穿透到画布
+            会被判成画布平移，输入框跟着漂走、选区也断了。
+          */
+          nodesDraggable={!editing}
+          elementsSelectable={!editing}
+          panOnDrag={!editing}
+          zoomOnDoubleClick={!editing}
           snapToGrid={snap}
           snapGrid={[15, 15] as [number, number]}
           fitView
@@ -3222,6 +3244,84 @@ export function FlowchartEditor({
           <Controls />
           <MiniMap pannable zoomable className="!bg-background" />
         </ReactFlow>
+        </EditingNodeContext.Provider>
+
+        {/*
+          就地编辑浮层：直接盖在节点/连线的原位置上，不再弹对话框。
+          定位靠 editorRect（useLayoutEffect 实测 DOM 得到），因此在任意 zoom / pan
+          下都与目标对齐；宽度跟随目标实际尺寸，并设下限避免小节点上输入框过窄。
+        */}
+        {inlineEdit && (
+          <div
+            className="absolute z-30"
+            style={{
+              left: editorRect?.left ?? 0,
+              top: editorRect?.top ?? 0,
+              width: Math.max(editorRect?.width ?? 0, 90),
+              height: inlineEdit.type === "node" ? Math.max(editorRect?.height ?? 0, 28) : "auto",
+              // 未测到矩形前不显示，避免在左上角闪一下
+              visibility: editorRect ? "visible" : "hidden",
+            }}
+          >
+            {inlineEdit.type === "node" ? (
+              /*
+                节点文字：用 textarea 以支持多行（与原对话框一致）。
+                底色用 --background 是为了在节点填充色上盖住旧文字后仍可读；
+                描边用 accent 表明「正在编辑」。
+              */
+              <textarea
+                autoFocus
+                value={inlineEdit.draft}
+                onChange={(e) => setInlineEdit({ ...inlineEdit, draft: e.target.value })}
+                onFocus={(e) => e.currentTarget.select()}
+                onKeyDown={(e) => {
+                  // 阻止冒泡：否则画布快捷键会吃掉 Backspace/Delete（删除节点）与方向键
+                  e.stopPropagation();
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    closeEdit();
+                  } else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                    // 多行输入里 Enter 该换行，提交改用 Cmd/Ctrl+Enter
+                    e.preventDefault();
+                    commitEdit();
+                  }
+                }}
+                onBlur={commitEdit}
+                spellCheck={false}
+                placeholder="输入文字（Enter 换行，Esc 取消）"
+                className="h-full w-full resize-none rounded-md border border-accent bg-background px-2 py-1 text-text outline-none"
+                style={{
+                  fontSize: (() => {
+                    const n = nodes.find((x) => x.id === inlineEdit.id);
+                    return (n?.data as unknown as FlowData)?.fontSize ?? 13;
+                  })(),
+                }}
+              />
+            ) : (
+              /* 连线文字：单行即可，Enter 直接提交 */
+              <input
+                autoFocus
+                value={inlineEdit.draft}
+                onChange={(e) => setInlineEdit({ ...inlineEdit, draft: e.target.value })}
+                onFocus={(e) => e.currentTarget.select()}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    closeEdit();
+                  } else if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitEdit();
+                  }
+                }}
+                onBlur={commitEdit}
+                spellCheck={false}
+                placeholder="连线文字"
+                className="w-full rounded-md border border-accent bg-background px-2 py-1 text-[12px] text-text outline-none"
+              />
+            )}
+          </div>
+        )}
         {/* 拖拽对齐辅助线（红色参考线，世界坐标换算成屏幕坐标） */}
         {guides.x !== null && (
           <div
