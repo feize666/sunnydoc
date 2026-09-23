@@ -41,6 +41,7 @@ import {
   getDocument,
   deleteDocument,
   deleteFolder,
+  batchDeleteDocuments,
   moveDocument,
   createDocument,
   createFolder,
@@ -626,6 +627,35 @@ export default function Home() {
     [refreshList],
   );
 
+  // 批量删除（多选）：走一次请求，后端逐个校验权限并跳过无权限项
+  const handleDeleteSelected = useCallback(
+    async (docIds: string[], folderIds: string[]): Promise<number> => {
+      try {
+        const res = await batchDeleteDocuments({ doc_ids: docIds, folder_ids: folderIds });
+        // 关掉已被删除文档的编辑器，避免停留在已删内容上
+        await Promise.all(docIds.map((id) => closeDoc(id)));
+        setDocs((prev) => {
+          const next = { ...prev };
+          for (const id of docIds) delete next[id];
+          return next;
+        });
+        refreshList();
+        refreshRecent();
+
+        if (res.skipped.length > 0) {
+          toast.error(`已删除 ${res.count} 项，${res.skipped.length} 项被跳过（无权限或不存在）`);
+        } else {
+          toast.success(`已删除 ${res.count} 项`);
+        }
+        return res.count;
+      } catch (e) {
+        toast.error(`批量删除失败：${e instanceof Error ? e.message : "未知错误"}`);
+        return 0;
+      }
+    },
+    [closeDoc, refreshList, refreshRecent, toast],
+  );
+
   // 移动文档到文件夹
   const handleMoveDoc = useCallback(
     async (docId: string, folderId: string | null, sortOrder?: number | null) => {
@@ -1024,6 +1054,7 @@ export default function Home() {
     onRefresh: refreshList,
     onDeleteDoc: handleDelete,
     onDeleteFolder: handleDeleteFolder,
+    onDeleteSelected: handleDeleteSelected,
     onRenameFolder: handleRenameFolder,
     onMoveDoc: handleMoveDoc,
     onMoveFolder: handleMoveFolder,

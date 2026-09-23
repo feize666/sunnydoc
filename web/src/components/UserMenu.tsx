@@ -41,13 +41,13 @@ export function UserMenu({
       <button
         onClick={() => setOpen((v) => !v)}
         className={`flex items-center rounded-full border border-line bg-surface transition-colors hover:border-accent/40 hover:bg-hover ${
-          compact ? "gap-1.5 py-0.5 pl-0.5 pr-2" : "gap-2.5 py-1 pl-1.5 pr-2.5"
+          compact ? "h-8 gap-1.5 pl-0.5 pr-2" : "h-10 gap-2.5 pl-1 pr-2.5"
         }`}
         title={name}
       >
         <span
           className={`avatar-ring grid place-items-center rounded-full font-semibold ${
-            compact ? "h-6 w-6 text-[12px]" : "h-9 w-9 text-[16px]"
+            compact ? "h-6 w-6 text-[11px]" : "h-8 w-8 text-[14px]"
           }`}
         >
           {user.avatar?.trim() || name.slice(0, 1)}
@@ -55,16 +55,16 @@ export function UserMenu({
         {!compact ? (
           <span className="flex flex-col items-start leading-tight">
             <span className="flex items-center gap-1.5">
-              <span className="max-w-[110px] truncate text-[14px] font-semibold text-text">
+              <span className="max-w-[110px] truncate text-[13px] font-semibold text-text">
                 {name}
               </span>
               {isAdmin && (
-                <span className="rounded bg-accent-soft px-1 py-px text-[9px] font-medium leading-none text-accent">
+                <span className="rounded bg-accent-soft px-1 py-px text-[11px] font-medium leading-none text-accent">
                   管理员
                 </span>
               )}
             </span>
-            <span className="text-[10px] text-faint">@{user.username}</span>
+            <span className="text-[11px] text-faint">@{user.username}</span>
           </span>
         ) : (
           <span className="max-w-[90px] truncate text-xs font-medium text-text">{name}</span>
@@ -95,7 +95,7 @@ export function UserMenu({
               setOpen(false);
               onOpenProfile();
             }}
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[14px] text-text hover:bg-hover"
+            className="menu-item"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted">
               <circle cx="12" cy="8" r="4" />
@@ -108,7 +108,7 @@ export function UserMenu({
               setOpen(false);
               onOpenSettings();
             }}
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[14px] text-text hover:bg-hover"
+            className="menu-item"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted">
               <circle cx="12" cy="12" r="3" />
@@ -122,7 +122,7 @@ export function UserMenu({
                 setOpen(false);
                 onOpenUsers();
               }}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[14px] text-text hover:bg-hover"
+              className="menu-item"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted">
                 <path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
@@ -138,7 +138,7 @@ export function UserMenu({
               setOpen(false);
               onLogout();
             }}
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[14px] text-danger hover:bg-danger-soft"
+            className="menu-item text-danger hover:bg-danger-soft"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />

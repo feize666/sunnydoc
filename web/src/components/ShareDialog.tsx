@@ -171,7 +171,7 @@ export function ShareDialog({
                           </span>
                           <div className="min-w-0 leading-tight">
                             <div className="truncate text-[14px] text-text">{u.nickname || u.username}</div>
-                            <div className="truncate text-[10px] text-faint">@{u.username}</div>
+                            <div className="truncate text-[11px] text-faint">@{u.username}</div>
                           </div>
                         </div>
                         {already ? (
@@ -241,7 +241,7 @@ export function ShareDialog({
                       <div className="min-w-0 leading-tight">
                         <div className="truncate text-[14px] text-text">{s.nickname || s.username}</div>
                         {s.username && s.username !== s.nickname && (
-                          <div className="truncate text-[10px] text-faint">@{s.username}</div>
+                          <div className="truncate text-[11px] text-faint">@{s.username}</div>
                         )}
                       </div>
                     </div>

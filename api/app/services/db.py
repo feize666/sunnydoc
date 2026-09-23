@@ -313,7 +313,13 @@ def available() -> bool:
             cur.execute("SELECT 1")
         init()
         _available = True
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
+        # 不要静默降级：DATABASE_URL 已配置却连不上，属于「以为在用库、实际在用文件」，
+        # 必须留下痕迹。否则会悄悄退回 JSON 全量重写（写放大数个数量级，
+        # 表现为「删除/保存要等几十秒」），极难排查。
+        print(
+            f"[存储] ⚠️ 已配置 DATABASE_URL 但连接失败，降级为 JSON 文件存储：{exc!r}"
+        )
         _available = False
         _close()
     return _available

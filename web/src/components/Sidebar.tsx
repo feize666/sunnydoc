@@ -120,6 +120,7 @@ export function Sidebar({
   onRefresh,
   onDeleteDoc,
   onDeleteFolder,
+  onDeleteSelected,
   onRenameFolder,
   onMoveDoc,
   onMoveFolder,
@@ -161,6 +162,8 @@ export function Sidebar({
   onRefresh?: () => void;
   onDeleteDoc?: (key: string) => void;
   onDeleteFolder?: (id: string) => void;
+  /** 批量删除选中项；返回实际删除数量。 */
+  onDeleteSelected?: (docIds: string[], folderIds: string[]) => Promise<number>;
   onRenameFolder?: (folderId: string, name: string) => Promise<void> | void;
   onMoveDoc?: (docId: string, folderId: string | null, sortOrder?: number | null) => void;
   onMoveFolder?: (folderId: string, parentId: string | null, sortOrder?: number | null) => void;
@@ -516,7 +519,7 @@ export function Sidebar({
                   <button
                     key={h}
                     onClick={() => onSearchChange(h)}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[14px] text-text hover:bg-hover"
+                    className="menu-item"
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-faint">
                       <circle cx="11" cy="11" r="7" />
@@ -560,7 +563,7 @@ export function Sidebar({
                       onSortChange(o.value);
                       setSortMenuOpen(false);
                     }}
-                    className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-[13px] hover:bg-hover ${
+                    className={`menu-item justify-between ${
                       sortBy === o.value
                         ? "text-accent"
                         : "text-muted hover:text-text"
@@ -684,7 +687,7 @@ export function Sidebar({
                             e.stopPropagation();
                             onSearchTagChange(t);
                           }}
-                          className="rounded bg-surface-2 px-1.5 py-px text-[10px] text-muted hover:bg-accent-soft hover:text-accent"
+                          className="rounded bg-surface-2 px-1.5 py-px text-[11px] text-muted hover:bg-accent-soft hover:text-accent"
                         >
                           #{t}
                         </span>
@@ -730,6 +733,7 @@ export function Sidebar({
               onMoveFolder={readOnly ? undefined : onMoveFolder}
               onMoveToKb={readOnly ? undefined : onMoveToKb}
               onImportToFolder={readOnly ? undefined : onImportToFolder}
+              onDeleteSelected={readOnly ? undefined : onDeleteSelected}
             />
           </>
         )}

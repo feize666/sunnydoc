@@ -157,6 +157,9 @@ Tailwind 映射：`shadow-sm` / `shadow-md` / `shadow-lg` / `shadow-glow`。
 - 字体栈：`--font-sans`（系统中文优先）、`--font-mono`（代码）。
 - 字号层级（约定，非强制枚举）：
   - 页面标题 `30px / 32px`，正文 `15px`，正文小 `13px`，辅助 `12px`，弱提示 `11px`。
+- **可读性下限 `11px`**：正文与徽标文字一律 ≥`11px`。仅**数字角标**（未读计数 `99+`）
+  与 `kbd` 键位提示可到 `10px`，因为它们是单/双字符的辅助符号而非阅读内容。
+  `9px` 已全部清除 —— 中文徽标（「管理员」「即将上线」）在 9px 下笔画粘连，实测不可读。
 - 字重：常规 `400`，中等 `500~600`，加粗 `700`，重标题 `800`（H1）。
 - 间距：优先 Tailwind 内置 `0.5 / 1 / 1.5 / 2 / 2.5 / 3 / 4 / 5 / 6 / 8`，容器内边距多用 `px-4 py-3`（卡片）与 `p-4`（对话框内容）。
 
@@ -244,6 +247,23 @@ Tailwind 映射：`shadow-sm` / `shadow-md` / `shadow-lg` / `shadow-glow`。
 **菜单内的行用 `.menu-item`**（整行 flex + `padding 6px 12px` + 13px + hover `--hover`），
 不要用 `.btn` / `.btn-ghost` —— 按钮样式用于触发点，菜单行是列表项，两者不能混用。
 
+> **`.menu-item` 的实测规格**：31.5px 高（`6px` 上下内边距 + `13px` 字 / `19.5px` 行高）、
+> `--radius-md` 圆角、`gap: 10px`。**不要在调用点写 `px-3 py-2 text-[14px]` 重新定义** ——
+> 那会得到 37px 高 / 14px 字 / 无圆角，与编辑器菜单产生可肉眼分辨的不一致（`UserMenu`、
+> `TreeNodeMenu` 曾是此写法，已收敛）。行内需要危险态时追加 `text-danger hover:bg-danger-soft`；
+> 需要主色态追加 `text-accent`。
+
+> **若按菜单行数估算浮层高度**（如 `TreeNodeMenu` 的底部翻转判断），请用 **每行 32px**、
+> 面板自身再加 8px（`.menu-panel` 的 `padding: 4px`）。一旦 `.menu-item` 规格变化，
+> 这些估算常数必须同步，否则菜单在视口底部会翻转到错误位置。
+
+> **画布编辑器的浮层菜单不例外**：`FlowchartEditor` 的右键菜单与导出下拉、
+> `MindMapEditor` 的导出下拉同样是 `.menu-panel` 浮层，必须走 `.menu-item`。
+> 曾用文件内常量 `CTX_ITEM`（`px-3 py-1.5 text-xs`）自建一套，实测算 **28px / 12px**，
+> 与编辑器菜单肉眼可辨；同一个「导出下拉」在 Flowchart（28px）与 MindMap（31.5px）
+> 里因此出现两种行高。§5.12 的画布豁免只针对**工具栏的 26px 高度**（那是画布内嵌 UI），
+> **不适用于菜单行**——菜单是浮层，与工具栏是两类东西，勿以「画布内」为由另立规格。
+
 需要承载表单的浮层（编辑器「插入链接」等弹窗）用 **`.popover-panel`**：与 `.menu-panel` 同为浮层，
 区别是 `--surface` 底 + `--shadow-lg` + 内置 12px 内边距。
 
@@ -305,7 +325,10 @@ API 不变：`<Tooltip content="提示" side="top|bottom">触发元素</Tooltip>
 | 24px | （局部手写 `h-6 w-6`） | 紧贴正文的微操作（气泡内复制、列表项删除） |
 
 - **`.tool-btn`**：工具栏图标按钮，32px + `min-width:32px`（可含图标、文字或图标+小箭头），
-  hover `--hover`；选中态追加 **`.tool-btn-on`**（`--active` 底 + `--accent` 文字）。
+  hover `--hover`；选中态追加 **`.tool-btn-on`**（底与文字见下条，**不是** `--active`）。
+- **`.tool-btn-on`**：选中态底用 **`--accent-soft`** + `--accent` 文字。
+  **不要改用 `--active`** —— `--active` 偏深，`--accent` 文字压上去只有 3.95（选中态里含
+  B / I / U 等字母按钮，不能按图标 3.0 豁免），详见 §6.3「选中态底色」。
 - **`.icon-btn`**：32px 正方形（`display:grid` + `place-items:center`），用于纯图标按钮；
   与 `.tool-btn-on` 可组合表示选中。
 - **`.btn-ghost`**：28px、无底色、hover 才浮现。需要主色/危险态时在 `className` 上追加

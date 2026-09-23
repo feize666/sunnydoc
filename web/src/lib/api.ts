@@ -381,6 +381,27 @@ export async function deleteDocument(id: string): Promise<void> {
   await request(`/documents/${id}`, { method: "DELETE" });
 }
 
+export type BatchDeleteResult = {
+  deleted: string[];
+  skipped: { id: string; reason: string }[];
+  count: number;
+};
+
+/** 批量软删除文档 / 文件夹（进回收站）。无权限或不存在的项会被跳过而非整批失败。 */
+export async function batchDeleteDocuments(payload: {
+  doc_ids?: string[];
+  folder_ids?: string[];
+}): Promise<BatchDeleteResult> {
+  return request<BatchDeleteResult>("/documents/batch-delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      doc_ids: payload.doc_ids ?? [],
+      folder_ids: payload.folder_ids ?? [],
+    }),
+  });
+}
+
 // —— 收藏 / 分享 ——
 
 export async function addFavorite(docId: string): Promise<void> {

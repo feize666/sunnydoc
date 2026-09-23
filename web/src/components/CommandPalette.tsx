@@ -173,7 +173,7 @@ export function CommandPalette({
             items.map((item, i) => {
               if (item.kind === "header") {
                 return (
-                  <div key={item.key} className="px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-faint">
+                  <div key={item.key} className="px-2.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-faint">
                     {item.label}
                   </div>
                 );
@@ -222,7 +222,7 @@ export function CommandPalette({
             })
           )}
         </div>
-        <div className="flex items-center gap-3 border-t border-line bg-surface px-4 py-1.5 text-[10px] text-faint">
+        <div className="flex items-center gap-3 border-t border-line bg-surface px-4 py-1.5 text-[11px] text-faint">
           <span>↑↓ 选择</span>
           <span>Enter 执行 / 打开</span>
           <span>Esc 关闭</span>

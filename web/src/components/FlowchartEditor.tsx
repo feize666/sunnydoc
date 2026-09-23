@@ -590,8 +590,11 @@ const SHORTCUTS: { group: string; items: { key: string; desc: string }[] }[] = [
 ];
 
 // 右键菜单项样式（复用 menu-panel 面板）
-const CTX_ITEM = "flex w-full items-center rounded-md px-3 py-1.5 text-left text-xs text-text transition-colors hover:bg-hover";
-const CTX_ITEM_DANGER = "flex w-full items-center rounded-md px-3 py-1.5 text-left text-xs text-danger transition-colors hover:bg-danger-soft";
+// 行规格一律走全局 .menu-item（31.5px / 13px / 圆角 8px），不要在此重声明 ——
+// 曾写成 `px-3 py-1.5 text-xs` 得到 28px / 12px，与编辑器菜单肉眼可辨，
+// 且同一个「导出下拉」在 Flowchart 与 MindMap 里因此出现两种行高。
+const CTX_ITEM = "menu-item";
+const CTX_ITEM_DANGER = "menu-item text-danger hover:bg-danger-soft";
 const CTX_SEP = "my-1 h-px bg-line";
 
 /**
@@ -2601,7 +2604,7 @@ export function FlowchartEditor({
       <div key={`${s.kind}-${s.label}`} className="group relative">
         <button
           onClick={() => addNode(s.kind)}
-          className="flex w-full flex-col items-center gap-1 rounded-lg px-1 py-2 text-[10px] text-muted transition-colors hover:bg-hover hover:text-text"
+          className="flex w-full flex-col items-center gap-1 rounded-lg px-1 py-2 text-[11px] text-muted transition-colors hover:bg-hover hover:text-text"
           title={`添加 ${s.label}`}
         >
           <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
@@ -2779,7 +2782,7 @@ export function FlowchartEditor({
                   <div className="mb-1.5 px-1 text-[11px] font-medium text-text">快捷键</div>
                   {SHORTCUTS.map((g) => (
                     <div key={g.group} className="mb-2 last:mb-0">
-                      <div className="mb-1 px-1 text-[10px] font-medium text-faint">{g.group}</div>
+                      <div className="mb-1 px-1 text-[11px] font-medium text-faint">{g.group}</div>
                       <ul className="flex flex-col gap-0.5 text-xs text-muted">
                         {g.items.map((s) => (
                           <li key={s.key} className="flex items-center justify-between gap-2 rounded-md px-1.5 py-1">
@@ -2814,19 +2817,19 @@ export function FlowchartEditor({
                 <div className="menu-panel absolute right-0 top-full z-40 mt-1 w-36 p-1.5">
                   <button
                     onClick={() => { setExportOpen(false); exportPng(); }}
-                    className="flex w-full items-center rounded-md px-2.5 py-1.5 text-xs text-text transition-colors hover:bg-hover"
+                    className="menu-item"
                   >
                     导出 PNG
                   </button>
                   <button
                     onClick={() => { setExportOpen(false); exportSvg(); }}
-                    className="flex w-full items-center rounded-md px-2.5 py-1.5 text-xs text-text transition-colors hover:bg-hover"
+                    className="menu-item"
                   >
                     导出 SVG
                   </button>
                   <button
                     onClick={() => { setExportOpen(false); exportPdf(); }}
-                    className="flex w-full items-center rounded-md px-2.5 py-1.5 text-xs text-text transition-colors hover:bg-hover"
+                    className="menu-item"
                   >
                     导出 PDF
                   </button>
@@ -2948,7 +2951,7 @@ export function FlowchartEditor({
                             return next;
                           })
                         }
-                        className="mb-1.5 flex w-full items-center gap-1 px-1 text-[10px] font-medium text-faint transition-colors hover:text-text"
+                        className="mb-1.5 flex w-full items-center gap-1 px-1 text-[11px] font-medium text-faint transition-colors hover:text-text"
                         title={collapsed ? `展开「${g.cat}」` : `收起「${g.cat}」`}
                         aria-expanded={!collapsed}
                       >
@@ -2973,13 +2976,13 @@ export function FlowchartEditor({
                   );
                 })}
                 {q && filteredGroups.length === 0 && (
-                  <div className="px-1 py-2 text-[10px] text-faint">本地图形无匹配</div>
+                  <div className="px-1 py-2 text-[11px] text-faint">本地图形无匹配</div>
                 )}
 
                 {/* 联网搜索图形：关键词非空时实时检索 */}
                 {q && (
                   <div className="mt-3 border-t border-line pt-2.5">
-                    <div className="mb-1.5 flex items-center gap-1 px-1 text-[10px] font-medium text-faint">
+                    <div className="mb-1.5 flex items-center gap-1 px-1 text-[11px] font-medium text-faint">
                       联网图形
                       {webLoading && <span className="text-accent">搜索中…</span>}
                     </div>
@@ -2991,7 +2994,7 @@ export function FlowchartEditor({
                         ))}
                       </div>
                     ) : webError ? (
-                      <div className="px-1 py-1 text-[10px] leading-relaxed text-faint">
+                      <div className="px-1 py-1 text-[11px] leading-relaxed text-faint">
                         {webError}
                         <button onClick={() => setShapeQuery((v) => v)} className="ml-1 text-accent hover:underline">
                           重试
@@ -3000,7 +3003,7 @@ export function FlowchartEditor({
                     ) : webIcons.length > 0 ? (
                       <div className="grid grid-cols-3 gap-1">{webIcons.map(renderIconCard)}</div>
                     ) : webSearched ? (
-                      <div className="px-1 py-1 text-[10px] text-faint">联网无匹配结果</div>
+                      <div className="px-1 py-1 text-[11px] text-faint">联网无匹配结果</div>
                     ) : null}
                   </div>
                 )}
@@ -3010,14 +3013,14 @@ export function FlowchartEditor({
             {leftTab === "mine" && (
               <div>
                 {favShapes.length === 0 && favIcons.length === 0 ? (
-                  <div className="px-1 py-2 text-[10px] leading-relaxed text-faint">
+                  <div className="px-1 py-2 text-[11px] leading-relaxed text-faint">
                     暂无收藏。在图形库或联网结果里点 ☆ 收藏，常用图形会集中在这里。
                   </div>
                 ) : (
                   <>
                     {favShapes.length > 0 && (
                       <>
-                        <div className="mb-1.5 px-1 text-[10px] font-medium text-faint">图形</div>
+                        <div className="mb-1.5 px-1 text-[11px] font-medium text-faint">图形</div>
                         <div className="grid grid-cols-2 gap-1">
                           {favShapes.map((kind) => {
                             const found = ALL_SHAPES.find((s) => s.kind === kind);
@@ -3028,7 +3031,7 @@ export function FlowchartEditor({
                     )}
                     {favIcons.length > 0 && (
                       <>
-                        <div className="mb-1.5 mt-3 px-1 text-[10px] font-medium text-faint">图标</div>
+                        <div className="mb-1.5 mt-3 px-1 text-[11px] font-medium text-faint">图标</div>
                         <div className="grid grid-cols-3 gap-1">{favIcons.map(renderIconCard)}</div>
                       </>
                     )}
@@ -3039,7 +3042,7 @@ export function FlowchartEditor({
 
             {leftTab === "style" && (
               <div>
-                <div className="mb-1.5 px-1 text-[10px] font-medium text-faint">主题</div>
+                <div className="mb-1.5 px-1 text-[11px] font-medium text-faint">主题</div>
                 {THEMES.map((t, i) => (
                   <button
                     key={t.name}
@@ -3050,7 +3053,7 @@ export function FlowchartEditor({
                     {t.name}
                   </button>
                 ))}
-                <div className="mb-1.5 mt-3 px-1 text-[10px] font-medium text-faint">模板</div>
+                <div className="mb-1.5 mt-3 px-1 text-[11px] font-medium text-faint">模板</div>
                 {FLOW_TEMPLATES.map((t) => (
                   <button
                     key={t.name}
@@ -3365,8 +3368,8 @@ export function FlowchartEditor({
         <div className="flex w-52 shrink-0 flex-col border-l border-line bg-background">
           <div className="flex items-center justify-between border-b border-line px-3 py-2">
             <span className="text-xs font-semibold text-text">样式</span>
-            {selectedNode && <span className="max-w-[120px] truncate text-[10px] text-faint">{((selectedNode.data as unknown as FlowData).label || "").slice(0, 12) || "节点"}</span>}
-            {selectedEdge && <span className="text-[10px] text-faint">连线</span>}
+            {selectedNode && <span className="max-w-[120px] truncate text-[11px] text-faint">{((selectedNode.data as unknown as FlowData).label || "").slice(0, 12) || "节点"}</span>}
+            {selectedEdge && <span className="text-[11px] text-faint">连线</span>}
           </div>
           <div className="flex-1 overflow-y-auto">
           {selectedEdge ? (

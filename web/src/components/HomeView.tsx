@@ -457,7 +457,7 @@ export function HomeView({
                           </Tooltip>
                         </div>
                       ) : (
-                        <span className="flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-medium text-accent">
+                        <span className="flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">
                           <ShareIcon size={11} />
                           {kb.permission === "write" ? "共享 · 可编辑" : "共享 · 只读"}
                         </span>

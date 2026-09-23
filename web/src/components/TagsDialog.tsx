@@ -145,7 +145,7 @@ export function TagsDialog({
                 <button
                   key={t}
                   onClick={() => addTag(t)}
-                  className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[13px] text-text transition-colors hover:bg-hover"
+                  className="menu-item"
                 >
                   <span className="text-faint">#</span>
                   {t}

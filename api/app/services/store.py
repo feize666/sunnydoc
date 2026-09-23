@@ -68,6 +68,28 @@ class DocStore:
         else:
             self._backend = "json"
             self._load()
+            self._warn_if_bloated()
+
+    def _warn_if_bloated(self, limit_mb: float = 100.0) -> None:
+        """JSON 降级属于应急路径，且每次写入都要整文件重写。
+
+        chunk 向量（1024 维 float）会让 store.json 迅速膨胀到 GB 级，
+        一次 _save() 就要几十秒，表现为「删除/保存点了没反应」。
+        这里主动提示，避免再次静默踩坑。
+        """
+        try:
+            if not STORE_FILE.exists():
+                return
+            size_mb = STORE_FILE.stat().st_size / 1024 / 1024
+            if size_mb <= limit_mb:
+                return
+            print(
+                f"[存储] ⚠️ 正在使用 JSON 文件后端，store.json 已达 {size_mb:.0f} MB。"
+                "该后端每次写入都会重写整个文件，写操作可能耗时数十秒。"
+                "建议配置 DATABASE_URL 启用 PostgreSQL + pgvector。"
+            )
+        except OSError:
+            pass
 
     def _load(self) -> None:
         if STORE_FILE.exists():

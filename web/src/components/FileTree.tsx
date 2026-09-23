@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import type { TreeNode } from "@/data/docs";
 import type { Folder } from "@/lib/api";
 import {
@@ -73,6 +73,45 @@ type DropPos = "before" | "after" | "inside";
 
 const orderOf = (n: TreeNode) => n.sort_order ?? n.createdAt ?? 0;
 
+/** 选中项的 kind：文档只能软删除（连后代）；文件夹软删除自身+后代、文档回根目录。 */
+type SelectionKind = "doc" | "folder";
+
+function CheckIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 6L9 17l-5-5" />
+    </svg>
+  );
+}
+
+/** 选择框：未选中时 hover 才显形（沿用 reveal-on-hover），选中后常显。 */
+function SelectBox({
+  checked,
+  onClick,
+  reveal = false,
+}: {
+  checked: boolean;
+  onClick: (e: React.MouseEvent) => void;
+  reveal?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={checked ? "取消选择" : "选择"}
+      aria-pressed={checked}
+      className={`grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors ${
+        reveal && !checked ? "reveal-on-hover" : ""
+      } ${
+        checked
+          ? "border-accent bg-accent text-white"
+          : "border-line-strong bg-surface text-transparent hover:border-accent"
+      }`}
+    >
+      <CheckIcon />
+    </button>
+  );
+}
+
 function FileTreeNode({
   node,
   activeKey,
@@ -90,6 +129,9 @@ function FileTreeNode({
   onExportDoc,
   onImportToFolder,
   onReorder,
+  selectionMode = false,
+  selected,
+  onToggleSelect,
   siblings = [],
   depth = 0,
 }: {
@@ -115,6 +157,9 @@ function FileTreeNode({
     position: DropPos,
     siblings: TreeNode[],
   ) => void;
+  selectionMode?: boolean;
+  selected?: Set<string>;
+  onToggleSelect?: (key: string, kind: SelectionKind, node: TreeNode) => void;
   siblings?: TreeNode[];
   depth?: number;
 }) {
@@ -129,6 +174,7 @@ function FileTreeNode({
 
   const canDrag = !!onReorder;
   const isFolder = node.type === "folder";
+  const isSelected = !!(node.key && selected?.has(node.key));
 
   const hoverBtn =
     "reveal-on-hover grid h-6 w-6 place-items-center rounded-md text-faint hover:bg-hover hover:text-accent";
@@ -188,7 +234,7 @@ function FileTreeNode({
     >
       <button
         onClick={() => { onPick(null); setMoveOpen(false); }}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-muted hover:bg-hover hover:text-text"
+        className="menu-item text-muted hover:text-text"
       >
         <FolderIcon size={13} className="shrink-0 text-faint" />
         根目录
@@ -197,7 +243,7 @@ function FileTreeNode({
         <button
           key={f.id}
           onClick={() => { onPick(f.id); setMoveOpen(false); }}
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-muted hover:bg-hover hover:text-text"
+          className="menu-item text-muted hover:text-text"
         >
           <FolderIcon size={13} className="shrink-0 text-faint" />
           <span className="truncate">{f.name}</span>
@@ -243,12 +289,29 @@ function FileTreeNode({
           onDrop={handleDrop}
           className={`group relative flex w-full items-center gap-1 rounded-md py-1 text-left text-[16px] transition-colors ${
             dropPos === "inside" ? "bg-accent-soft ring-1 ring-inset ring-accent" : "text-text hover:bg-hover"
-          } ${dropClass}`}
+          } ${dropClass} ${isSelected ? "bg-accent-soft" : ""}`}
         >
+          {node.key && onToggleSelect && (
+            <span className="shrink-0" style={{ marginLeft: 8 + depth * 12 }}>
+              <SelectBox
+                checked={!!isSelected}
+                reveal
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSelect(node.key!, "folder", node);
+                }}
+              />
+            </span>
+          )}
           <button
-            onClick={() => setOpen((v) => !v)}
+            onClick={() => {
+              if (!node.key) return;
+              // 未进入多选时保持原行为（展开/收起）；已有多选时点行即切换选中。
+              if (selectionMode && onToggleSelect) onToggleSelect(node.key, "folder", node);
+              else setOpen((v) => !v);
+            }}
             className="flex min-w-0 flex-1 items-center gap-1.5"
-            style={{ paddingLeft: 8 + depth * 12 }}
+            style={{ paddingLeft: selectionMode ? 6 : 8 + depth * 12 }}
           >
             <ChevronIcon
               size={14}
@@ -300,6 +363,9 @@ function FileTreeNode({
                 onExportDoc={onExportDoc}
                 onImportToFolder={onImportToFolder}
                 onReorder={onReorder}
+                selectionMode={selectionMode}
+                selected={selected}
+                onToggleSelect={onToggleSelect}
                 siblings={node.children}
                 depth={depth + 1}
               />
@@ -344,8 +410,14 @@ function FileTreeNode({
 
   return (
     <div
-      onClick={() => node.key && onSelect(node.key)}
-      draggable={canDrag}
+      onClick={() => {
+        if (!node.key) return;
+        // 未进入多选时保持原行为（打开文档）；已有多选时点行即切换选中，
+        // 免得每选一项都要瞄准左侧小复选框。
+        if (selectionMode && onToggleSelect) onToggleSelect(node.key, "doc", node);
+        else onSelect(node.key);
+      }}
+      draggable={canDrag && !selectionMode}
       onDragStart={(e) => {
         if (!node.key) return;
         e.dataTransfer.setData("text/plain", node.key);
@@ -356,17 +428,26 @@ function FileTreeNode({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`group relative flex w-full cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-left text-[16px] transition-colors ${
-        active ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"
-      } ${dropClass}`}
+        active && !selectionMode ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"
+      } ${dropClass} ${isSelected ? "bg-accent-soft" : ""}`}
       style={{ paddingLeft: 8 + depth * 12 + 18 }}
     >
-      {active && (
+      {active && !selectionMode && (
         <span
           className="absolute top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-accent"
           style={{ left: 8 + depth * 12 + 2 }}
         />
       )}
-      <FileIcon size={16} className={`shrink-0 ${active ? "text-accent" : "text-faint"}`} />
+      {node.key && onToggleSelect && (
+        <span onClick={(e) => e.stopPropagation()} className="shrink-0">
+          <SelectBox
+            checked={!!isSelected}
+            reveal
+            onClick={() => onToggleSelect(node.key!, "doc", node)}
+          />
+        </span>
+      )}
+      <FileIcon size={16} className={`shrink-0 ${active && !selectionMode ? "text-accent" : "text-faint"}`} />
       <span className="min-w-0 flex-1 truncate">{node.name}</span>
 
       {node.pinned && <PinIcon size={12} filled className="shrink-0 text-accent" />}
@@ -412,6 +493,7 @@ export function FileTree({
   onPinDoc,
   onExportDoc,
   onImportToFolder,
+  onDeleteSelected,
 }: {
   data: TreeNode[];
   activeKey: string | null;
@@ -429,10 +511,62 @@ export function FileTree({
   onPinDoc?: (docId: string, pinned: boolean) => void;
   onExportDoc?: (docId: string) => void;
   onImportToFolder?: (folderId: string, folderName: string) => void;
+  /** 批量删除选中项；返回实际删除数量（用于决定提示文案）。 */
+  onDeleteSelected?: (docIds: string[], folderIds: string[]) => Promise<number>;
 }) {
   const [pendingDeleteDoc, setPendingDeleteDoc] = useState<TreeNode | null>(null);
   const [pendingDeleteFolder, setPendingDeleteFolder] = useState<TreeNode | null>(null);
   const [pendingRename, setPendingRename] = useState<RenameTarget | null>(null);
+  // 多选状态：key -> kind（文档/文件夹）。用 Map 而非 Set，批量删除时才知道往哪个数组放。
+  const [selection, setSelection] = useState<Map<string, SelectionKind>>(new Map());
+  const [confirmBatch, setConfirmBatch] = useState(false);
+  const [batchBusy, setBatchBusy] = useState(false);
+
+  // 树数据变化后（切换知识库、删除、刷新）会有选中项已不在树中：
+  // 这里用「派生」而非 effect+setState 剔除失效项，避免级联渲染与 lint 告警。
+  const aliveKeys = useMemo(() => {
+    const alive = new Set<string>();
+    const walk = (nodes: TreeNode[]) => {
+      for (const n of nodes) {
+        if (n.key) alive.add(n.key);
+        if (n.children) walk(n.children);
+      }
+    };
+    walk(data);
+    return alive;
+  }, [data]);
+
+  const selectedIds = { docs: [] as string[], folders: [] as string[] };
+  for (const [key, kind] of selection) {
+    if (!aliveKeys.has(key)) continue; // 已从树中消失的选中项对外不再计数
+    if (kind === "doc") selectedIds.docs.push(key);
+    else selectedIds.folders.push(key);
+  }
+  const effectiveCount = selectedIds.docs.length + selectedIds.folders.length;
+  const selectionMode = effectiveCount > 0;
+  const selectedKeys = new Set([...selectedIds.docs, ...selectedIds.folders]);
+
+  const toggleSelect = (key: string, kind: SelectionKind) => {
+    setSelection((prev) => {
+      const next = new Map(prev);
+      if (next.has(key)) next.delete(key);
+      else next.set(key, kind);
+      return next;
+    });
+  };
+  const clearSelection = () => setSelection(new Map());
+
+  const handleBatchDelete = async () => {
+    if (!onDeleteSelected || effectiveCount === 0) return;
+    setBatchBusy(true);
+    try {
+      await onDeleteSelected(selectedIds.docs, selectedIds.folders);
+      clearSelection();
+      setConfirmBatch(false);
+    } finally {
+      setBatchBusy(false);
+    }
+  };
 
   const canReorder = !!(onMoveDoc && onMoveFolder);
 
@@ -515,11 +649,36 @@ export function FileTree({
             onPinDoc={onPinDoc}
             onExportDoc={onExportDoc}
             onImportToFolder={onImportToFolder}
-            onReorder={canReorder ? handleReorder : undefined}
+            onReorder={canReorder && !selectionMode ? handleReorder : undefined}
+            selectionMode={selectionMode}
+            selected={selectedKeys}
+            onToggleSelect={toggleSelect}
             siblings={data}
           />
         ))}
       </nav>
+
+      {selectionMode && (
+        <div className="sticky bottom-0 z-20 -mx-1 mt-1 flex items-center gap-2 rounded-md border border-line bg-surface-2 px-2 py-1.5 shadow-sm">
+          <span className="min-w-0 flex-1 truncate text-[13px] text-muted">
+            已选 <span className="font-semibold text-text">{effectiveCount}</span> 项
+          </span>
+          <button
+            onClick={clearSelection}
+            className="btn btn-secondary !px-2 !py-1 !text-[13px]"
+            title="退出多选"
+          >
+            取消
+          </button>
+          <button
+            onClick={() => setConfirmBatch(true)}
+            disabled={batchBusy}
+            className="btn bg-danger-solid !px-2.5 !py-1 !text-[13px] text-white hover:bg-danger-solid-hover disabled:opacity-60"
+          >
+            {batchBusy ? "删除中…" : "删除"}
+          </button>
+        </div>
+      )}
 
       <ConfirmDialog
         open={pendingDeleteDoc !== null}
@@ -545,6 +704,22 @@ export function FileTree({
           setPendingDeleteFolder(null);
         }}
         onCancel={() => setPendingDeleteFolder(null)}
+      />
+
+      <ConfirmDialog
+        open={confirmBatch}
+        title="批量删除"
+        message={
+          `确定要删除选中的 ${effectiveCount} 项吗？` +
+          (selectedIds.folders.length > 0
+            ? `其中 ${selectedIds.folders.length} 个文件夹会被删除，其下文档将移动到根目录。`
+            : "") +
+          "所有内容都可在回收站中恢复。"
+        }
+        confirmText={batchBusy ? "删除中…" : "删除"}
+        cancelText="取消"
+        onConfirm={handleBatchDelete}
+        onCancel={() => setConfirmBatch(false)}
       />
 
       <RenameDialog

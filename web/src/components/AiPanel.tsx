@@ -74,7 +74,7 @@ function AttachmentBadge({ att, preview }: { att: { filename: string; kind: stri
       )}
       <span className="min-w-0">
         <span className="block max-w-[200px] truncate text-[12px] font-medium">{att.filename}</span>
-        <span className="block text-[10px] opacity-90">{formatSize(att.size)}</span>
+        <span className="block text-[11px] opacity-90">{formatSize(att.size)}</span>
       </span>
     </span>
   );
@@ -835,7 +835,7 @@ export function AiPanel({
               )}
               {Array.isArray(msg.citations) && msg.citations.length > 0 && (
                 <div className="mt-1.5 space-y-0.5 border-t border-line pt-1.5 text-[12px]">
-                  <div className="mb-0.5 text-[10px] text-faint">知识库引用（点击定位）</div>
+                  <div className="mb-0.5 text-[11px] text-faint">知识库引用（点击定位）</div>
                   {msg.citations.map((c, j) => (
                     <button
                       key={j}
@@ -852,7 +852,7 @@ export function AiPanel({
               )}
               {Array.isArray(msg.webSources) && msg.webSources.length > 0 && (
                 <div className="mt-1.5 space-y-0.5 border-t border-line pt-1.5 text-[12px]">
-                  <div className="mb-0.5 text-[10px] text-faint">联网搜索来源</div>
+                  <div className="mb-0.5 text-[11px] text-faint">联网搜索来源</div>
                   {msg.webSources.map((s, j) => (
                     <a
                       key={j}

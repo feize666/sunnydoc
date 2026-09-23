@@ -20,6 +20,12 @@ python3 -m venv .venv
 存储层默认使用 JSON 文件（`data/store.json`）。配置 `DATABASE_URL` 后自动切换为
 PostgreSQL + pgvector 存储；未配置或连接失败时优雅降级回 JSON，不影响启动。
 
+> ⚠️ **JSON 降级只适合临时应急**。该后端每次写入都会重写整个 `store.json`，而
+> chunk 向量（1024 维 float）会让文件涨到 GB 级，一次 `_save()` 可能耗时数十秒，
+> 表现为「删除/保存点了没反应」。因此启动时会打印降级告警：配置了 `DATABASE_URL`
+> 却连不上、或 `store.json` 超过 100 MB，都会在日志里明确提示。看到告警请尽快修好
+> 数据库连接。
+
 ### 1. 启动带 pgvector 的 Postgres（Docker）
 
 ```bash
@@ -65,9 +71,32 @@ CREATE TABLE IF NOT EXISTS users (id varchar PRIMARY KEY, username varchar UNIQU
 
 ```bash
 cd api
-docker compose up -d                          # 1. 启动 Postgres
-.venv/bin/python3 scripts/migrate_json_to_pg.py  # 2. 迁移（幂等，按 doc id 先删后插）
+docker compose up -d                             # 1. 启动带 pgvector 的 Postgres
+.venv/bin/python3 scripts/migrate_json_to_pg.py  # 2. 迁移（幂等，可重复执行）
 ```
+
+迁移脚本覆盖全部分区：`documents`（含 chunks 向量）、`folders`、`kbs`、`recent`、
+`users`、`shares`、`favorites`、`share_links`、`comments`、`notifications`、
+`audit_logs`、`templates`。
+
+实现上注意三点：
+
+1. **流式解析** —— `store.json` 在关闭库存储时会涨到 GB 级（向量占比 99% 以上），
+   脚本用 `ijson` 边读边写，不把整文件读进内存。
+2. **保真写入** —— 直接执行 SQL 而非调用 `db.py` 的 writer，因为那些函数会重新生成
+   uuid 与时间戳，会破坏评论回复链（`parent_id`）、分享 token 与审计时间线。
+   原始 `id` / `created_at` / `password_hash` 等一律原样保留（含回收站的 `deleted_at`）。
+3. **幂等** —— 先清空目标表，`documents` 走 `ON CONFLICT DO UPDATE`，chunks 先删后插，
+   重复执行结果一致。
+
+迁移后确认数据条数：
+
+```bash
+.venv/bin/python3 scripts/survey_store.py   # 勘察源 JSON 的分区条数，用于对照
+```
+
+> ⚠️ 迁移完成后必须**重启后端**：`store.DocStore` 只在进程启动时判定一次存储后端，
+> 不重启仍会沿用旧的 JSON 路径。
 
 ## API 接口
 

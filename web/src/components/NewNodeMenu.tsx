@@ -131,7 +131,7 @@ export function NewNodeMenu({
                   {t.label}
                 </span>
                 {!t.available && (
-                  <span className="rounded bg-surface-2 px-1 py-px text-[9px] leading-none text-faint">
+                  <span className="rounded bg-surface-2 px-1 py-px text-[11px] leading-none text-faint">
                     规划中
                   </span>
                 )}

@@ -183,6 +183,12 @@ class DeleteRequest(BaseModel):
     doc_id: str
 
 
+class BatchDeleteRequest(BaseModel):
+    """批量删除。doc_ids 为文档 id；folder_ids 为文件夹 id（连带后代一起软删除）。"""
+    doc_ids: list[str] = []
+    folder_ids: list[str] = []
+
+
 class CreateDocumentRequest(BaseModel):
     title: str
     content: str = ""
@@ -1571,6 +1577,45 @@ def delete_document(doc_id: str, current_user: dict = Depends(get_current_user))
         publish_collab(doc_id, {"type": "doc_deleted", "doc_id": doc_id})
         return {"deleted": doc_id}
     raise HTTPException(status_code=404, detail="文档不存在")
+
+
+@router.post("/documents/batch-delete")
+def batch_delete(req: BatchDeleteRequest, current_user: dict = Depends(get_current_user)):
+    """批量软删除（进回收站，可恢复）。
+
+    逐个校验权限，**跳过无权限/不存在的项**而不是整批失败 —— 多选场景里
+    常有他人文档混在列表里，整批回滚会让用户无法完成操作。
+    返回实际删除的 id 与跳过原因，前端据此提示。
+    """
+    deleted: list[str] = []
+    skipped: list[dict[str, str]] = []
+    # 去重，避免同一 id 传两次导致重复写审计日志
+    doc_ids = list(dict.fromkeys(req.doc_ids))
+    folder_ids = list(dict.fromkeys(req.folder_ids))
+
+    for doc_id in doc_ids:
+        doc = store.get(doc_id, current_user["id"])
+        if doc is None:
+            skipped.append({"id": doc_id, "reason": "文档不存在"})
+            continue
+        if store.delete(doc_id, current_user["id"]):
+            deleted.append(doc_id)
+            _audit(
+                current_user, "delete", "doc", doc_id,
+                f"批量删除文档「{doc.get('title', doc_id)}」",
+            )
+            publish_collab(doc_id, {"type": "doc_deleted", "doc_id": doc_id})
+        else:
+            skipped.append({"id": doc_id, "reason": "无删除权限"})
+
+    for folder_id in folder_ids:
+        if store.delete_folder(folder_id, current_user["id"]):
+            deleted.append(folder_id)
+            _audit(current_user, "delete", "folder", folder_id, "批量删除文件夹")
+        else:
+            skipped.append({"id": folder_id, "reason": "文件夹不存在或无删除权限"})
+
+    return {"deleted": deleted, "skipped": skipped, "count": len(deleted)}
 
 
 # ---------- 文件夹 ----------

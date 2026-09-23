@@ -163,7 +163,7 @@ export function UserManagementView({
                             <div className="flex items-center gap-1.5 truncate text-text">
                               {u.nickname ?? u.username}
                               {u.id === currentUserId && (
-                                <span className="rounded bg-accent-soft px-1 text-[10px] text-accent">
+                                <span className="rounded bg-accent-soft px-1 text-[11px] text-accent">
                                   我
                                 </span>
                               )}

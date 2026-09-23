@@ -102,7 +102,7 @@ export function ShortcutPanel({ open, onClose }: { open: boolean; onClose: () =>
             </div>
           ))}
         </div>
-        <div className="border-t border-line bg-surface px-4 py-1.5 text-[10px] text-faint">
+        <div className="border-t border-line bg-surface px-4 py-1.5 text-[11px] text-faint">
           按 <kbd className="rounded border border-line bg-background px-1 font-mono text-[10px]">?</kbd> 或 <kbd className="rounded border border-line bg-background px-1 font-mono text-[10px]">⌘/</kbd> 随时呼出 · Esc 关闭
         </div>
       </div>

@@ -28,8 +28,10 @@ export function TreeNodeMenu({
     if (el) {
       const r = el.getBoundingClientRect();
       const MENU_W = 176;
-      // 菜单高度受 max-h-[70vh] 限制，超出部分内部滚动
-      const MENU_H = Math.min(items.length * 36 + 12, window.innerHeight * 0.7);
+      // 菜单高度受 max-h-[70vh] 限制，超出部分内部滚动。
+      // 行高 32px = .menu-item 的 31.5px（6px 上下内边距 + 13px 字 / 19.5px 行高）取的整，
+      // 面板自带 py-1 上下各 4px。改了 .menu-item 的规格就要同步这里，否则底部翻转会偏。
+      const MENU_H = Math.min(items.length * 32 + 8, window.innerHeight * 0.7);
       let left = r.right - MENU_W;
       let top = r.bottom + 4;
       if (left + MENU_W > window.innerWidth - 8) left = window.innerWidth - MENU_W - 8;
@@ -59,11 +61,7 @@ export function TreeNodeMenu({
               onClose();
               item.onClick();
             }}
-            className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-[14px] transition-colors ${
-              item.danger
-                ? "text-danger hover:bg-danger-soft"
-                : "text-text hover:bg-hover"
-            }`}
+            className={`menu-item ${item.danger ? "text-danger hover:bg-danger-soft" : ""}`}
           >
             {item.icon && <span className="text-muted">{item.icon}</span>}
             {item.label}

@@ -75,8 +75,11 @@ cp .env.example .env    # 按需填入 LLM / Embedding / DATABASE_URL
 ```bash
 cd web
 npm install
-npm run dev             # http://localhost:3000
+npm run dev             # http://localhost:3001
 ```
+
+前端端口固定为 **3001**（已写进 `web/package.json` 的 `dev` 脚本），
+避免与机器上其他项目的 3000 端口互相混淆。
 
 本地开发默认后端地址为 `http://localhost:8000/api/v1`（见 `web/.env.local`）。
 
