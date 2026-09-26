@@ -22,3 +22,6 @@ mvp-ui/
 
 # WorkBuddy 工作区数据
 .workbuddy/
+
+# 本地凭据 / 个人覆盖（不进仓库）
+dev.local.sh
