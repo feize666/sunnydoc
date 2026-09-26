@@ -20,10 +20,10 @@ import {
   LazyTableEditor,
   LazyRichEditor,
 } from "./LazyEditors";
-import { CopyIcon, CheckIcon, EditIcon, CodeIcon, HistoryIcon, ShareIcon } from "./icons";
+import { CopyIcon, CheckIcon, EditIcon, HistoryIcon, ShareIcon } from "./icons";
 import { EmptyState } from "./EmptyState";
 
-type Mode = "preview" | "edit" | "source";
+type Mode = "preview" | "edit";
 
 function parseTableData(value: string): string[][] {
   try {
@@ -157,7 +157,7 @@ export function Editor({
     return () => document.removeEventListener("mousedown", onDown);
   }, [annotate]);
 
-  // 大纲（随正文变化重算；预览态用 doc.body，编辑/源码态用 draft）
+  // 大纲（随正文变化重算；预览态用 doc.body，编辑态用 draft）
   const toc: TocItem[] = useMemo(() => {
     const body = mode === "preview" ? (doc?.body ?? "") : draft;
     return body ? extractToc(body) : [];
@@ -167,11 +167,10 @@ export function Editor({
   /**
    * 大纲滚动高亮（scroll-spy）。
    *
-   * 三种模式下标题所在的 DOM 容器不同：
+   * 两种模式下标题所在的 DOM 容器不同：
    *  - 预览态：contentRef 内的 `h1~h4`（renderMarkdown 产出）
    *  - 富文本态：TipTap 的 `.ProseMirror` 内的 `h1~h4`（其 DOM 归 ProseMirror 管，
    *    不能用 contentRef——那会把 ref 交给 React 与 PM 双方争抢）
-   *  - 源码态：纯文本域，没有语义标题，跳过
    * 因此这里统一从「滚动容器内」查询标题节点，与模式解耦。
    *
    * 判定「当前章节」用标题相对滚动容器顶部的偏移：取最后一个已滚过
@@ -179,7 +178,7 @@ export function Editor({
    */
   useEffect(() => {
     const scroller = scrollRef.current;
-    if (!scroller || toc.length === 0 || mode === "source") {
+    if (!scroller || toc.length === 0) {
       setActiveHeading(-1);
       return;
     }
@@ -383,7 +382,7 @@ export function Editor({
   }
 
   const handleSwitch = (m: Mode) => {
-    if ((m === "edit" || m === "source") && mode === "preview") {
+    if (m === "edit" && mode === "preview") {
       setDraftTitle(doc.title);
       setDraft(doc.body);
     }
@@ -577,38 +576,17 @@ export function Editor({
                 只读
               </span>
             ) : mode === "preview" ? (
-              <>
-                <Tooltip content="源码编辑">
-                  <button
-                    onClick={() => handleSwitch("source")}
-                    className="btn btn-sm btn-secondary hover:border-accent/40 hover:text-accent"
-                  >
-                    <CodeIcon size={14} />
-                    源码
-                  </button>
-                </Tooltip>
-                <Tooltip content="编辑文档">
-                  <button
-                    onClick={() => handleSwitch("edit")}
-                    className="btn btn-accent text-white"
-                  >
-                    <EditIcon size={14} />
-                    编辑
-                  </button>
-                </Tooltip>
-              </>
+              <Tooltip content="编辑文档">
+                <button
+                  onClick={() => handleSwitch("edit")}
+                  className="btn btn-accent text-white"
+                >
+                  <EditIcon size={14} />
+                  编辑
+                </button>
+              </Tooltip>
             ) : (
               <>
-                <Tooltip content={mode === "source" ? "切换可视化编辑" : "切换源码编辑"}>
-                  <button
-                    onClick={() => setMode(mode === "source" ? "edit" : "source")}
-                    disabled={saving}
-                    className="btn btn-sm btn-secondary hover:border-accent/40 hover:text-accent"
-                  >
-                    <CodeIcon size={14} />
-                    {mode === "source" ? "可视化" : "源码"}
-                  </button>
-                </Tooltip>
                 <Tooltip content="放弃编辑">
                   <button
                     onClick={() => setMode("preview")}
@@ -781,21 +759,7 @@ export function Editor({
               <div className="mt-4 border-b border-line" />
               <div className="mt-6">
                 <ErrorBoundary key={`${doc.key}-${mode}`} title="编辑器加载失败">
-                {mode === "source" ? (
-                  <textarea
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    className="textarea min-h-[60vh] resize-y px-4 py-3 font-mono"
-                    placeholder={
-                      doc.type === "html"
-                        ? "在此编辑 HTML 源码…"
-                        : doc.type === "flowchart" || doc.type === "mindmap"
-                          ? "在此编辑 JSON 源码…"
-                          : "在此输入 Markdown 源码…"
-                    }
-                    spellCheck={false}
-                  />
-                ) : doc.type === "table" ? (
+                {doc.type === "table" ? (
                   <LazyTableEditor key={doc.key} value={doc.body} onChange={setDraft} />
                 ) : doc.type === "board" ? (
                   <LazyBoardEditor key={doc.key} value={doc.body} onChange={setDraft} />
