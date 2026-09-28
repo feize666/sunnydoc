@@ -18,6 +18,7 @@ export interface DocMeta {
   summary?: string | null;
   sort_order?: number | null;
   type?: string;
+  updated_at?: number | null;
 }
 
 export interface Kb {
@@ -44,6 +45,7 @@ export interface Folder {
   parent_id: string | null;
   created_at?: number;
   sort_order?: number | null;
+  pinned?: boolean;
 }
 
 export interface DocDetail extends DocMeta {
@@ -502,6 +504,14 @@ export async function pinDocument(docId: string): Promise<void> {
 
 export async function unpinDocument(docId: string): Promise<void> {
   await request(`/documents/${docId}/unpin`, { method: "POST" });
+}
+
+export async function pinFolder(folderId: string): Promise<void> {
+  await request(`/folders/${folderId}/pin`, { method: "POST" });
+}
+
+export async function unpinFolder(folderId: string): Promise<void> {
+  await request(`/folders/${folderId}/unpin`, { method: "POST" });
 }
 
 export async function generateSummary(docId: string): Promise<string> {

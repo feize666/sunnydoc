@@ -129,6 +129,7 @@ export function Sidebar({
   onRenameDoc,
   onDuplicateDoc,
   onPinDoc,
+  onPinFolder,
   onExportDoc,
   onImportToFolder,
   listError,
@@ -171,7 +172,9 @@ export function Sidebar({
   onNew?: (type: NodeType, parentFolderId: string | null) => void;
   onRenameDoc?: (docId: string, name: string) => Promise<void> | void;
   onDuplicateDoc?: (docId: string) => void;
-  onPinDoc?: (docId: string, pinned: boolean) => void;
+  // 第二个参数是「目标状态」（希望变成的样子），不是当前状态
+  onPinDoc?: (docId: string, nextPinned: boolean) => void;
+  onPinFolder?: (folderId: string, nextPinned: boolean) => void;
   onExportDoc?: (docId: string) => void;
   onImportToFolder?: (folderId: string, folderName: string) => void;
   listError?: string | null;
@@ -251,15 +254,15 @@ export function Sidebar({
   // 折叠态：aside 宽度平滑过渡到 40px，内容淡出（见下方 return）
 
   const sortOptions: { value: SortBy; label: string }[] = [
+    { value: "manual", label: "手动顺序" },
     { value: "numeric", label: "按数字" },
     { value: "name", label: "按名称" },
     { value: "created", label: "按创建时间" },
+    { value: "updated", label: "按修改时间" },
   ];
 
   const sortLabel =
-    sortBy === "manual"
-      ? "默认顺序"
-      : sortOptions.find((o) => o.value === sortBy)?.label ?? "排序";
+    sortOptions.find((o) => o.value === sortBy)?.label ?? "排序";
 
   return (
     <aside
@@ -726,6 +729,7 @@ export function Sidebar({
               onRenameFolder={readOnly ? undefined : onRenameFolder}
               onDuplicateDoc={readOnly ? undefined : onDuplicateDoc}
               onPinDoc={readOnly ? undefined : onPinDoc}
+              onPinFolder={readOnly ? undefined : onPinFolder}
               onExportDoc={readOnly ? undefined : onExportDoc}
               onDeleteDoc={readOnly ? undefined : onDeleteDoc}
               onDeleteFolder={readOnly ? undefined : onDeleteFolder}

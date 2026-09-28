@@ -95,7 +95,23 @@ def init() -> None:
         cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS type varchar DEFAULT 'doc'")
         # 手动排序（拖拽用）
         cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS sort_order double precision")
-        cur.execute("UPDATE documents SET sort_order = created_at WHERE sort_order IS NULL")
+        # 历史遗留的 NULL sort_order 用「间隔 1024 的小整数」按创建顺序回填。
+        # 注意：不要把种子写成 created_at —— 它是秒级时间戳（约 1.79e9），double 在该量级的
+        # ulp ≈ 4.8e-7，中点插入约 20 次就会算出相同值 → 排序静默失效（拖不动且不报错）。
+        # 存量「大数值」的历史数据由 scripts/reseed_sort_order.py 统一重播种。
+        cur.execute(
+            """
+            UPDATE documents d SET sort_order = s.rn * 1024
+            FROM (
+                SELECT id, row_number() OVER (PARTITION BY folder_id ORDER BY created_at) AS rn
+                FROM documents WHERE sort_order IS NULL
+            ) s
+            WHERE d.id = s.id
+            """
+        )
+        # 最后修改时间（「按更新时间排序」与「更新于」展示用）
+        cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS updated_at double precision")
+        cur.execute("UPDATE documents SET updated_at = created_at WHERE updated_at IS NULL")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS folders (
@@ -111,7 +127,18 @@ def init() -> None:
         cur.execute("ALTER TABLE folders ADD COLUMN IF NOT EXISTS user_id varchar")
         cur.execute("ALTER TABLE folders ADD COLUMN IF NOT EXISTS deleted_at double precision")
         cur.execute("ALTER TABLE folders ADD COLUMN IF NOT EXISTS sort_order double precision")
-        cur.execute("UPDATE folders SET sort_order = created_at WHERE sort_order IS NULL")
+        # 文件夹置顶（与 documents.pinned 对齐，让两者置顶能力一致）
+        cur.execute("ALTER TABLE folders ADD COLUMN IF NOT EXISTS pinned boolean DEFAULT false")
+        cur.execute(
+            """
+            UPDATE folders f SET sort_order = s.rn * 1024
+            FROM (
+                SELECT id, row_number() OVER (PARTITION BY parent_id ORDER BY created_at) AS rn
+                FROM folders WHERE sort_order IS NULL
+            ) s
+            WHERE f.id = s.id
+            """
+        )
         # vector 不固定维度，维度由实际 embedding 决定
         cur.execute(
             """
@@ -296,6 +323,16 @@ def init() -> None:
             """
         )
         cur.execute("CREATE INDEX IF NOT EXISTS idx_templates_type ON templates (type)")
+        # 文件树排序：按「父级 + 置顶 + 手动顺序」取同级节点，避免全表排序。
+        # 当前数据量（数百行）全表扫也极快，这两个索引是为后续规模增长预留的。
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_documents_folder_sort"
+            " ON documents (folder_id, pinned DESC, sort_order)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_folders_parent_sort"
+            " ON folders (parent_id, pinned DESC, sort_order)"
+        )
     conn.commit()
 
 
@@ -347,6 +384,10 @@ def _doc_from_row(row: Any) -> dict[str, Any]:
         "summary": row[12] if len(row) > 12 else None,
         "type": row[13] if len(row) > 13 else "doc",
         "sort_order": row[14] if len(row) > 14 else None,
+        # 兜底 created_at：老数据可能没有 updated_at（迁移未跑或刚 ALTER 完）
+        "updated_at": (
+            row[15] if len(row) > 15 and row[15] is not None else row[5]
+        ),
     }
 
 
@@ -361,7 +402,80 @@ def _load_chunks(cur: Any, doc_id: str) -> list[dict[str, Any]]:
     ]
 
 
-_DOC_COLS = "id, title, text, source, ext, created_at, folder_id, kb_id, user_id, deleted_at, tags, pinned, summary, type, sort_order"
+_DOC_COLS = "id, title, text, source, ext, created_at, folder_id, kb_id, user_id, deleted_at, tags, pinned, summary, type, sort_order, updated_at"
+
+# 手动排序的步长。新节点取其同级最小 sort_order 再减一个步长 → 落在同级最上方。
+# 固定步长（而非 time.time()）保证 double 精度长期充裕：间隔 1024 时，
+# 同一位置连续中点插入可支撑约 45 次，再配合前端重平衡守卫即可无上限。
+SORT_STEP = 1024.0
+
+
+def next_sort_order(table: str, parent_col: str, parent_val: str | None) -> float:
+    """返回「同级最上方」的 sort_order：同级最小值 - SORT_STEP。
+
+    同级为空时返回 0，使首个节点的值从 0 起步（不用秒级时间戳，避免精度陷阱）。
+    """
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            f"SELECT MIN(sort_order) FROM {table}"
+            f" WHERE COALESCE({parent_col}, '') = COALESCE(%s, '') AND deleted_at IS NULL",
+            (parent_val,),
+        )
+        row = cur.fetchone()
+    lowest = row[0] if row and row[0] is not None else SORT_STEP
+    return float(lowest) - SORT_STEP
+
+
+# 相邻两点间距小于该阈值时，中点插入已逼近 double 精度极限，需整层重排。
+REBALANCE_GAP = 1e-6
+
+# 每张表重排时用到的列
+_REBALANCE = {
+    "documents": ("folder_id", "documents"),
+    "folders": ("parent_id", "folders"),
+}
+
+
+def rebalance_if_needed(cur: Any, table: str, parent_val: str | None) -> bool:
+    """检查某父级下的同级节点，若存在「间距过近」则整层重排为 1024 的整数倍。
+
+    为什么放在后端：前端算出的中点若与邻居相同，写入后排序会静默失效
+    （值相等 → 稳定排序回落约定顺序，表现为「怎么拖都不动」且不报错）。
+    在后端做一次原子检查，比让前端感知精度更可靠。
+
+    返回是否发生了重排。
+    """
+    if table not in _REBALANCE:
+        return False
+    parent_col, _ = _REBALANCE[table]
+
+    cur.execute(
+        f"SELECT id, sort_order FROM {table}"
+        f" WHERE COALESCE({parent_col}, '') = COALESCE(%s, '') AND deleted_at IS NULL"
+        f" ORDER BY sort_order ASC, id",
+        (parent_val,),
+    )
+    rows = cur.fetchall()
+    if len(rows) < 2:
+        return False
+
+    # 有 NULL 值，或存在相邻间距过近 → 需要重排
+    need = any(r[1] is None for r in rows)
+    if not need:
+        for i in range(1, len(rows)):
+            if abs(float(rows[i][1]) - float(rows[i - 1][1])) < REBALANCE_GAP:
+                need = True
+                break
+    if not need:
+        return False
+
+    for i, (rid, _old) in enumerate(rows):
+        cur.execute(
+            f"UPDATE {table} SET sort_order = %s WHERE id = %s",
+            (float((i + 1) * SORT_STEP), rid),
+        )
+    return True
 
 
 def add_document(doc: dict[str, Any]) -> dict[str, Any]:
@@ -370,8 +484,8 @@ def add_document(doc: dict[str, Any]) -> dict[str, Any]:
     with conn.transaction():
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO documents (id, title, text, source, ext, created_at, folder_id, kb_id, user_id, type, sort_order)"
-                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "INSERT INTO documents (id, title, text, source, ext, created_at, folder_id, kb_id, user_id, type, sort_order, updated_at)"
+                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     doc["id"],
                     doc["title"],
@@ -384,6 +498,7 @@ def add_document(doc: dict[str, Any]) -> dict[str, Any]:
                     doc.get("user_id"),
                     doc.get("type", "doc"),
                     doc.get("sort_order", doc["created_at"]),
+                    doc.get("updated_at", doc["created_at"]),
                 ),
             )
             for i, chunk in enumerate(doc["chunks"]):
@@ -416,7 +531,7 @@ def all_documents(
             params.append(user_id)
         if conds:
             sql += " WHERE " + " AND ".join(conds)
-        sql += " ORDER BY pinned DESC, COALESCE(sort_order, created_at) DESC"
+        sql += " ORDER BY pinned DESC, sort_order ASC NULLS LAST, created_at DESC"
         cur.execute(sql, params)
         docs = [_doc_from_row(r) for r in cur.fetchall()]
         if with_chunks:
@@ -436,13 +551,13 @@ def all_documents_for_user(
             sql = (
                 f"SELECT {_DOC_COLS} FROM documents WHERE deleted_at IS NULL AND"
                 f" (kb_id IN ({placeholders})"
-                " OR (user_id = %s AND kb_id IS NULL)) ORDER BY pinned DESC, COALESCE(sort_order, created_at) DESC"
+                " OR (user_id = %s AND kb_id IS NULL)) ORDER BY pinned DESC, sort_order ASC NULLS LAST, created_at DESC"
             )
             params = list(kb_ids) + [user_id]
         else:
             sql = (
                 f"SELECT {_DOC_COLS} FROM documents"
-                " WHERE deleted_at IS NULL AND user_id = %s AND kb_id IS NULL ORDER BY pinned DESC, COALESCE(sort_order, created_at) DESC"
+                " WHERE deleted_at IS NULL AND user_id = %s AND kb_id IS NULL ORDER BY pinned DESC, sort_order ASC NULLS LAST, created_at DESC"
             )
             params = [user_id]
         cur.execute(sql, params)
@@ -475,18 +590,22 @@ def update_document(doc_id: str, doc: dict[str, Any]) -> dict[str, Any] | None:
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE documents SET title = %s, text = %s, folder_id = %s, kb_id = %s,"
-                " sort_order = COALESCE(%s, sort_order) WHERE id = %s",
+                " sort_order = COALESCE(%s, sort_order),"
+                " updated_at = COALESCE(%s, updated_at) WHERE id = %s",
                 (
                     doc["title"],
                     doc["text"],
                     doc.get("folder_id"),
                     doc.get("kb_id"),
                     doc.get("sort_order"),
+                    doc.get("updated_at"),
                     doc_id,
                 ),
             )
             if cur.rowcount == 0:
                 return None
+            # 排序精度守卫：中点插入逼近 double 极限时整层重排（详见 rebalance_if_needed）
+            rebalance_if_needed(cur, "documents", doc.get("folder_id"))
             # 重建 chunks：先删旧分片，再写入新分片（含重新计算的向量）
             cur.execute("DELETE FROM chunks WHERE doc_id = %s", (doc_id,))
             for i, chunk in enumerate(doc["chunks"]):
@@ -575,6 +694,19 @@ def set_document_pinned(doc_id: str, pinned: bool) -> bool:
     return updated
 
 
+def set_folder_pinned(folder_id: str, pinned: bool) -> bool:
+    """设置文件夹置顶。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE folders SET pinned = %s WHERE id = %s",
+            (pinned, folder_id),
+        )
+        updated = cur.rowcount > 0
+    conn.commit()
+    return updated
+
+
 def set_document_summary(doc_id: str, summary: str) -> bool:
     conn = _connect()
     with conn.cursor() as cur:
@@ -629,7 +761,7 @@ def search_backlinks(
         sql = (
             "SELECT id, title, kb_id, folder_id, source FROM documents WHERE "
             + " AND ".join(conds)
-            + " ORDER BY COALESCE(sort_order, created_at) DESC LIMIT 50"
+            + " ORDER BY updated_at DESC NULLS LAST LIMIT 50"
         )
         cur.execute(sql, params)
         return [
@@ -660,7 +792,7 @@ def lookup_document_by_title(
         sql = (
             "SELECT id, title, kb_id, folder_id FROM documents WHERE "
             + " AND ".join(conds)
-            + " ORDER BY pinned DESC, COALESCE(sort_order, created_at) DESC LIMIT 1"
+            + " ORDER BY pinned DESC, sort_order ASC NULLS LAST, created_at DESC LIMIT 1"
         )
         cur.execute(sql, params)
         row = cur.fetchone()
@@ -674,8 +806,8 @@ def create_folder(folder: dict[str, Any]) -> dict[str, Any]:
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO folders (id, name, parent_id, created_at, kb_id, user_id, sort_order)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO folders (id, name, parent_id, created_at, kb_id, user_id, sort_order, pinned)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 folder["id"],
                 folder["name"],
@@ -684,6 +816,7 @@ def create_folder(folder: dict[str, Any]) -> dict[str, Any]:
                 folder.get("kb_id"),
                 folder.get("user_id"),
                 folder.get("sort_order", folder["created_at"]),
+                bool(folder.get("pinned", False)),
             ),
         )
     conn.commit()
@@ -699,7 +832,7 @@ def list_folders(
     """
     conn = _connect()
     with conn.cursor() as cur:
-        sql = "SELECT id, name, parent_id, created_at, kb_id, user_id, sort_order FROM folders"
+        sql = "SELECT id, name, parent_id, created_at, kb_id, user_id, sort_order, pinned FROM folders"
         conds: list[str] = ["deleted_at IS NULL"]
         params: list[Any] = []
         if kb_id is not None:
@@ -710,7 +843,7 @@ def list_folders(
             params.append(user_id)
         if conds:
             sql += " WHERE " + " AND ".join(conds)
-        sql += " ORDER BY COALESCE(sort_order, created_at)"
+        sql += " ORDER BY pinned DESC, sort_order ASC NULLS LAST, created_at ASC"
         cur.execute(sql, params)
         return [
             {
@@ -721,6 +854,7 @@ def list_folders(
                 "kb_id": r[4],
                 "user_id": r[5],
                 "sort_order": r[6],
+                "pinned": bool(r[7]) if len(r) > 7 else False,
             }
             for r in cur.fetchall()
         ]
@@ -735,15 +869,15 @@ def list_folders_for_user(
         if kb_ids:
             placeholders = ",".join(["%s"] * len(kb_ids))
             sql = (
-                "SELECT id, name, parent_id, created_at, kb_id, user_id, sort_order FROM folders"
+                "SELECT id, name, parent_id, created_at, kb_id, user_id, sort_order, pinned FROM folders"
                 f" WHERE deleted_at IS NULL AND (kb_id IN ({placeholders}) OR (user_id = %s AND kb_id IS NULL))"
-                " ORDER BY COALESCE(sort_order, created_at)"
+                " ORDER BY pinned DESC, sort_order ASC NULLS LAST, created_at ASC"
             )
             params = list(kb_ids) + [user_id]
         else:
             sql = (
-                "SELECT id, name, parent_id, created_at, kb_id, user_id, sort_order FROM folders"
-                " WHERE deleted_at IS NULL AND user_id = %s AND kb_id IS NULL ORDER BY COALESCE(sort_order, created_at)"
+                "SELECT id, name, parent_id, created_at, kb_id, user_id, sort_order, pinned FROM folders"
+                " WHERE deleted_at IS NULL AND user_id = %s AND kb_id IS NULL ORDER BY pinned DESC, sort_order ASC NULLS LAST, created_at ASC"
             )
             params = [user_id]
         cur.execute(sql, params)
@@ -756,6 +890,7 @@ def list_folders_for_user(
                 "kb_id": r[4],
                 "user_id": r[5],
                 "sort_order": r[6],
+                "pinned": bool(r[7]) if len(r) > 7 else False,
             }
             for r in cur.fetchall()
         ]
@@ -793,6 +928,8 @@ def update_folder_parent(folder_id: str, parent_id: str | None, sort_order: floa
             (parent_id, sort_order, folder_id),
         )
         updated = cur.rowcount > 0
+        # 排序精度守卫（同 documents）
+        rebalance_if_needed(cur, "folders", parent_id)
     conn.commit()
     return updated
 

@@ -71,7 +71,13 @@ function ImportIcon({ size = 14 }: { size?: number }) {
 type RenameTarget = { kind: "doc" | "folder"; id: string; name: string };
 type DropPos = "before" | "after" | "inside";
 
-const orderOf = (n: TreeNode) => n.sort_order ?? n.createdAt ?? 0;
+// 排序步长，与后端 db.SORT_STEP 保持一致。
+// 旧实现用 createdAt（秒级时间戳，约 1.79e9）兜底，与重播种后的「间隔 1024 小整数」
+// 相差 6 个数量级，混用会让落点难以预料 —— 因此兜底改为常量基准，不再依赖时间戳。
+const SORT_STEP = 1024;
+
+/** 无 sort_order 时的兜底值。用 0 起步，与后端 reseed 的「首个 = 1024」同一坐标系。 */
+const orderOf = (n: TreeNode) => n.sort_order ?? 0;
 
 /** 选中项的 kind：文档只能软删除（连后代）；文件夹软删除自身+后代、文档回根目录。 */
 type SelectionKind = "doc" | "folder";
@@ -126,6 +132,7 @@ function FileTreeNode({
   onMoveToKb,
   onDuplicateDoc,
   onPinDoc,
+  onPinFolder,
   onExportDoc,
   onImportToFolder,
   onReorder,
@@ -147,7 +154,9 @@ function FileTreeNode({
   onMoveFolder?: (folderId: string, parentId: string | null, sortOrder?: number | null) => void;
   onMoveToKb?: (docId: string) => void;
   onDuplicateDoc?: (docId: string) => void;
-  onPinDoc?: (docId: string, pinned: boolean) => void;
+  // 第二个参数是「目标状态」（希望变成的样子），不是当前状态
+  onPinDoc?: (docId: string, nextPinned: boolean) => void;
+  onPinFolder?: (folderId: string, nextPinned: boolean) => void;
   onExportDoc?: (docId: string) => void;
   onImportToFolder?: (folderId: string, folderName: string) => void;
   onReorder?: (
@@ -270,6 +279,13 @@ function FileTreeNode({
     if (onMoveFolder && node.key) {
       folderItems.push({ label: "移动到…", icon: <MoveIcon size={14} />, onClick: () => setMoveOpen(true) });
     }
+    if (onPinFolder && node.key) {
+      folderItems.push({
+        label: node.pinned ? "取消置顶" : "置顶",
+        icon: <PinIcon size={13} filled={node.pinned} />,
+        onClick: () => onPinFolder(node.key!, !node.pinned),
+      });
+    }
     if (onRequestDeleteFolder && node.key) {
       folderItems.push({ label: "删除", icon: <TrashIcon size={14} />, danger: true, onClick: () => onRequestDeleteFolder(node) });
     }
@@ -319,6 +335,7 @@ function FileTreeNode({
             />
             <FolderIcon size={16} className="shrink-0 text-faint" />
             <span className="truncate">{node.name}</span>
+            {node.pinned && <PinIcon size={12} filled className="shrink-0 text-accent" />}
           </button>
 
           {onNew && (
@@ -360,6 +377,7 @@ function FileTreeNode({
                 onMoveFolder={onMoveFolder}
                 onDuplicateDoc={onDuplicateDoc}
                 onPinDoc={onPinDoc}
+                onPinFolder={onPinFolder}
                 onExportDoc={onExportDoc}
                 onImportToFolder={onImportToFolder}
                 onReorder={onReorder}
@@ -491,6 +509,7 @@ export function FileTree({
   onMoveToKb,
   onDuplicateDoc,
   onPinDoc,
+  onPinFolder,
   onExportDoc,
   onImportToFolder,
   onDeleteSelected,
@@ -508,7 +527,9 @@ export function FileTree({
   onMoveFolder?: (folderId: string, parentId: string | null, sortOrder?: number | null) => void;
   onMoveToKb?: (docId: string) => void;
   onDuplicateDoc?: (docId: string) => void;
-  onPinDoc?: (docId: string, pinned: boolean) => void;
+  // 第二个参数是「目标状态」（希望变成的样子），不是当前状态
+  onPinDoc?: (docId: string, nextPinned: boolean) => void;
+  onPinFolder?: (folderId: string, nextPinned: boolean) => void;
   onExportDoc?: (docId: string) => void;
   onImportToFolder?: (folderId: string, folderName: string) => void;
   /** 批量删除选中项；返回实际删除数量（用于决定提示文案）。 */
@@ -593,13 +614,17 @@ export function FileTree({
     let parentId: string | null;
     let sortOrder: number;
 
+    // 索引驱动的落点计算。语义（方案 B）：sort_order 升序 = 从上到下，值小者在上。
+    // 三个落位都遵守同一条规则 —— 「插进相邻两点的中点」，这样无需改动其它节点的值。
     if (position === "inside" && target.type === "folder") {
       parentId = target.key ?? null;
       const children = target.children ?? [];
       if (children.length > 0) {
-        sortOrder = Math.min(...children.map(orderOf)) - 1;
+        // 落到该文件夹「最上方」：同级最小值 − 步长
+        sortOrder = Math.min(...children.map(orderOf)) - SORT_STEP;
       } else {
-        sortOrder = (target.sort_order ?? Date.now() / 1000) - 1;
+        // 空文件夹：从 0 起步（后端 reseed 的首个值为 1024，此处取 0 稳定落在其前）
+        sortOrder = 0;
       }
     } else {
       parentId = target.folder_id ?? null;
@@ -607,9 +632,15 @@ export function FileTree({
       const prev = idx > 0 ? siblings[idx - 1] : null;
       const next = idx < siblings.length - 1 ? siblings[idx + 1] : null;
       if (position === "before") {
-        sortOrder = prev ? (orderOf(prev) + orderOf(target)) / 2 : orderOf(target) + 1;
+        // 落在 target 之前：取 prev 与 target 的中点；target 已是首个则再往前一个步长
+        sortOrder = prev
+          ? (orderOf(prev) + orderOf(target)) / 2
+          : orderOf(target) - SORT_STEP;
       } else {
-        sortOrder = next ? (orderOf(target) + orderOf(next)) / 2 : orderOf(target) - 1;
+        // 落在 target 之后：取 target 与 next 的中点；target 已是末个则再往后一个步长
+        sortOrder = next
+          ? (orderOf(target) + orderOf(next)) / 2
+          : orderOf(target) + SORT_STEP;
       }
     }
 
@@ -647,6 +678,7 @@ export function FileTree({
             onMoveToKb={onMoveToKb}
             onDuplicateDoc={onDuplicateDoc}
             onPinDoc={onPinDoc}
+            onPinFolder={onPinFolder}
             onExportDoc={onExportDoc}
             onImportToFolder={onImportToFolder}
             onReorder={canReorder && !selectionMode ? handleReorder : undefined}

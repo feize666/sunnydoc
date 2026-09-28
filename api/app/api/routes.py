@@ -957,6 +957,7 @@ def list_documents(
                 "summary": d.get("summary"),
                 "sort_order": d.get("sort_order"),
                 "type": d.get("type", "doc"),
+                "updated_at": d.get("updated_at") or d.get("created_at"),
             }
             for d in docs
         ],
@@ -1007,6 +1008,7 @@ def get_document(doc_id: str, current_user: dict = Depends(get_current_user)):
         "summary": doc.get("summary"),
         "type": doc.get("type", "doc"),
         "sort_order": doc.get("sort_order"),
+        "updated_at": doc.get("updated_at") or doc.get("created_at"),
     }
 
 
@@ -1679,6 +1681,22 @@ def move_folder(
     if store.move_folder(folder_id, req.parent_id, current_user["id"], req.sort_order):
         return {"moved": folder_id}
     raise HTTPException(status_code=400, detail="无法移动（目标位置非法或无权限）")
+
+
+@router.post("/folders/{folder_id}/pin")
+def pin_folder(folder_id: str, current_user: dict = Depends(get_current_user)):
+    """置顶文件夹（与文档置顶能力对齐）。"""
+    if not store.set_folder_pinned(folder_id, True):
+        raise HTTPException(status_code=404, detail="文件夹不存在")
+    return {"pinned": True}
+
+
+@router.post("/folders/{folder_id}/unpin")
+def unpin_folder(folder_id: str, current_user: dict = Depends(get_current_user)):
+    """取消置顶文件夹。"""
+    if not store.set_folder_pinned(folder_id, False):
+        raise HTTPException(status_code=404, detail="文件夹不存在")
+    return {"pinned": False}
 
 
 # ---------- 知识库 ----------

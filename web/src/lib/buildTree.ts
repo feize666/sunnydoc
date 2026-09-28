@@ -8,13 +8,21 @@ function numericKey(name: string): number | null {
 }
 
 function compareNode(a: TreeNode, b: TreeNode, sortBy: SortBy): number {
-  // 文件夹始终排在文档前面
+  // 文件夹始终排在文档前面（保持树的「结构分组」视觉语法）。
+  // 置顶在本组内生效 —— 即「置顶的文件夹」在文件夹区最前、「置顶的文档」在文档区最前，
+  // 而不是让置顶文档越过文件夹。这与 Notion / 语雀 的约定一致。
   if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
 
+  // 置顶优先：在任何排序模式下，同组内的置顶项都固定在最前面。
+  if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+
   if (sortBy === "manual") {
-    const sa = a.sort_order ?? a.createdAt ?? 0;
-    const sb = b.sort_order ?? b.createdAt ?? 0;
-    if (sa !== sb) return sb - sa; // 降序：sort_order 大的在上
+    // 升序：sort_order 小者在上（与主流 Notion / Outline 一致）。
+    // 兜底不再用 createdAt —— 它是秒级时间戳（约 1.79e9），而 sort_order 已重播种为
+    // 「间隔 1024 的小整数」，两者量纲相差 6 个数量级，混用会让顺序难以预料。
+    const sa = a.sort_order ?? 0;
+    const sb = b.sort_order ?? 0;
+    if (sa !== sb) return sa - sb;
     return a.name.localeCompare(b.name, "zh-Hans-CN");
   }
 
@@ -22,6 +30,14 @@ function compareNode(a: TreeNode, b: TreeNode, sortBy: SortBy): number {
     const ta = a.createdAt ?? 0;
     const tb = b.createdAt ?? 0;
     if (ta !== tb) return tb - ta; // 新的在前
+    return a.name.localeCompare(b.name, "zh-Hans-CN");
+  }
+
+  if (sortBy === "updated") {
+    // 文件夹没有 updatedAt，回落到 createdAt，避免它们全部并列成 0
+    const ua = a.updatedAt ?? a.createdAt ?? 0;
+    const ub = b.updatedAt ?? b.createdAt ?? 0;
+    if (ua !== ub) return ub - ua; // 最近修改的在前
     return a.name.localeCompare(b.name, "zh-Hans-CN");
   }
 
@@ -65,6 +81,7 @@ export function buildTree(
       createdAt: f.created_at,
       folder_id: f.parent_id,
       sort_order: f.sort_order,
+      pinned: !!f.pinned,
     });
   }
 
@@ -88,6 +105,7 @@ export function buildTree(
       name: d.title,
       key: d.id,
       createdAt: d.created_at,
+      updatedAt: d.updated_at ?? d.created_at,
       folder_id: d.folder_id,
       pinned: !!d.pinned,
       sort_order: d.sort_order,

@@ -131,11 +131,13 @@ class DocStore:
             d.setdefault("summary", None)
             d.setdefault("type", "doc")
             d.setdefault("sort_order", d.get("created_at"))
+            d.setdefault("updated_at", d.get("created_at"))
         for f in self._folders:
             f.setdefault("kb_id", None)
             f.setdefault("user_id", None)
             f.setdefault("deleted_at", None)
             f.setdefault("sort_order", f.get("created_at"))
+            f.setdefault("pinned", False)
         for k in self._kbs:
             k.setdefault("user_id", None)
             k.setdefault("deleted_at", None)
@@ -445,6 +447,25 @@ class DocStore:
             return True
         return False
 
+    def _next_sort_order_in_memory(
+        self, items: list[dict[str, Any]], parent_col: str, parent_val: str | None
+    ) -> float:
+        """JSON 降级模式下的「同级最上方」sort_order（与 db.next_sort_order 语义一致）。
+
+        必须与 DB 分支保持同一语义，否则「降级后新建的节点跑到列表最底部」会成为
+        一个只在 JSON 模式下复现、极难排查的差异。
+        """
+        lowest: float | None = None
+        for it in items:
+            if it.get(parent_col) != parent_val or it.get("deleted_at"):
+                continue
+            val = it.get("sort_order")
+            if val is None:
+                continue
+            if lowest is None or float(val) < lowest:
+                lowest = float(val)
+        return (lowest - db.SORT_STEP) if lowest is not None else 0.0
+
     def add(
         self,
         title: str,
@@ -467,7 +488,9 @@ class DocStore:
             "kb_id": kb_id,
             "user_id": user_id,
             "type": type,
-            "sort_order": time.time(),
+            "sort_order": db.next_sort_order("documents", "folder_id", folder_id)
+            if self._backend == "db"
+            else self._next_sort_order_in_memory(self._docs, "folder_id", folder_id),
             "chunks": self._build_chunks(text, kind=type),
         }
         if self._backend == "db":
@@ -529,6 +552,10 @@ class DocStore:
                 doc["kb_id"] = kb_id
             if sort_order is not _UNSET:
                 doc["sort_order"] = sort_order
+            # 只有内容/标题真正变化才刷新 updated_at —— 拖拽排序不该改变「最后修改时间」，
+            # 否则「按更新时间排序」会被一次拖动打乱。
+            if content_changed:
+                doc["updated_at"] = time.time()
             return db.update_document(doc_id, doc)
         for d in self._docs:
             if d["id"] == doc_id:
@@ -545,6 +572,8 @@ class DocStore:
                     d["kb_id"] = kb_id
                 if sort_order is not _UNSET:
                     d["sort_order"] = sort_order
+                if content_changed:
+                    d["updated_at"] = time.time()
                 self._save()
                 return d
         return None
@@ -763,6 +792,17 @@ class DocStore:
                 return True
         return False
 
+    def set_folder_pinned(self, folder_id: str, pinned: bool) -> bool:
+        """置顶/取消置顶文件夹（与文档置顶能力对齐）。"""
+        if self._backend == "db":
+            return db.set_folder_pinned(folder_id, pinned)
+        for f in self._folders:
+            if f["id"] == folder_id:
+                f["pinned"] = bool(pinned)
+                self._save()
+                return True
+        return False
+
     def set_summary(self, doc_id: str, summary: str) -> bool:
         if self._backend == "db":
             return db.set_document_summary(doc_id, summary)
@@ -902,7 +942,9 @@ class DocStore:
             "created_at": time.time(),
             "kb_id": kb_id,
             "user_id": user_id,
-            "sort_order": time.time(),
+            "sort_order": db.next_sort_order("folders", "parent_id", parent_id)
+            if self._backend == "db"
+            else self._next_sort_order_in_memory(self._folders, "parent_id", parent_id),
         }
         if self._backend == "db":
             db.create_folder(folder)

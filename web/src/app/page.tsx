@@ -67,6 +67,8 @@ import {
   listFavorites,
   pinDocument,
   unpinDocument,
+  pinFolder,
+  unpinFolder,
   generateSummary,
   listBacklinks,
   lookupDocumentByTitle,
@@ -88,6 +90,24 @@ function formatTime(ts: number): string {
 
 const SESSION_KEY = "sunnydoc.currentKbId";
 const SIDEBAR_KEY = "sunnydoc.sidebarCollapsed";
+const SORT_KEY = "sunnydoc.sortBy";
+const SORT_VALUES: SortBy[] = ["manual", "numeric", "name", "created", "updated"];
+function loadSortBy(): SortBy {
+  try {
+    const v = localStorage.getItem(SORT_KEY);
+    // 白名单校验：localStorage 可能残留旧版本或被手改的值
+    return SORT_VALUES.includes(v as SortBy) ? (v as SortBy) : "numeric";
+  } catch {
+    return "numeric";
+  }
+}
+function saveSortBy(s: SortBy) {
+  try {
+    localStorage.setItem(SORT_KEY, s);
+  } catch {
+    /* ignore */
+  }
+}
 function loadSidebarCollapsed(): boolean {
   try {
     return localStorage.getItem(SIDEBAR_KEY) === "1";
@@ -156,7 +176,7 @@ export default function Home() {
   const [searchTag, setSearchTag] = useState<string>("");
   const [searchSort, setSearchSort] = useState<string>("relevance");
   const [highlight, setHighlight] = useState("");
-  const [sortBy, setSortBy] = useState<SortBy>("numeric");
+  const [sortBy, setSortBy] = useState<SortBy>(() => loadSortBy());
 
   // 登录态
   const [user, setUser] = useState<User | null>(null);
@@ -203,6 +223,11 @@ export default function Home() {
   useEffect(() => {
     saveSidebarCollapsed(sidebarCollapsed);
   }, [sidebarCollapsed]);
+
+  // 文件树排序偏好持久化（跨会话保留用户选择）
+  useEffect(() => {
+    saveSortBy(sortBy);
+  }, [sortBy]);
 
   // 启动时校验登录态：有 token 则拉取当前用户，失败则清除
   useEffect(() => {
@@ -938,14 +963,31 @@ export default function Home() {
   }, []);
 
   // 置顶/取消置顶
+  // 约定：第二个参数是「目标状态」而非「当前状态」—— 调用方直接给出希望变成的样子。
+  // （历史写法把它当「当前状态」再取反，但 FileTree 传的是 !node.pinned，
+  //   两边约定相反，导致文件树里的置顶菜单实际从未生效；因置顶数为 0 而长期未被发现。）
   const handleTogglePin = useCallback(
-    async (docId: string, pinned: boolean) => {
+    async (docId: string, nextPinned: boolean) => {
       try {
-        if (pinned) await unpinDocument(docId);
-        else await pinDocument(docId);
+        if (nextPinned) await pinDocument(docId);
+        else await unpinDocument(docId);
         refreshList();
       } catch (e) {
         toast.error(`置顶操作失败：${e instanceof Error ? e.message : "未知错误"}`);
+      }
+    },
+    [refreshList],
+  );
+
+  // 置顶/取消置顶文件夹（与文档置顶能力对齐，约定同上）
+  const handleTogglePinFolder = useCallback(
+    async (folderId: string, nextPinned: boolean) => {
+      try {
+        if (nextPinned) await pinFolder(folderId);
+        else await unpinFolder(folderId);
+        refreshList();
+      } catch (e) {
+        toast.error(`文件夹置顶失败：${e instanceof Error ? e.message : "未知错误"}`);
       }
     },
     [refreshList],
@@ -1066,6 +1108,7 @@ export default function Home() {
     onRenameDoc: handleRenameDoc,
     onDuplicateDoc: handleDuplicateDoc,
     onPinDoc: handleTogglePin,
+    onPinFolder: handleTogglePinFolder,
     onExportDoc: handleExportDoc,
     listError,
     kbName: currentKb?.name,
@@ -1147,7 +1190,7 @@ export default function Home() {
               summary={activeMeta?.summary ?? null}
               onTogglePin={
                 activeKey && !readOnly
-                  ? () => handleTogglePin(activeKey, activeMeta?.pinned ?? false)
+                  ? () => handleTogglePin(activeKey, !(activeMeta?.pinned ?? false))
                   : undefined
               }
               onEditTags={
