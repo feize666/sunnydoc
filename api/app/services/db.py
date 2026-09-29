@@ -555,7 +555,15 @@ def rebalance_if_needed(cur: Any, table: str, parent_val: str | None) -> bool:
 
 
 def add_document(doc: dict[str, Any]) -> dict[str, Any]:
-    """写入文档及其 chunks（含向量）。"""
+    """写入文档及其 chunks（含向量）。
+
+    ⚠️ 这里的 sort_order 兜底**不能**用 created_at（秒级时间戳 ~1.79e9）：
+    那是旧语义的种子量纲，混进 1024 网格会让该行被整段压到列表末尾，
+    且不报错（详见 `_normalize_sort_order` 的说明）。正经调用方是
+    `store.create_document`，它总会传 `next_sort_order(...)`；兜底只用于
+    防御「有人漏传」——此时宁可用 0（同级最上方）也不引入错量纲。
+    `tests/test_sort_write_contract.py` 锁死这条契约。
+    """
     conn = _connect()
     with conn.transaction():
         with conn.cursor() as cur:
@@ -573,7 +581,8 @@ def add_document(doc: dict[str, Any]) -> dict[str, Any]:
                     doc.get("kb_id"),
                     doc.get("user_id"),
                     doc.get("type", "doc"),
-                    doc.get("sort_order", doc["created_at"]),
+                    # 兜底 0 而非 created_at —— 见上方 docstring
+                    doc.get("sort_order") if doc.get("sort_order") is not None else 0.0,
                     doc.get("updated_at", doc["created_at"]),
                 ),
             )
@@ -878,7 +887,12 @@ def lookup_document_by_title(
 
 
 def create_folder(folder: dict[str, Any]) -> dict[str, Any]:
-    """写入文件夹记录。"""
+    """写入文件夹记录。
+
+    ⚠️ sort_order 兜底同样不能用 created_at（旧种子量纲，约 1.79e9）——
+    理由与 `add_document` 一致。正经调用方 `store.create_folder` 总会传
+    `next_sort_order(...)`；兜底 0 只用于防漏传。
+    """
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
@@ -891,7 +905,8 @@ def create_folder(folder: dict[str, Any]) -> dict[str, Any]:
                 folder["created_at"],
                 folder.get("kb_id"),
                 folder.get("user_id"),
-                folder.get("sort_order", folder["created_at"]),
+                # 兜底 0 而非 created_at —— 见上方 docstring
+                folder.get("sort_order") if folder.get("sort_order") is not None else 0.0,
                 bool(folder.get("pinned", False)),
             ),
         )
