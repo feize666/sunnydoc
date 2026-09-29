@@ -333,6 +333,24 @@ def init() -> None:
             "CREATE INDEX IF NOT EXISTS idx_folders_parent_sort"
             " ON folders (parent_id, pinned DESC, sort_order)"
         )
+        # 值域不变式自检：合法的手动顺序应是「1024 网格」（随行数线性增长，十万行也才 1e8），
+        # 而旧种子是秒级时间戳 1.79e9。混在一起会让旧行整段压到列表末尾，且不报错。
+        # 放在启动时检查，是为了让「忘记跑重播种」这件事变成响亮的告警而不是静默的错序。
+        for _table in ("documents", "folders"):
+            cur.execute(
+                f"SELECT count(*) FROM {_table} WHERE sort_order > %s",
+                (SORT_COORD_LIMIT,),
+            )
+            _legacy = cur.fetchone()[0]
+            if _legacy:
+                print(
+                    f"[存储] ⚠️ {_table} 有 {_legacy} 行的 sort_order 仍是旧种子量级"
+                    f"（>{SORT_COORD_LIMIT:.0e}）。读取时已折到「底部区带」兜底"
+                    "（不再挤占列表顶部），但顺序并不正确，建议执行一次重播种：\n"
+                    "        .venv/bin/python scripts/reseed_sort_order.py --dry-run\n"
+                    "        （若顺序需以改造前备份为准，改用"
+                    " scripts/restore_sort_order_from_backup.py）"
+                )
     conn.commit()
 
 
@@ -362,6 +380,58 @@ def available() -> bool:
     return _available
 
 
+def _normalize_sort_order(v: Any) -> float | None:
+    """把「秒级时间戳形态」的历史 sort_order 折到 1024 网格内，其它值原样返回。
+
+    为什么需要：`migrate_json_to_pg.py` 会写入**旧 JSON 里的原始 sort_order**
+    （= created_at 种子，约 1.79e9）。若它先于重播种运行，库里就会同时存在
+    两套量纲 —— 旧的 1.79e9 与新的 1024 网格。前端升序比较下，
+    1024 网格整段（最大只有几十万）必然全部排在 1.79e9 之前
+    → **用户的手动拖拽顺序被整段压到最后**，且看起来「数据都在、只是顺序乱了」。
+
+    实测过这个症状：库里出现 2 行 1.79e9 的值时，页面上这两个文档
+    就固定钉在列表最底部（前端只收到 1024 网格，误判它们「最旧」）。
+
+    这里在**读取边界**兜底：把旧种子折进一个「底部区带」，
+    使它们确定性地位于合法网格**之后**，且在区带内部保持旧语义的相对先后。
+
+    为什么是「放到底部」而不是「插到正确位置」：正确位置取决于该分组的种子分布与
+    重播种的名次分配，二者都不是读取时能知道的。任何全局映射都是猜 —— 与其猜错，
+    不如给一个**确定、可解释、且会被显著告警**的位置。
+    真正的修复是跑一次重播种（以改造前的顺序备份为准），届时顺序完全正确。
+
+    ⚠️ 方向必须与**旧语义**一致：旧代码是 `ORDER BY sort_order DESC`，
+    种子等于 `created_at`，即**越新的越靠上**（实测：新值 1024 的行 created_at
+    比新值 2048 的行更大）。所以区带内 `t` 越大 → 值越小。
+    （第一版把方向写反、且映射到了 0 与网格顶撞车，被
+      `tests/test_sort_order_normalize.py` 抓住。）
+    """
+    if v is None:
+        return None
+    try:
+        fv = float(v)
+    except (TypeError, ValueError):
+        return None
+    if fv <= SORT_COORD_LIMIT:
+        return fv
+    # 旧种子形态。t 越大越靠上 → 区带内值越小
+    t = min(max(fv, _LEGACY_SEED_MIN), _LEGACY_SEED_MAX)
+    ratio = (t - _LEGACY_SEED_MIN) / (_LEGACY_SEED_MAX - _LEGACY_SEED_MIN)
+    return _LEGACY_BAND_LO + (1.0 - ratio) * _LEGACY_BAND_SPAN
+
+
+# 旧种子归一化后落到的「底部区带」。必须同时满足：
+#   1) 高于任何现实的网格值 —— 网格 = 行数 × 1024，十万行也才约 1e8；
+#   2) 低于 SORT_COORD_LIMIT —— 否则会被反复判成「未迁移」，自检永远告警。
+# 9e8 ~ 9e8 + 1e6 同时满足，且与网格顶（≤1e8）留出两个数量级的余量。
+_LEGACY_BAND_LO = 9.0e8
+_LEGACY_BAND_SPAN = 1e6
+
+# created_at 的实际取值范围（2026 年实测 1.7896e9 ~ 1.7901e9），留出余量
+_LEGACY_SEED_MIN = 1.5e9
+_LEGACY_SEED_MAX = 1.8e9
+
+
 def _doc_from_row(row: Any) -> dict[str, Any]:
     tags_raw = row[10] if len(row) > 10 else None
     try:
@@ -383,7 +453,7 @@ def _doc_from_row(row: Any) -> dict[str, Any]:
         "pinned": bool(row[11]) if len(row) > 11 else False,
         "summary": row[12] if len(row) > 12 else None,
         "type": row[13] if len(row) > 13 else "doc",
-        "sort_order": row[14] if len(row) > 14 else None,
+        "sort_order": _normalize_sort_order(row[14]) if len(row) > 14 else None,
         # 兜底 created_at：老数据可能没有 updated_at（迁移未跑或刚 ALTER 完）
         "updated_at": (
             row[15] if len(row) > 15 and row[15] is not None else row[5]
@@ -408,6 +478,12 @@ _DOC_COLS = "id, title, text, source, ext, created_at, folder_id, kb_id, user_id
 # 固定步长（而非 time.time()）保证 double 精度长期充裕：间隔 1024 时，
 # 同一位置连续中点插入可支撑约 45 次，再配合前端重平衡守卫即可无上限。
 SORT_STEP = 1024.0
+
+# sort_order 的「坐标系上限」。合法的手动顺序是「1024 的整数倍、随行数线性增长」
+# （哪怕十万行也才 1e8），而历史种子的量级是秒级时间戳 1.79e9。
+# 因此任何 > 1e9 的值必然来自旧的 created_at 种子，需要重新播种。
+# 这个阈值的价值：把「语义/值域」变成可自动校验的对象，而不是靠某次迁移脚本记得跑。
+SORT_COORD_LIMIT = 1e9
 
 
 def next_sort_order(table: str, parent_col: str, parent_val: str | None) -> float:
@@ -853,7 +929,7 @@ def list_folders(
                 "created_at": r[3],
                 "kb_id": r[4],
                 "user_id": r[5],
-                "sort_order": r[6],
+                "sort_order": _normalize_sort_order(r[6]),
                 "pinned": bool(r[7]) if len(r) > 7 else False,
             }
             for r in cur.fetchall()
@@ -889,7 +965,7 @@ def list_folders_for_user(
                 "created_at": r[3],
                 "kb_id": r[4],
                 "user_id": r[5],
-                "sort_order": r[6],
+                "sort_order": _normalize_sort_order(r[6]),
                 "pinned": bool(r[7]) if len(r) > 7 else False,
             }
             for r in cur.fetchall()

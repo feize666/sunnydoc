@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """data/store.json → PostgreSQL + pgvector 全量迁移（流式、幂等、保真）。
 
+⚠️ 历史状态：**已执行过**（2026-09-23，27s，280 行），当前库即其产物。
+   保留此脚本作为「JSON 冷备份 → PG」的恢复路径，**不是给日常使用的**。
+   在跑它之前必须先读下面第 4、5 点。
+
 设计要点
 --------
 1. **流式读取**：store.json 约 1.34 GB（其中 ~99% 是 chunk 向量），
@@ -12,9 +16,27 @@
    audit 时间线。这里原样保留 id / created_at / password_hash 等。
 3. **幂等**：documents 走 ON CONFLICT DO UPDATE，chunks 先删后插，
    其余分区先 TRUNCATE 再插入，重复执行结果一致。
+   ⚠️ 但「幂等」只保证**结果一致**，不保证**结果正确** —— 见第 4 点。
+4. **sort_order 会回退成旧种子**：本脚本写入的是 JSON 里的原始 sort_order，
+   即 `created_at` 秒级时间戳（约 1.79e9）。而改造后的手动顺序是
+   「1024 的整数倍」网格。若在本脚本之后没有重播种，库内会同时存在两套量纲，
+   前端升序比较会把它们混排 → **顺序错乱且不报错**。
+   → 跑完本脚本**必须**紧接着跑一次重播种：
+        .venv/bin/python scripts/restore_sort_order_from_backup.py   # 以改造前备份为准
+        （无备份时用 scripts/reseed_sort_order.py，注意它按旧语义编排名次）
+   读取侧已加 `db._normalize_sort_order` 兜底（旧值折到底部区带），
+   启动时也会告警，但兜底只是「不崩」，顺序仍要靠重播种修正。
+5. **folders.pinned 不会被写入**：本脚本的 folders 列清单里没有 pinned
+   （它是改造后新增的能力）。跑本脚本会把文件夹置顶状态丢掉。
+   → 跑完需按需重新置顶，或先扩展下面的列清单。
+6. **文档的 updated_at 会被写成 created_at**：本脚本不迁移 updated_at，
+   而 db.init() 的 `UPDATE ... WHERE updated_at IS NULL` 只在列为 NULL 时回填。
+   本脚本的 INSERT 不含该列 → 新插入的行 updated_at 为 NULL → db.init()
+   会把它回填成 created_at（不会报错，但「最后修改时间」全部失真）。
 
 用法（在 api 目录下）：
     .venv/bin/python scripts/migrate_json_to_pg.py
+    .venv/bin/python scripts/restore_sort_order_from_backup.py   # ← 别漏
 """
 from __future__ import annotations
 
@@ -112,29 +134,36 @@ def _doc_row(d: dict) -> tuple:
         d.get("summary"),
         d.get("type") or "doc",
         d.get("sort_order", d.get("created_at")),
+        # updated_at 必须带上：漏掉会让 db.init() 把它回填成 created_at，
+        # 「按修改时间排序」与「更新于」展示会全部失真（且不报错）
+        d.get("updated_at", d.get("created_at")),
     )
 
 
 DOC_SQL = (
     "INSERT INTO documents (id, title, text, source, ext, created_at, folder_id,"
-    " kb_id, user_id, deleted_at, tags, pinned, summary, type, sort_order)"
-    " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+    " kb_id, user_id, deleted_at, tags, pinned, summary, type, sort_order, updated_at)"
+    " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
     " ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title, text=EXCLUDED.text,"
     " source=EXCLUDED.source, ext=EXCLUDED.ext, created_at=EXCLUDED.created_at,"
     " folder_id=EXCLUDED.folder_id, kb_id=EXCLUDED.kb_id, user_id=EXCLUDED.user_id,"
     " deleted_at=EXCLUDED.deleted_at, tags=EXCLUDED.tags, pinned=EXCLUDED.pinned,"
-    " summary=EXCLUDED.summary, type=EXCLUDED.type, sort_order=EXCLUDED.sort_order"
+    " summary=EXCLUDED.summary, type=EXCLUDED.type, sort_order=EXCLUDED.sort_order,"
+    " updated_at=EXCLUDED.updated_at"
 )
 
 # 分区 → (表名, 列, 取值函数, 主键列)
 SIMPLE_MAP: dict[str, tuple[str, list[str], Any]] = {
     "folders": (
         "folders",
-        ["id", "name", "parent_id", "created_at", "kb_id", "user_id", "deleted_at", "sort_order"],
+        ["id", "name", "parent_id", "created_at", "kb_id", "user_id", "deleted_at",
+         "sort_order", "pinned"],
         lambda d: (
             d["id"], d.get("name"), d.get("parent_id"), d.get("created_at"),
             d.get("kb_id"), d.get("user_id"), d.get("deleted_at"),
             d.get("sort_order", d.get("created_at")),
+            # 带上 pinned：漏掉会把「文件夹置顶」全部丢掉（改造后新增的能力）
+            bool(d.get("pinned")),
         ),
     ),
     "kbs": (
@@ -290,6 +319,31 @@ def main() -> int:
     print(f"[校验] chunks 总数          : {n_chunks}")
     print(f"[校验] 含向量的 chunk       : {n_vec}")
     print(f"[校验] 回收站中文档         : {n_trash}")
+
+    # 迁移会写入 JSON 里原始的 sort_order（= created_at 秒级时间戳），
+    # 与改造后的 1024 网格是两套量纲。这里显式探测并给出必须的后续步骤。
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM documents WHERE sort_order > %s",
+            (db.SORT_COORD_LIMIT,),
+        )
+        n_legacy_docs = cur.fetchone()[0]
+        cur.execute(
+            "SELECT count(*) FROM folders WHERE sort_order > %s",
+            (db.SORT_COORD_LIMIT,),
+        )
+        n_legacy_folders = cur.fetchone()[0]
+
+    if n_legacy_docs or n_legacy_folders:
+        print("-" * 60)
+        print(
+            f"⚠️  sort_order 回退为旧种子量级：documents {n_legacy_docs} 行 /"
+            f" folders {n_legacy_folders} 行"
+        )
+        print("    读取侧已折到底部区带兜底（不会崩），但**顺序不正确**，必须重播种：")
+        print("      .venv/bin/python scripts/restore_sort_order_from_backup.py")
+        print("    （无改造前备份时才用 reseed_sort_order.py —— 它按旧语义编排名次）")
+
     print(f"完成，用时 {time.time() - t0:.1f}s")
     return 0
 
