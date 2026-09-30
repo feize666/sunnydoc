@@ -25,3 +25,6 @@ mvp-ui/
 
 # 本地凭据 / 个人覆盖（不进仓库）
 dev.local.sh
+
+# pytest 临时目录（沙箱内无法写系统 temp，改用 --basetemp 指到工作区）
+.pytest_tmp/

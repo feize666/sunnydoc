@@ -130,12 +130,20 @@ class DocStore:
             d.setdefault("pinned", False)
             d.setdefault("summary", None)
             d.setdefault("type", "doc")
+            # ⚠️ 这里兜底成 created_at（legacy 量纲），**不要**改成 0.0。
+            #    store.json 里所有行的 sort_order 都是 created_at 级数值，坐标空间统一，
+            #    兜底留在同一空间即可保住相对顺序。若改成 0.0，该行会突然跑到最上方，
+            #    反而制造出「新旧量级混合」——正是我们在 DB 侧极力消除的那种污染。
+            #    （DB 侧相反：那里已重播种成 1024 网格，兜底必须是 0.0。同一句兜底，
+            #     两个后端正确的答案相反，取决于该后端既有的坐标系。）
+            #    回归锁：tests/test_store_json_update.py::test_json_load_falls_back_to_created_at_magnitude
             d.setdefault("sort_order", d.get("created_at"))
             d.setdefault("updated_at", d.get("created_at"))
         for f in self._folders:
             f.setdefault("kb_id", None)
             f.setdefault("user_id", None)
             f.setdefault("deleted_at", None)
+            # 同上：文件夹兜底也留在 legacy 空间（详见 documents 段落的说明）。
             f.setdefault("sort_order", f.get("created_at"))
             f.setdefault("pinned", False)
         for k in self._kbs:
@@ -561,6 +569,12 @@ class DocStore:
             if d["id"] == doc_id:
                 if user_id is not None and not self._can_write_doc(d, user_id):
                     return None
+                # ⚠️ 必须在本分支内独立判定：上面那份 content_changed 只在 db 分支里赋值，
+                #    直接复用会 UnboundLocalError（P0 提交 9fa1d10 曾把 JSON 降级路径写崩，
+                #    因为降级路径没有测试覆盖而未被发现）。
+                content_changed = (title is not _UNSET and title != d.get("title")) or (
+                    text is not _UNSET and text != d.get("text")
+                )
                 if title is not _UNSET:
                     d["title"] = title
                 if text is not _UNSET:
