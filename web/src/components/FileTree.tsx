@@ -16,6 +16,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { NewNodeMenu, type NodeType } from "./NewNodeMenu";
 import { TreeNodeMenu, type MenuItem } from "./TreeNodeMenu";
 import { RenameDialog } from "./RenameDialog";
+import { sortSiblingsForManual } from "@/lib/buildTree";
 
 function PlusIcon({ size = 14 }: { size?: number }) {
   return (
@@ -614,8 +615,23 @@ export function FileTree({
     let parentId: string | null;
     let sortOrder: number;
 
-    // 索引驱动的落点计算。语义（方案 B）：sort_order 升序 = 从上到下，值小者在上。
-    // 三个落位都遵守同一条规则 —— 「插进相邻两点的中点」，这样无需改动其它节点的值。
+    // ⚠️ 落点必须用「手动序」的相邻关系来算，不能用 siblings 的数组顺序。
+    //
+    // siblings 是 buildTree 按**当前排序模式**排好的视觉序（名称/数字/创建/修改），
+    // 而落点要写回 sort_order —— 两者只在「手动顺序」模式下同源。在别的模式下
+    // 拿视觉相邻项取中点，会落到完全无关的坐标（实测：按名称模式把 A 拖到 B 之后，
+    // 落点 5632 = (C 5120 + B 6144)/2，切回手动序后 A 并不在 B 之后）。
+    //
+    // 修法：先在与目标**同一父节点**的兄弟中筛出「与拖拽项同类型」的集合
+    // （文件夹与文档在树里是两个互不越过的区段），按手动序排序，
+    // 再把拖拽项摘掉 —— 于是「视觉相邻」被替换为「手动序相邻」，中点法才成立。
+    //
+    // 必须摘掉拖拽项再取邻居：否则「A 拖到 B 之后」会取到 A 自己当 prev，
+    // 或取到 target 自己当 next（中点 =(B+B)/2 = B，撞成并列后触发后端重平衡）。
+    const draggedKindType = draggedKind === "folder" ? "folder" : "file";
+    const lane = sortSiblingsForManual(siblings.filter((s) => s.type === draggedKindType));
+    const reduced = lane.filter((s) => s.key !== draggedKey);
+
     if (position === "inside" && target.type === "folder") {
       parentId = target.key ?? null;
       const children = target.children ?? [];
@@ -628,9 +644,9 @@ export function FileTree({
       }
     } else {
       parentId = target.folder_id ?? null;
-      const idx = siblings.findIndex((s) => s.key === target.key);
-      const prev = idx > 0 ? siblings[idx - 1] : null;
-      const next = idx < siblings.length - 1 ? siblings[idx + 1] : null;
+      const ti = reduced.findIndex((s) => s.key === target.key);
+      const prev = ti > 0 ? reduced[ti - 1] : null;
+      const next = ti >= 0 && ti < reduced.length - 1 ? reduced[ti + 1] : null;
       if (position === "before") {
         // 落在 target 之前：取 prev 与 target 的中点；target 已是首个则再往前一个步长
         sortOrder = prev

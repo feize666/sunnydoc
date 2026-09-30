@@ -55,6 +55,21 @@ function compareNode(a: TreeNode, b: TreeNode, sortBy: SortBy): number {
 }
 
 /**
+ * 按「手动顺序」重排一组同级节点（升降序取 sort_order 升序），返回新数组。
+ *
+ * 为什么需要：拖拽落点必须用**手动序**计算，不能用当前视觉序。
+ * 视觉序随 sortBy 变化（名称/数字/创建/修改），而落点是写回 sort_order 的 ——
+ * 只有手动序与该坐标同源。若拿视觉序算中点，在「两序不一致」的分组里
+ * 会落到完全无关的位置（实测复现，详见 .workbuddy/repro_dnd_bug.js）。
+ *
+ * 沿用 compareNode 的 manual 分支，保证与渲染时的排序规则完全一致
+ * （文件夹在前、置顶在前、sort_order 升序、同名再按名称）。
+ */
+export function sortSiblingsForManual(nodes: TreeNode[]): TreeNode[] {
+  return [...nodes].sort((a, b) => compareNode(a, b, "manual"));
+}
+
+/**
  * 根据扁平文档列表 + 扁平文件夹列表组装多级文件树。
  * - 文件夹按 parent_id 递归组树，根级文件夹挂在树根
  * - 文档按 folder_id 挂到对应文件夹，无 folder_id 的挂在树根
