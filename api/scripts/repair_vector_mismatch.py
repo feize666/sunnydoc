@@ -88,6 +88,53 @@ def _load_chunks(doc_id: str) -> list[tuple[int, str, list[float]]]:
         ]
 
 
+def _preflight_already_fixed() -> str | None:
+    """幂等预检：抽样判定「是否已经修过」。返回中止提示，或 None 表示可以执行。
+
+    为什么需要它：本脚本**方向安全**（只覆盖判定为错配的分片），重复执行不会破坏数据，
+    但会白白花几小时重新嵌入 4 万个分片 —— 而用户可能正是因为「不确定上次跑完没有」
+    才再跑一次。
+
+    判据用**目标状态的特征值**（迁移安全守则铁律 1）：目标状态是「抽样分片的 cos 全部
+    ≥ 阈值」。随机抽一篇多分片文档，若其向量与重嵌入结果全部吻合 → 判定已修过。
+
+    ⚠️ 这只是**抽样**：它可能因为恰好抽到一篇本来就正确的文档而误判「已完成」
+    （假阳性中止）。所以提示里给出 `--force`，而不是把门焊死。
+    """
+    if not embedding.available():
+        return None
+    conn = db._connect()
+    with conn.cursor() as cur:
+        # 刻意取**最小**的合格文档（>10 分片 ⇒ 一定跨过批次，错配检测才有意义）。
+        # 不要取最大那篇：那是几千分片、几百个批次，预检本身就要跑一分钟，
+        # 而预检的意义是「快速判断要不要动手」。
+        cur.execute(
+            "SELECT doc_id FROM chunks WHERE vector IS NOT NULL"
+            " GROUP BY doc_id HAVING count(*) > 10 ORDER BY count(*) ASC LIMIT 1"
+        )
+        row = cur.fetchone()
+    if row is None:
+        return None
+    did = row[0]
+    rows = _load_chunks(did)
+    if len(rows) < 2:
+        return None
+    fresh = embedding.embed([t for _i, t, _v in rows])
+    if fresh is None:
+        # 嵌入不可用时不该在这里挡住流程，交给 fix() 自己报错
+        return None
+    sims = [_cos(fresh[k], rows[k][2]) for k in range(len(rows))]
+    if min(sims) >= COS_THRESHOLD:
+        return (
+            f"⛔ 已中止：抽样文档 {did[:8]}…（{len(rows)} 分片）的向量**全部吻合**，"
+            f"看起来错配已经修过了。\n"
+            f"   重复执行不会破坏数据（本脚本只覆盖错配分片），但会平白重算数万次嵌入。\n"
+            f"   若确需重跑全部：加 --force。\n"
+            f"   若只是想复验：用 --scan --limit 20"
+        )
+    return None
+
+
 def scan(limit: int | None, doc_id: str | None) -> int:
     """只读体检。返回错配分片总数。"""
     if not embedding.available():
@@ -143,7 +190,12 @@ def scan(limit: int | None, doc_id: str | None) -> int:
 
 
 def fix(limit: int | None, doc_id: str | None) -> int:
-    """重新嵌入并覆盖错配向量。返回修复的分片数。"""
+    """重新嵌入并覆盖错配向量。返回修复的分片数；-1 前置失败，-2 中止或有未达标。
+
+    幂等性（对状态敏感，但方向安全）：本函数只覆盖「重嵌入后 cos < 阈值」的分片。
+    修好之后再跑一次，所有分片都会判定为「无需修复」→ **零写入**。
+    （这与「排序键重播种」那类脚本不同 —— 那类脚本重复执行会再次翻转顺序。）
+    """
     if not embedding.available():
         print("⛔ embedding 未配置，无法修复。")
         return -1
@@ -152,6 +204,8 @@ def fix(limit: int | None, doc_id: str | None) -> int:
     print(f"待修复文档：{len(ids)} 篇\n")
 
     fixed = 0
+    skipped = 0
+    failed: list[tuple[str, float]] = []
     for di, did in enumerate(ids, 1):
         rows = _load_chunks(did)
         if len(rows) < 2:
@@ -160,12 +214,14 @@ def fix(limit: int | None, doc_id: str | None) -> int:
         fresh = embedding.embed(texts)
         if fresh is None:
             print(f"  [{di}/{len(ids)}] {did[:8]}… 嵌入失败，跳过")
+            failed.append((did, -1.0))
             continue
 
         # 先判定是否真错配，避免无谓写库
         sims = [_cos(fresh[k], rows[k][2]) for k in range(len(rows))]
         n_bad = sum(1 for s in sims if s < COS_THRESHOLD)
         if not n_bad:
+            skipped += 1
             print(f"  [{di}/{len(ids)}] {did[:8]}… ✅ 无需修复（{len(rows)} 分片）")
             continue
 
@@ -177,22 +233,53 @@ def fix(limit: int | None, doc_id: str | None) -> int:
                     (db._vec_to_str(fresh[k]), did, idx),
                 )
         conn.commit()
-        fixed += n_bad
-        # 复核：写库后读回，确认落库值与刚算出的向量一致（捕获序列化/精度问题）
+
+        # 复核：写库后读回，确认落库值与刚算出的向量一致（捕获序列化/精度问题）。
+        #
+        # ⚠️ 下方的比对**按位置**进行（rows[k] ↔ fresh[k] ↔ after[k]），这依赖三点前提：
+        #    ① 两次查询都 `ORDER BY segment_index`；② 每篇的 segment_index 唯一（已实测：
+        #    40432 行 = 40432 个 (doc_id, segment_index) 组合，无重复无 NULL）；
+        #    ③ **分片条数在读写之间不变**。
+        #    第 ③ 点最容易被忽略 —— 若条数变了（分段逻辑改动、或向量串被再次切分），
+        #    位置就会整体串位，而 cos 仍可能碰巧偏高，于是「假通过」。
+        #    所以这里先硬性校验条数，不等即**中止**（继续写后面的文档是有害的）。
         after = _load_chunks(did)
+        if len(after) != len(fresh):
+            print(
+                f"\n⛔ 已中止：{did[:8]}… 写库后分片数由 {len(rows)} 变为 {len(after)}，"
+                f"按位置比对的前提已被破坏。\n"
+                f"   请先回滚（备份：/tmp/sd_repair/chunks_before.sql）再排查。"
+            )
+            return -2
         verify_min = min(
-            (_cos(fresh[k], after[k][2]) for k in range(min(len(fresh), len(after)))),
+            (_cos(fresh[k], after[k][2]) for k in range(len(fresh))),
             default=0.0,
         )
+
+        if verify_min < COS_THRESHOLD:
+            failed.append((did, verify_min))
+            print(
+                f"  [{di}/{len(ids)}] {did[:8]}… ⚠️ 写库后复核未达标 "
+                f"cos={verify_min:.6f} < {COS_THRESHOLD}"
+            )
+            continue
+
+        fixed += n_bad
         print(
             f"  [{di}/{len(ids)}] {did[:8]}… 🔧 修复 {n_bad}/{len(rows)} 个分片"
             f"  修复前最低 cos={min(sims):.4f}  写库后复核 cos={verify_min:.6f}"
         )
 
-    print(f"\n✅ 完成，共修复 {fixed} 个分片。")
-    print("建议随后跑一次体检确认：")
+    print("\n" + "=" * 64)
+    print(f"✅ 完成：修复 {fixed} 个分片；{skipped} 篇本就正确；{len(failed)} 篇未达标")
+    if failed:
+        print("未达标的文档（需人工排查，不掩盖）：")
+        for did, v in failed[:10]:
+            print(f"  {did}  cos={v:.6f}")
+    print("=" * 64)
+    print("请随后复验（应报「未发现错配」）：")
     print("   .venv/bin/python scripts/repair_vector_mismatch.py --scan --limit 20")
-    return fixed
+    return fixed if not failed else -2
 
 
 def main() -> int:
@@ -201,10 +288,16 @@ def main() -> int:
     ap.add_argument("--fix", action="store_true", help="重新嵌入并覆盖错配向量")
     ap.add_argument("--limit", type=int, default=None, help="只处理前 N 篇（按分片数降序）")
     ap.add_argument("--doc-id", default=None, help="只处理指定文档")
+    ap.add_argument("--force", action="store_true", help="跳过幂等预检，强制重跑（一般不需要）")
     args = ap.parse_args()
 
     t0 = time.perf_counter()
     if args.fix:
+        if not args.force and args.doc_id is None:
+            preflight = _preflight_already_fixed()
+            if preflight is not None:
+                print(preflight)
+                return 1
         n = fix(args.limit, args.doc_id)
     else:
         n = scan(args.limit, args.doc_id)
