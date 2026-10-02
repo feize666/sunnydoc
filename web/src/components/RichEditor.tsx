@@ -11,6 +11,7 @@ import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
 import { Markdown } from "tiptap-markdown";
 import { uploadImage, uploadAttachment, aiAssist, type AIAssistAction } from "@/lib/api";
+import { mediaUrl } from "@/lib/markdown";
 import { Tooltip } from "./Tooltip";
 import { useToast } from "./Toast";
 import {
@@ -435,7 +436,19 @@ export function RichEditor({
       TaskItem,
       TextAlign,
       Link.configure({ openOnClick: false }),
-      Image,
+      // 编辑态直出 `<img src="/api/v1/media/…">`，本地前后端分端口时会 404，
+      // 故渲染时补后端 origin。注意只改「渲染」，不改文档数据——保存走
+      // `editor.storage.markdown.getMarkdown()`，源里仍是根绝对路径。
+      Image.extend({
+        renderHTML({ HTMLAttributes }) {
+          return [
+            "img",
+            mergeAttributes(HTMLAttributes, {
+              src: mediaUrl(HTMLAttributes.src as string),
+            }),
+          ];
+        },
+      }),
       Markdown.configure({
         html: true,
         tightLists: true,

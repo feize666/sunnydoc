@@ -22,6 +22,12 @@ MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 # markdown 图片引用：![alt](path)
 _MD_IMG_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 
+# HTML 中指向本地资源的属性：src="…" / src='…' / href="…"（含 <link>）、poster、data-src
+_HTML_MEDIA_ATTR_RE = re.compile(
+    r"""(\s(?:src|href|poster|data-src)\s*=\s*)(["'])([^"']+)\2""",
+    re.IGNORECASE,
+)
+
 
 @dataclass
 class MediaFile:
@@ -249,6 +255,54 @@ def replace_md_image_refs(text: str, md_path: str, path_map: dict[str, str]) -> 
         return m.group(0)
 
     return _MD_IMG_RE.sub(repl, text)
+
+
+def _resolve_media_ref(ref: str, base_dir: str, path_map: dict[str, str]) -> str | None:
+    """把单个资源引用解析为存储文件名；不可改写时返回 None。
+
+    跳过外部链接与非路径型协议（data:/mailto:/javascript:/#）。
+    """
+    raw = ref.strip()
+    if not raw:
+        return None
+    low = raw.lower()
+    if low.startswith(("http://", "https://", "//", "data:", "mailto:", "javascript:", "#")):
+        return None
+    # 去掉查询串与锚点再查映射（如 cover.png?raw=1）
+    path_part = raw.split("?", 1)[0].split("#", 1)[0]
+    if not path_part:
+        return None
+    # zip 内文件名通常是未编码的原文，但编辑器/网页可能写成 %20 形式，两种都试
+    from urllib.parse import unquote
+
+    for candidate in (path_part, unquote(path_part)):
+        abs_path = posixpath.normpath(posixpath.join(base_dir, candidate)).lstrip("/")
+        stored = path_map.get(abs_path)
+        if stored:
+            return stored
+    return None
+
+
+def replace_html_media_refs(html: str, html_path: str, path_map: dict[str, str]) -> str:
+    """把 HTML 里的本地资源引用替换为 /api/v1/media/{存储文件名}。
+
+    与 `replace_md_image_refs` 对称：zip 内的 HTML 文档（type=html）原先从未
+    改写 `<img src>`，导致图片指向 zip 内已不存在的相对路径而全部裂开。
+    覆盖 `src` / `href` / `poster` / `data-src`（懒加载图常用 data-src）。
+
+    html_path 为 HTML 文件在 zip 内的路径，path_map 为
+    zip 内绝对路径 -> 存储文件名 的映射。外部链接与未命中映射的引用保持原样。
+    """
+    base_dir = posixpath.dirname(html_path)
+
+    def repl(m: re.Match) -> str:
+        prefix, quote, ref = m.group(1), m.group(2), m.group(3)
+        stored = _resolve_media_ref(ref, base_dir, path_map)
+        if not stored:
+            return m.group(0)
+        return f"{prefix}{quote}/api/v1/media/{stored}{quote}"
+
+    return _HTML_MEDIA_ATTR_RE.sub(repl, html)
 
 
 def parse_file(filename: str, data: bytes) -> list[dict]:

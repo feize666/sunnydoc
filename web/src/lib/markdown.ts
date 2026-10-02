@@ -209,11 +209,112 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+// ---------------------------------------------------------------------------
+// 媒体 URL 绝对化
+// ---------------------------------------------------------------------------
+
+/**
+ * 后端产出的媒体引用一律是「根绝对路径」：
+ * - `/api/v1/media/{sha1}.{ext}` —— zip 导入时内容寻址存储的图片/视频
+ * - `/uploads/{uuid}.{ext}`       —— 编辑器上传的图片、附件、AI 附件缩略图
+ *
+ * 这两个路径在**生产**是同源的（nginx 反代 `/api/` 与 `/uploads/`），
+ * 浏览器按当前 origin 解析即可命中，无需处理。
+ *
+ * 但**本地开发前后端分端口**（前端 3001 / 后端 8000）时就不同源了：
+ * 浏览器会去 `localhost:3001/api/v1/media/xxx.png` 取图 → 404 → 图片全裂。
+ *
+ * 因此这里按 `NEXT_PUBLIC_API_BASE` 判断：只有它配成**绝对地址**时才补 origin；
+ * 配相对路径（同源生产）时原样返回，保证线上零影响。
+ */
+
+/** 后端 origin；`NEXT_PUBLIC_API_BASE` 为相对路径时返回 null（表示同源、不需要改写）。 */
+function mediaOrigin(): string | null {
+  const raw = process.env.NEXT_PUBLIC_API_BASE;
+  if (!raw || !/^https?:\/\//i.test(raw)) return null;
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 需要绝对化的路径前缀。
+ *
+ * 刻意只列这两个**媒体**入口，不做 `/api/v1/` 的通用改写：前者是路由
+ * （`routes.py` 的 `GET /media/{filename}`），后者是挂在应用根的静态目录
+ * （`main.py` 的 `app.mount("/uploads", …)`），二者行为不同但都是浏览器
+ * 直接取资源。其它 API 路径即便被绝对化在本地也更正确，但不在本次
+ * 缺陷范围内，保持最小改动以免引入意外行为。
+ */
+const MEDIA_PATH_RE = /^\/(?:api\/v1\/media\/|uploads\/)/;
+
+/** 属性名 → 值是否为媒体路径。 */
+function absolutizeOne(url: string, origin: string): string {
+  return MEDIA_PATH_RE.test(url) ? origin + url : url;
+}
+
+/**
+ * 把 HTML 里指向后端的根绝对路径补成后端 origin（仅 `src`/`href`/`poster`/`srcset`）。
+ *
+ * 为什么用属性正则而不是 DOMPurify hook：`renderMarkdown` 在 SSR / 无 DOM 环境走
+ * 的是不过 DOMPurify 的 `mdSafe` 分支，hook 覆盖不到；属性正则两条分支都能用。
+ * 代码块里的示例 HTML 在渲染时已被转义为 `&lt;img src=&quot;…`，不会命中本正则。
+ */
+export function absolutizeMediaUrls(html: string): string {
+  const origin = mediaOrigin();
+  if (!origin || !html) return html;
+
+  // src / href / poster：单值属性
+  let out = html.replace(
+    /(\s(?:src|href|poster)\s*=\s*)(["'])([^"']*)\2/gi,
+    (m, prefix: string, quote: string, url: string) =>
+      `${prefix}${quote}${absolutizeOne(url, origin)}${quote}`,
+  );
+
+  // srcset：逗号分隔的「URL 描述符」列表，需逐项处理
+  out = out.replace(
+    /(\ssrcset\s*=\s*)(["'])([^"']*)\2/gi,
+    (m, prefix: string, quote: string, value: string) => {
+      const rewritten = value
+        .split(",")
+        .map((part) => {
+          const trimmed = part.trim();
+          if (!trimmed) return part;
+          const sp = trimmed.indexOf(" ");
+          const url = sp === -1 ? trimmed : trimmed.slice(0, sp);
+          const desc = sp === -1 ? "" : trimmed.slice(sp);
+          return absolutizeOne(url, origin) + desc;
+        })
+        .join(", ");
+      return `${prefix}${quote}${rewritten}${quote}`;
+    },
+  );
+
+  return out;
+}
+
+/**
+ * 把单个媒体路径补成后端 origin（供组件渲染 `avatar` / `preview_url` 等
+ * 由后端返回的媒体地址使用）。非媒体路径、已是绝对 URL 的一律原样返回。
+ */
+export function mediaUrl(path: string | null | undefined): string {
+  if (!path) return "";
+  if (/^https?:\/\//i.test(path) || path.startsWith("data:")) return path;
+  const origin = mediaOrigin();
+  return origin ? absolutizeOne(path, origin) : path;
+}
+
 /** 清洗原始 HTML（用于「HTML 文件直接渲染」预览），杜绝 XSS。
- *  SSR / 无 DOM 环境返回空串（客户端挂载后由 useEffect 重新清洗填充）。 */
+ *  SSR / 无 DOM 环境返回空串（客户端挂载后由 useEffect 重新清洗填充）。
+ *
+ *  清洗后同样做媒体 URL 绝对化：zip 导入的 HTML 文档里的 `<img src="/api/v1/media/…">`
+ *  与编辑器上传的 `/uploads/…` 在本地分端口部署下都需要补后端 origin（详见
+ *  `absolutizeMediaUrls`）。先清洗再改写，避免改写结果绕过白名单。 */
 export function sanitizeHtml(html: string): string {
   if (typeof window === "undefined" || !DOMPurify.isSupported) return "";
-  return DOMPurify.sanitize(html, PURIFY_CONFIG);
+  return absolutizeMediaUrls(DOMPurify.sanitize(html, PURIFY_CONFIG));
 }
 
 /** 对文本做大小写不敏感的关键词高亮（支持多关键词），非命中部分转义。 */
@@ -409,7 +510,11 @@ export async function renderMarkdown(
       ? DOMPurify.sanitize(rendered, PURIFY_CONFIG)
       : rendered;
 
-  if (blocks.length === 0) return html;
+  // 本地前后端分端口时把 /api/v1/media、/uploads 补成后端 origin。
+  // 生产同源（NEXT_PUBLIC_API_BASE 为相对路径）时此调用是恒等变换。
+  const absolutized = absolutizeMediaUrls(html);
+
+  if (blocks.length === 0) return absolutized;
 
   // 异步高亮：先拿到 highlighter 单例，再逐个替换占位符。
   let highlighter: HighlighterCore | null = null;
@@ -420,7 +525,7 @@ export async function renderMarkdown(
   }
 
   const shikiTheme = themeName === "dark" ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT;
-  let out = html;
+  let out = absolutized;
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i];
     const placeholder = `<span data-shiki-block="${i}"></span>`;

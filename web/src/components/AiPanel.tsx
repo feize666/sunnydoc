@@ -19,7 +19,7 @@ import {
   ImportIcon,
   CloseIcon,
 } from "./icons";
-import { renderMarkdown } from "@/lib/markdown";
+import { renderMarkdown, mediaUrl } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
 import { useToast } from "./Toast";
@@ -68,7 +68,7 @@ function AttachmentBadge({ att, preview }: { att: { filename: string; kind: stri
   return (
     <span className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-[var(--hero-chip)] px-2 py-1">
       {att.kind === "image" && preview && att.preview_url ? (
-        <img src={att.preview_url} alt={att.filename} className="h-8 w-8 shrink-0 rounded object-cover" />
+        <img src={mediaUrl(att.preview_url)} alt={att.filename} className="h-8 w-8 shrink-0 rounded object-cover" />
       ) : (
         <span className="text-[14px] leading-none">{attachmentEmoji(att.kind)}</span>
       )}
@@ -894,7 +894,7 @@ export function AiPanel({
                 className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-background px-2 py-1"
               >
                 {att.kind === "image" && att.preview_url ? (
-                  <img src={att.preview_url} className="h-7 w-7 rounded object-cover" alt={att.filename} />
+                  <img src={mediaUrl(att.preview_url)} className="h-7 w-7 rounded object-cover" alt={att.filename} />
                 ) : (
                   <span className="text-[14px] leading-none">{attachmentEmoji(att.kind)}</span>
                 )}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { renderMarkdown, extractToc, sanitizeHtml, type TocItem } from "@/lib/markdown";
+import { renderMarkdown, extractToc, sanitizeHtml, mediaUrl, type TocItem } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
 import { useToast } from "./Toast";
@@ -785,7 +785,7 @@ export function Editor({
                       title={p.nickname}
                     >
                       {p.avatar ? (
-                        <img src={p.avatar} alt={p.nickname} className="h-full w-full rounded-full object-cover" />
+                        <img src={mediaUrl(p.avatar)} alt={p.nickname} className="h-full w-full rounded-full object-cover" />
                       ) : (
                         (p.nickname || "?").slice(0, 1)
                       )}

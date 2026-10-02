@@ -623,6 +623,9 @@ def _run_import_task(
             # 仅对 markdown 做图片引用路径替换
             if path_map and p["ext"] in {".md", ".markdown"}:
                 text = parser.replace_md_image_refs(text, p["name"], path_map)
+            # HTML 文档的 <img src> 同样需要改写（与 markdown 对称）
+            elif path_map and p["ext"] in {".html", ".htm"}:
+                text = parser.replace_html_media_refs(text, p["name"], path_map)
             # 归一化 zip 内路径分隔符，去掉前导斜杠
             name = p["name"].replace("\\", "/").lstrip("/")
             # 拆出目录层级与文件名，逐级创建/复用文件夹
