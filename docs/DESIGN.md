@@ -452,6 +452,51 @@ API 不变：`<Tooltip content="提示" side="top|bottom">触发元素</Tooltip>
 <Watermark theme={theme} />
 ```
 
+### 5.18 树形列表缩进（`components/FileTree.tsx`）
+
+**每层缩进只有一个来源：行容器的 `paddingLeft`。**
+
+| 常数 | 值 | 说明 |
+| --- | --- | --- |
+| `INDENT_STEP` | 12px | 每层递进步长，文件夹行与文档行共用 |
+| `TREE_BASE_PAD` | 8px | 根行内容相对侧栏左缘的内边距 |
+| `SELECT_GUTTER` | 22px | 选择框常驻留白；选择框绝对定位停在这条带里，**不占布局宽度** |
+| `DOC_PREFIX_COMPENSATION` | 42px | 文档行的前缀补偿 = `SELECT_GUTTER 22 + chevron 14 + gap 6` |
+
+> ⚠️ **反面案例（真实缺陷，2026-10-02 修）**：曾把缩进同时写在两处 ——
+> 文件夹行的选择框 `<span>` 用 `marginLeft: 8 + depth*12`、内层 `<button>` 用
+> `paddingLeft: 8 + depth*12`，两者**叠加**，文件夹行每层实际递进 **24px**；
+> 而文档行只在行上写一次 `8 + depth*12 + 18`，每层只递进 **12px**。
+>
+> 后果是越深偏得越远：d2 的 `kvm` 在 126px，而它下面的文档在 102px
+> （**与 d1 文件夹同深**）；`WSL安装指南` 甚至比父文件夹还浅。用户看到的就是
+> 「文档挂错了层级」。
+>
+> **教训**：
+> 1. 任何缩进/对齐量**只允许一个来源**。同一个 `8 + depth*N` 出现在两个元素上，
+>    就要立刻怀疑是叠加而不是覆盖。
+> 2. 改 UI 后要**实测渲染数值**（`getBoundingClientRect`），不要只看代码「逻辑正确」。
+>    此缺陷里每一行代码单独看都合理，坏的是两个数字相加。
+> 3. 测缩进要按**渲染嵌套**递归取父子关系 —— 这里的「行」与「子树容器」是**兄弟**，
+>    任何 `.group` 都不是另一个 `.group` 的祖先；靠祖先计数推深度会恒得 0。
+
+**对齐基准**：同级文件夹与文档的**类型图标**与**文字起点**应落在同一 x
+（文件夹首枚 svg 是折叠箭头，比较时要取**第二枚** FolderIcon，否则会拿
+chevron 去比 FileIcon，恒不相等）。
+
+```tsx
+// 文件夹行：外层承担缩进，选择框绝对定位
+<div className="group relative flex ..." style={{ paddingLeft: TREE_BASE_PAD + depth * INDENT_STEP }}>
+  <span className="absolute top-1/2 -translate-y-1/2"
+        style={{ left: TREE_BASE_PAD + depth * INDENT_STEP + 1 }}><SelectBox /></span>
+  <button className="flex min-w-0 flex-1 items-center gap-1.5" style={{ paddingLeft: SELECT_GUTTER }}>…
+// 文档行：同一套常数 + 前缀补偿
+<div className="group relative flex ... gap-1.5" style={{ paddingLeft: TREE_BASE_PAD + depth * INDENT_STEP + DOC_PREFIX_COMPENSATION }}>
+```
+
+- 文档行必须是 `gap-1.5`(6px) 而非 `gap-1`(4px)：4px 只能让「图标对齐、文字差 2px」
+  或反之，二者不可兼得；6px 才同时成立（见上表 42 的推导）。
+
 ---
 
 ## 6. 强制约定

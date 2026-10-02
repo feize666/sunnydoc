@@ -83,6 +83,44 @@ const orderOf = (n: TreeNode) => n.sort_order ?? 0;
 /** 选中项的 kind：文档只能软删除（连后代）；文件夹软删除自身+后代、文档回根目录。 */
 type SelectionKind = "doc" | "folder";
 
+// ── 树缩进常数 ────────────────────────────────────────────────────────────
+//
+// ⚠️ 缩进必须**只有一个来源**：行容器的 paddingLeft。
+//
+// 曾经的实现把缩进同时写在两处 —— 文件夹行的 SelectBox `<span>` 用 marginLeft、
+// 内层 `<button>` 用 paddingLeft，两个 8 + depth*12 是叠加的，文件夹行每层实际
+// 递进 24px；而文档行只在行上写一次（8 + depth*12 + 18），每层只递进 12px。
+// 步长不一致的后果：越深偏得越远。实测（depth 1→3）
+//   d1 文件夹 label@102
+//   d2 文件夹 label@126   ← 比同级文档(090) 靠右 36px
+//   d3 文档   label@102   ← 与 d1 文件夹同深
+// 于是「kvm 下的文档」看起来挂在 d1 上，「09-虚拟化工具使用」的直属文档比父文件夹还浅。
+//
+// 现在：选择框改为 absolute（停在这条常驻留白带里，不占布局宽度），
+// 缩进统一由行 paddingLeft 承担，文件夹行与文档行严格同层同深。
+
+/** 每层缩进步长（px）。文件夹行与文档行共用，沿用修复前的既有值，未做设计变更。 */
+const INDENT_STEP = 12;
+/** 树根行内容相对侧栏左缘的内边距（px）。 */
+const TREE_BASE_PAD = 8;
+/**
+ * 选择框的常驻留白宽度（px）。文件夹行把它作为内层 `<button>` 的**常量** paddingLeft；
+ * 选择框本身绝对定位停在这条留白带里，不占布局宽度、也不再随 depth 累加。
+ */
+const SELECT_GUTTER = 22;
+/**
+ * 文档行的前缀补偿（px）：让文档的**类型图标**与**文字**同时和同级文件夹对齐。
+ *
+ *   文件夹：pl=8 → [留白 22] [chevron 14] [gap 6] [folderIcon 16] [gap 6] 文字
+ *                  ⇒ folderIcon@ pl+42、文字@ pl+64
+ *   文档  ：pl=8+42=50 → [fileIcon 16] [gap 6] 文字
+ *                  ⇒ fileIcon@ pl+42、文字@ pl+64  ✅ 两项都对齐
+ *
+ * 注意文档行用的是 `gap-1.5`(6px) 而非 `gap-1`(4px)：不是随手改的 ——
+ * 4px 只能让「图标对齐、文字差 2px」或反之，二者不可兼得；取 6px 才同时成立。
+ */
+const DOC_PREFIX_COMPENSATION = SELECT_GUTTER + 20;
+
 function CheckIcon({ size = 12 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
@@ -307,9 +345,13 @@ function FileTreeNode({
           className={`group relative flex w-full items-center gap-1 rounded-md py-1 text-left text-[16px] transition-colors ${
             dropPos === "inside" ? "bg-accent-soft ring-1 ring-inset ring-accent" : "text-text hover:bg-hover"
           } ${dropClass} ${isSelected ? "bg-accent-soft" : ""}`}
+          style={{ paddingLeft: TREE_BASE_PAD + depth * INDENT_STEP }}
         >
           {node.key && onToggleSelect && (
-            <span className="shrink-0" style={{ marginLeft: 8 + depth * 12 }}>
+            <span
+              className="absolute top-1/2 -translate-y-1/2"
+              style={{ left: TREE_BASE_PAD + depth * INDENT_STEP + 1 }}
+            >
               <SelectBox
                 checked={!!isSelected}
                 reveal
@@ -328,7 +370,7 @@ function FileTreeNode({
               else setOpen((v) => !v);
             }}
             className="flex min-w-0 flex-1 items-center gap-1.5"
-            style={{ paddingLeft: selectionMode ? 6 : 8 + depth * 12 }}
+            style={{ paddingLeft: SELECT_GUTTER }}
           >
             <ChevronIcon
               size={14}
@@ -446,19 +488,23 @@ function FileTreeNode({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`group relative flex w-full cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-left text-[16px] transition-colors ${
+      className={`group relative flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-left text-[16px] transition-colors ${
         active && !selectionMode ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"
       } ${dropClass} ${isSelected ? "bg-accent-soft" : ""}`}
-      style={{ paddingLeft: 8 + depth * 12 + 18 }}
+      style={{ paddingLeft: TREE_BASE_PAD + depth * INDENT_STEP + DOC_PREFIX_COMPENSATION }}
     >
       {active && !selectionMode && (
         <span
           className="absolute top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-accent"
-          style={{ left: 8 + depth * 12 + 2 }}
+          style={{ left: TREE_BASE_PAD + depth * INDENT_STEP + SELECT_GUTTER - 4 }}
         />
       )}
       {node.key && onToggleSelect && (
-        <span onClick={(e) => e.stopPropagation()} className="shrink-0">
+        <span
+          onClick={(e) => e.stopPropagation()}
+          className="absolute top-1/2 -translate-y-1/2"
+          style={{ left: TREE_BASE_PAD + depth * INDENT_STEP + 1 }}
+        >
           <SelectBox
             checked={!!isSelected}
             reveal
