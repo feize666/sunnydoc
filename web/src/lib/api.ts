@@ -51,6 +51,33 @@ export interface Folder {
 export interface DocDetail extends DocMeta {
   text: string;
   is_favorite?: boolean;
+  /** 乐观锁版本号（保存时原样带回做冲突判定）。 */
+  revision?: number;
+}
+
+/**
+ * 保存冲突（HTTP 409）：他人已修改该文档。
+ *
+ * 单列一个错误类型，让调用方能与「网络失败」「无权限」区分开 ——
+ * 只有这个错误需要弹「保留我的 / 采用对方」，其余一律走普通报错。
+ */
+export class RevisionConflictError extends Error {
+  currentRevision: number;
+  currentTitle?: string;
+  currentUpdatedAt?: number;
+
+  constructor(detail: {
+    message?: string;
+    current_revision?: number;
+    current_title?: string;
+    current_updated_at?: number;
+  }) {
+    super(detail.message || "该文档已被他人修改");
+    this.name = "RevisionConflictError";
+    this.currentRevision = detail.current_revision ?? 0;
+    this.currentTitle = detail.current_title;
+    this.currentUpdatedAt = detail.current_updated_at;
+  }
 }
 
 export interface Citation {
@@ -73,16 +100,43 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
   if (!res.ok) {
-    let detail = `请求失败（${res.status}）`;
+    let detail: unknown = `请求失败（${res.status}）`;
     try {
       const body = await res.json();
       if (body.detail) detail = body.detail;
     } catch {
       /* ignore */
     }
-    throw new Error(detail);
+    // 409 的 detail 是对象（含服务端最新状态），需单独识别 ——
+    // 否则 `new Error(obj)` 只会得到 "[object Object]"，调用方拿不到任何有用信息。
+    if (res.status === 409 && detail && typeof detail === "object" && !Array.isArray(detail)) {
+      throw new RevisionConflictError(detail as Record<string, never>);
+    }
+    throw new Error(_describeDetail(detail, res.status));
   }
   return res.json() as Promise<T>;
+}
+
+/**
+ * 把 FastAPI 的 detail 转成可读字符串。
+ *
+ * detail 可能是字符串（HTTPException）、对象（含 message）或数组
+ * （422 校验错误，形如 [{loc, msg}]）。一律直接 String() 会得到
+ * "[object Object]" —— 用户看到的报错毫无信息量。
+ */
+function _describeDetail(detail: unknown, status: number): string {
+  if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object") {
+    if (Array.isArray(detail)) {
+      const msgs = detail
+        .map((d) => (d && typeof d === "object" && "msg" in d ? String((d as { msg: unknown }).msg) : String(d)))
+        .filter(Boolean);
+      if (msgs.length > 0) return msgs.join("；");
+    } else if ("message" in detail) {
+      return String((detail as { message: unknown }).message);
+    }
+  }
+  return `请求失败（${status}）`;
 }
 
 export async function listDocuments(kbId?: string | null): Promise<DocMeta[]> {
@@ -161,11 +215,17 @@ export async function updateDocument(
   id: string,
   title: string,
   content: string,
-): Promise<{ id: string; title: string }> {
+  expectedRevision?: number | null,
+): Promise<{ id: string; title: string; revision?: number }> {
   return request(`/documents/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, content }),
+    body: JSON.stringify({
+      title,
+      content,
+      // 仅在调用方明确持有版本号时才带 —— 不传则服务端跳过校验（向后兼容）。
+      ...(expectedRevision == null ? {} : { expected_revision: expectedRevision }),
+    }),
   });
 }
 

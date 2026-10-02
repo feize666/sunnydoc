@@ -6,6 +6,7 @@ import { renderMarkdown } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { PasswordInput } from "./PasswordInput";
 import { ThemeToggle } from "./ThemeToggle";
+import { Watermark } from "./Watermark";
 
 /** 公开分享的只读文档视图（无需登录，可带密码保护）。 */
 export function ShareView({ token }: { token: string }) {
@@ -110,7 +111,12 @@ export function ShareView({ token }: { token: string }) {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <header className="flex h-12 shrink-0 items-center gap-2.5 border-b border-line bg-background px-5">
+      {/* 水印只出现在**真正拿到文档内容之后**。密码输入页 / 报错页不加：
+          那时页面上没有任何受保护内容，加水印只是噪音。
+          （也不放在最外层 —— 那会让三种前置态都带上水印。） */}
+      <Watermark theme={theme} />
+
+      <header className="relative z-10 flex h-12 shrink-0 items-center gap-2.5 border-b border-line bg-background px-5">
         <span className="logo-mark grid h-7 w-7 place-items-center rounded-lg text-sm font-bold">
           知
         </span>

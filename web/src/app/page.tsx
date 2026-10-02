@@ -210,10 +210,18 @@ export default function Home() {
   const kbsFetchedRef = useRef(false);
 
   // 公开分享视图：检测 URL ?share=token（无需登录）
-  const [shareToken] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return new URLSearchParams(window.location.search).get("share");
-  });
+  //
+  // ⚠️ 必须在**挂载后**读 URL，不能放在 useState 初始化函数里。
+  // 静态导出时服务端渲染的这个页面没有查询串 → server 渲染出 `authLoading` 的骨架
+  // （`page.tsx` 里的 `loading-row`）；而客户端首次渲染若立刻读到 `?share=`，
+  // 就会直接渲染 `ShareView` → **两边 HTML 不一致 → React 水合失败**。
+  // （该缺陷此前一直存在：React 会回退到客户端重渲染，所以肉眼看不出来，
+  //   但每次打开分享页都会多一次完整重渲染，且控制台始终报 Hydration failed。）
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("share");
+    if (t) setShareToken(t);
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -499,6 +507,8 @@ export default function Home() {
               updated: formatTime(detail.created_at),
               body: detail.text,
               type: detail.type ?? "doc",
+              // 打开文档即记下版本号，供后续保存做乐观锁基线
+              revision: detail.revision ?? 0,
             },
           }));
           void recordRecent(detail.id);
@@ -587,6 +597,9 @@ export default function Home() {
             title: newTitle,
             body: newBody,
             updated: formatTime(Date.now() / 1000),
+            // 乐观锁基线必须跟着服务端走：Editor 保存成功后把新版本号放在 doc 上传来，
+            // 这里漏掉的话基线永远停在旧值 → 第二次自动保存立刻误判为冲突。
+            revision: doc.revision ?? existing.revision,
           },
         };
       });
@@ -610,6 +623,9 @@ export default function Home() {
             body: detail.text,
             type: detail.type ?? "doc",
             updated: formatTime(detail.created_at),
+            // 必须同步新版号：这是「采用对方」之后的新基线，
+            // 不同步的话下次保存仍带旧值 → 立刻又 409。
+            revision: detail.revision ?? existing.revision,
           },
         };
       });

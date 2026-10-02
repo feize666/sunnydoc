@@ -24,6 +24,10 @@ STORE_FILE = DATA_DIR / "store.json"
 # 复用 db 模块的 _UNSET，保证跨 store/db 转发时身份一致（否则会误把哨兵当真实值写入 SQL）。
 _UNSET = db._UNSET
 
+# 增量向量化的「模糊复用」上限：未命中分片数超过它就不再逐条做子串比对。
+# 未命中多 = 整篇大改，全量重算比 O(n²) 比对更快，且结果更准。
+_FUZZY_REUSE_LIMIT = 40
+
 # 检索时的停用词（常见疑问词/虚词，避免干扰打分）
 STOPWORDS = {
     "如何", "怎么", "什么", "哪些", "哪里", "为什么", "请问", "一下",
@@ -183,13 +187,55 @@ class DocStore:
             "utf-8",
         )
 
-    def _build_chunks(self, text: str, kind: str = "doc") -> list[dict[str, Any]]:
-        """分片 + 向量化，供 add / update 共用。kind="html" 时先去标签转纯文本。"""
+    def _build_chunks(
+        self,
+        text: str,
+        kind: str = "doc",
+        previous: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        """分片 + 向量化，供 add / update 共用。kind="html" 时先去标签转纯文本。
+
+        `previous` 为改动前的分片（含向量）。传入时会**复用未变化分片的向量**，
+        只对新增/修改过的分片调用 embedding —— 编辑几行文字不该重算全文向量。
+
+        复用规则（保守优先）：
+          - 文本完全相同的分片直接复用（编辑处之后的分片全部命中）；
+          - 命中不了的再去头去尾比对一次，吸收「段前插入导致整段位移」的常见情形；
+          - 其余交给 embedding。任何不确定都退回重算，宁可慢也不给错向量。
+        """
         if kind == "html":
             text = _html_to_plain(text)
         chunks = _segment(text)
-        # 尝试向量化（无 embedding 服务时为 None）
-        vectors = embedding.embed(chunks) if embedding.available() else None
+        vec_by_text: dict[str, list[float]] = {}
+        for c in previous or []:
+            if c.get("vector"):
+                vec_by_text.setdefault(c["text"], c["vector"])
+
+        vectors: list[list[float] | None] | None = None
+        if embedding.available():
+            unmatched = [i for i, c in enumerate(chunks) if c not in vec_by_text]
+            # 模糊复用只在「未命中数很少」时启用，避免 O(n²) 退化：
+            # 未命中极少说明是局部编辑，值得多花几次比对；未命中很多说明整篇改动，
+            # 直接全量重算反而更快。
+            if unmatched and len(unmatched) <= _FUZZY_REUSE_LIMIT and vec_by_text:
+                fuzzy_hit = {
+                    i: _fuzzy_find_vector(chunks[i], vec_by_text) for i in unmatched
+                }
+            else:
+                fuzzy_hit = {}
+            needed = [i for i in unmatched if fuzzy_hit.get(i) is None]
+
+            vectors = [None] * len(chunks)
+            for i, c in enumerate(chunks):
+                v = vec_by_text.get(c)
+                if v is None:
+                    v = fuzzy_hit.get(i)
+                vectors[i] = v
+            if needed:
+                fresh = embedding.embed([chunks[i] for i in needed])
+                if fresh:
+                    for pos, i in enumerate(needed):
+                        vectors[i] = fresh[pos]
         return [
             {"text": c, "vector": vectors[i] if vectors else None}
             for i, c in enumerate(chunks)
@@ -455,6 +501,17 @@ class DocStore:
             return True
         return False
 
+    def set_share_password(self, token: str, password: str | None) -> None:
+        """定向更新分享密码（用于存量明文就地升级为哈希，不重建记录）。"""
+        if self._backend == "db":
+            db.set_share_password(token, password)
+            return
+        for s in self._share_links:
+            if s["token"] == token:
+                s["password"] = password
+                self._save()
+                return
+
     def _next_sort_order_in_memory(
         self, items: list[dict[str, Any]], parent_col: str, parent_val: str | None
     ) -> float:
@@ -534,10 +591,14 @@ class DocStore:
         kb_id: Any = _UNSET,
         sort_order: Any = _UNSET,
         user_id: str | None = None,
+        expected_revision: int | None = None,
     ) -> dict[str, Any] | None:
         """更新文档字段。title/text 提供时更新并重建分片 + 向量；folder_id/kb_id/sort_order 提供时移动/排序。
 
         权限：文档属主，或对文档所在知识库有 write/owner 权限。找不到或无权限返回 None。
+
+        乐观锁：传 expected_revision 时，若库中版本不一致则抛 RevisionConflict，
+        由路由层转成 409。不传则完全跳过校验（向后兼容旧客户端）。
         """
         if self._backend == "db":
             doc = db.get_document(doc_id)
@@ -553,7 +614,11 @@ class DocStore:
                 doc["title"] = title
             if text is not _UNSET:
                 doc["text"] = text
-                doc["chunks"] = self._build_chunks(text, kind=doc.get("type", "doc"))
+                # 带上改动前的分片：增量向量化只重算真正变了的片段。
+                # 自动保存每 1.5s 就可能触发一次，全量重嵌在长文档上是不可接受的。
+                doc["chunks"] = self._build_chunks(
+                    text, kind=doc.get("type", "doc"), previous=doc.get("chunks")
+                )
             if folder_id is not _UNSET:
                 doc["folder_id"] = folder_id
             if kb_id is not _UNSET:
@@ -564,7 +629,12 @@ class DocStore:
             # 否则「按更新时间排序」会被一次拖动打乱。
             if content_changed:
                 doc["updated_at"] = time.time()
-            return db.update_document(doc_id, doc)
+            return db.update_document(
+                doc_id,
+                doc,
+                expected_revision=expected_revision,
+                touch_revision=content_changed,
+            )
         for d in self._docs:
             if d["id"] == doc_id:
                 if user_id is not None and not self._can_write_doc(d, user_id):
@@ -575,11 +645,18 @@ class DocStore:
                 content_changed = (title is not _UNSET and title != d.get("title")) or (
                     text is not _UNSET and text != d.get("text")
                 )
+                # ⚠️ JSON 分支同样要独立实现乐观锁 —— db 分支的校验发生在 SQL 里，
+                #    这里没有 SQL，必须自己比对。两分支行为必须一致，
+                #    否则降级时「冲突保护」会静默消失（与上一条同源的坑）。
+                if expected_revision is not None and int(d.get("revision", 0)) != expected_revision:
+                    raise db.RevisionConflict(dict(d))
                 if title is not _UNSET:
                     d["title"] = title
                 if text is not _UNSET:
                     d["text"] = text
-                    d["chunks"] = self._build_chunks(text)
+                    # 与 db 分支保持一致：降级到 JSON 时同样只重算变更分片，
+                    # 否则「本机没配数据库」会让保存慢到另一种程度。
+                    d["chunks"] = self._build_chunks(text, previous=d.get("chunks"))
                 if folder_id is not _UNSET:
                     d["folder_id"] = folder_id
                 if kb_id is not _UNSET:
@@ -588,6 +665,7 @@ class DocStore:
                     d["sort_order"] = sort_order
                 if content_changed:
                     d["updated_at"] = time.time()
+                    d["revision"] = int(d.get("revision", 0)) + 1
                 self._save()
                 return d
         return None
@@ -1534,6 +1612,31 @@ def _segment(text: str, size: int = 400) -> list[str]:
             if buf:
                 chunks.append(buf)
     return chunks
+
+
+def _fuzzy_find_vector(text: str, vec_by_text: dict[str, list[float]]) -> list[float] | None:
+    """在旧向量表里找一个「文本近似」的条目，找不到返回 None（不做 embedding 调用）。
+
+    用于吸收一种高频情形：**在段首/段中插入文字，导致后面所有段落顺移**。此时每段
+    文本与旧分片只是头尾差了一小截，`_segment` 切出的分片不再全等，但语义几乎没变，
+    重算纯属浪费。
+
+    判定用保守的「子串包含 + 长度差受限」：任一方是另一方的子串，且长度差不超过
+    较长者的 25%（下限 24 字符，避免短句被过度放宽）。阈值刻意收紧 —— 复用错向量
+    会让检索指错地方，比多算一次昂贵得多。
+    """
+    if not text:
+        return None
+    for old, vec in vec_by_text.items():
+        if not old:
+            continue
+        longer, shorter = (old, text) if len(old) >= len(text) else (text, old)
+        slack = max(24, int(len(longer) * 0.25))
+        if len(longer) - len(shorter) > slack:
+            continue
+        if shorter in longer:
+            return vec
+    return None
 
 
 def _cosine(a: list[float], b: list[float]) -> float:

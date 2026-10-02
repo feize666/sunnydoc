@@ -5,6 +5,14 @@ export interface Doc {
   updated: string;
   body: string;
   type?: string;
+  /**
+   * 乐观锁版本号（服务端 `documents.revision`）。
+   *
+   * 打开文档时记下它，每次保存时原样带回；服务端比对不一致即返回 409，
+   * 说明他人已改过。保存成功后必须用响应里的新值刷新它，否则下一次保存
+   * 会被误判成冲突。
+   */
+  revision?: number;
 }
 
 export interface TreeNode {

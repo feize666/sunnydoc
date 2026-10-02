@@ -112,6 +112,9 @@ def init() -> None:
         # 最后修改时间（「按更新时间排序」与「更新于」展示用）
         cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS updated_at double precision")
         cur.execute("UPDATE documents SET updated_at = created_at WHERE updated_at IS NULL")
+        # 版本号（乐观锁）：每次内容/标题变更 +1，供前端自动保存时做「他人是否已改过」的判定。
+        # 用 bigint 而非 double —— 版本号必须精确，不能有浮点表示误差。
+        cur.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 0")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS folders (
@@ -432,6 +435,18 @@ _LEGACY_SEED_MIN = 1.5e9
 _LEGACY_SEED_MAX = 1.8e9
 
 
+class RevisionConflict(Exception):
+    """乐观锁冲突：调用方持有的 revision 与库中不一致，说明他人已改过。
+
+    携带库中最新状态，供上层向前端返回 409 并附「服务端最新版本」，让用户
+    自己决定「保留我的 / 采用对方」—— 绝不静默覆盖。
+    """
+
+    def __init__(self, current: dict[str, Any]) -> None:
+        super().__init__("revision conflict")
+        self.current = current
+
+
 def _doc_from_row(row: Any) -> dict[str, Any]:
     tags_raw = row[10] if len(row) > 10 else None
     try:
@@ -458,6 +473,9 @@ def _doc_from_row(row: Any) -> dict[str, Any]:
         "updated_at": (
             row[15] if len(row) > 15 and row[15] is not None else row[5]
         ),
+        # 乐观锁版本号。兜底 0：列刚 ALTER 出来时全表默认就是 0，
+        # 而「没传 expected_revision」的旧客户端不受影响（不做校验）。
+        "revision": int(row[16]) if len(row) > 16 and row[16] is not None else 0,
     }
 
 
@@ -472,7 +490,7 @@ def _load_chunks(cur: Any, doc_id: str) -> list[dict[str, Any]]:
     ]
 
 
-_DOC_COLS = "id, title, text, source, ext, created_at, folder_id, kb_id, user_id, deleted_at, tags, pinned, summary, type, sort_order, updated_at"
+_DOC_COLS = "id, title, text, source, ext, created_at, folder_id, kb_id, user_id, deleted_at, tags, pinned, summary, type, sort_order, updated_at, revision"
 
 # 手动排序的步长。新节点取其同级最小 sort_order 再减一个步长 → 落在同级最上方。
 # 固定步长（而非 time.time()）保证 double 精度长期充裕：间隔 1024 时，
@@ -668,26 +686,67 @@ def get_document(doc_id: str) -> dict[str, Any] | None:
     return doc
 
 
-def update_document(doc_id: str, doc: dict[str, Any]) -> dict[str, Any] | None:
-    """更新 documents 表并重建 chunks（含向量）。文档不存在返回 None。"""
+def update_document(
+    doc_id: str,
+    doc: dict[str, Any],
+    expected_revision: int | None = None,
+    touch_revision: bool = False,
+) -> dict[str, Any] | None:
+    """更新 documents 表并重建 chunks（含向量）。文档不存在返回 None。
+
+    乐观锁（可选）：传 expected_revision 时做条件更新
+    `WHERE id = %s AND revision = %s`，不匹配则抛 RevisionConflict。
+    校验与自增在同一条 UPDATE 内完成，避免「先查后写」的竞态窗口。
+
+    touch_revision：内容/标题真正变化时置 True，让 revision + 1。
+    仅移动/排序不该递增版本号（与 updated_at 的既有约定一致）。
+    """
     conn = _connect()
     with conn.transaction():
         with conn.cursor() as cur:
+            set_parts = [
+                "title = %s",
+                "text = %s",
+                "folder_id = %s",
+                "kb_id = %s",
+                "sort_order = COALESCE(%s, sort_order)",
+                "updated_at = COALESCE(%s, updated_at)",
+            ]
+            # revision 递增与条件校验都写在 SQL 里 —— 把「读-判-写」压成一次原子操作，
+            # 避免「先查 revision 再更新」之间的竞态窗口。
+            if touch_revision:
+                set_parts.append("revision = revision + 1")
+            params: list[Any] = [
+                doc["title"],
+                doc["text"],
+                doc.get("folder_id"),
+                doc.get("kb_id"),
+                doc.get("sort_order"),
+                doc.get("updated_at"),
+            ]
+            where = "id = %s"
+            if expected_revision is not None:
+                where += " AND revision = %s"
+            params.append(doc_id)
+            if expected_revision is not None:
+                params.append(expected_revision)
             cur.execute(
-                "UPDATE documents SET title = %s, text = %s, folder_id = %s, kb_id = %s,"
-                " sort_order = COALESCE(%s, sort_order),"
-                " updated_at = COALESCE(%s, updated_at) WHERE id = %s",
-                (
-                    doc["title"],
-                    doc["text"],
-                    doc.get("folder_id"),
-                    doc.get("kb_id"),
-                    doc.get("sort_order"),
-                    doc.get("updated_at"),
-                    doc_id,
-                ),
+                f"UPDATE documents SET {', '.join(set_parts)} WHERE {where}",
+                tuple(params),
             )
             if cur.rowcount == 0:
+                # 区分「文档不存在」与「版本冲突」：两者都返回 0 行，
+                # 但只有后者该回报冲突，否则会把已删除的文档误报成并发冲突。
+                if expected_revision is not None:
+                    cur.execute(
+                        f"SELECT {_DOC_COLS} FROM documents WHERE id = %s AND deleted_at IS NULL",
+                        (doc_id,),
+                    )
+                    row = cur.fetchone()
+                    if row is not None:
+                        stale = _doc_from_row(row)
+                        stale["chunks"] = []
+                        raise RevisionConflict(stale)
                 return None
             # 排序精度守卫：中点插入逼近 double 极限时整层重排（详见 rebalance_if_needed）
             rebalance_if_needed(cur, "documents", doc.get("folder_id"))
@@ -699,6 +758,12 @@ def update_document(doc_id: str, doc: dict[str, Any]) -> dict[str, Any] | None:
                     " VALUES (%s, %s, %s, %s)",
                     (doc_id, i, chunk["text"], _vec_to_str(chunk.get("vector"))),
                 )
+            # 回读递增后的 revision：调用方（store → 路由 → 前端）要拿到新的版本号，
+            # 否则下一次自动保存仍带着旧值，会把「自己的连续保存」误判成冲突。
+            if touch_revision:
+                cur.execute("SELECT revision FROM documents WHERE id = %s", (doc_id,))
+                rev_row = cur.fetchone()
+                doc["revision"] = int(rev_row[0]) if rev_row else doc.get("revision", 0)
     return doc
 
 
@@ -1860,6 +1925,21 @@ def delete_share(doc_id: str) -> bool:
         deleted = cur.rowcount > 0
     conn.commit()
     return deleted
+
+
+def set_share_password(token: str, password: str | None) -> None:
+    """仅更新分享密码。
+
+    专用于「存量明文就地升级为哈希」：不重建记录（否则 token / created_at / expires_at
+    都会变，用户手里已发出的链接会突然失效）。所以这里必须是定向 UPDATE。
+
+    ⚠️ 列宽：`share_links.password` 建表时是 `varchar`（无长度限制）即可容纳 pbkdf2 串。
+    若历史上被建成了短 varchar，会在此处静默截断 → 密码永久校验不通过。见 _ensure_schema。
+    """
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute("UPDATE share_links SET password = %s WHERE token = %s", (password, token))
+    conn.commit()
 
 
 # ---------- 系统设置（键值存储） ----------

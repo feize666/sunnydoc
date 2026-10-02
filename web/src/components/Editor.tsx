@@ -5,12 +5,13 @@ import { renderMarkdown, extractToc, sanitizeHtml, type TocItem } from "@/lib/ma
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
 import { useToast } from "./Toast";
-import { updateDocument, subscribeSSE } from "@/lib/api";
+import { updateDocument, subscribeSSE, RevisionConflictError } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 import type { Doc } from "@/data/docs";
 import type { RecentDoc, Backlink } from "@/lib/api";
 import { useResizable } from "@/hooks/useResizable";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { ConflictDialog } from "./ConflictDialog";
 import { AiAssistPopover } from "./AiAssistPopover";
 import {
   LazyFlowchartEditor,
@@ -45,6 +46,117 @@ function StarIcon({ size = 15, filled = false }: { size?: number; filled?: boole
   );
 }
 
+/**
+ * 编辑态下的保存状态指示。
+ *
+ * 自动保存是「隐性」行为 —— 没有可见反馈时用户会怀疑内容到底存没存，
+ * 反而更频繁地手动 ⌘S。这里把三态显式化：保存中 / 未保存 / 已保存。
+ * 颜色一律走 design token，不写裸色值。
+ */
+function SaveStatus({
+  saving,
+  dirty,
+  error,
+}: {
+  saving: boolean;
+  dirty: boolean;
+  error: string | null;
+}) {
+  if (error) {
+    return (
+      <Tooltip content={error}>
+        <span className="flex items-center gap-1 text-[11px] text-danger">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 8v4M12 16h.01" />
+          </svg>
+          保存失败
+        </span>
+      </Tooltip>
+    );
+  }
+  if (saving) {
+    return (
+      <span className="flex items-center gap-1 text-[11px] text-faint">
+        <span className="spinner spinner-sm" />
+        保存中…
+      </span>
+    );
+  }
+  if (dirty) {
+    return (
+      <Tooltip content="将在停止输入后自动保存">
+        <span className="flex items-center gap-1 text-[11px] text-faint">
+          <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+          未保存
+        </span>
+      </Tooltip>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1 text-[11px] text-faint">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20 6L9 17l-5-5" />
+      </svg>
+      已保存
+    </span>
+  );
+}
+
+// ---------- 未提交草稿的本地暂存 ----------
+// 目的：用户在编辑途中刷新/崩溃/误关标签页时，内容不丢。
+// 只在「有未保存改动」时写入，保存成功后清除，因此不会长期占空间。
+
+/** 自动保存的防抖延迟。1.5s 是「停顿即认为写完一句」的经验值：
+ *  太短会在连续输入中反复发请求，太长则失去「不用惦记保存」的意义。 */
+const AUTO_SAVE_DELAY_MS = 1500;
+
+const DRAFT_PREFIX = "sunnydoc:draft:";
+/** 超过 7 天的草稿视为陈旧，读取时直接丢弃（避免 localStorage 无限增长）。 */
+const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function draftKey(docId: string): string {
+  return `${DRAFT_PREFIX}${docId}`;
+}
+
+function saveDraft(docId: string, title: string, body: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      draftKey(docId),
+      JSON.stringify({ title, body, at: Date.now() }),
+    );
+  } catch {
+    // 隐私模式或配额满 —— 草稿是尽力而为的兜底，不能因为它失败而打断编辑。
+  }
+}
+
+function loadDraft(docId: string): { title: string; body: string } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(draftKey(docId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { title?: string; body?: string; at?: number };
+    if (typeof parsed?.body !== "string") return null;
+    if (parsed.at && Date.now() - parsed.at > DRAFT_TTL_MS) {
+      window.localStorage.removeItem(draftKey(docId));
+      return null;
+    }
+    return { title: parsed.title ?? "", body: parsed.body };
+  } catch {
+    return null;
+  }
+}
+
+function clearDraft(docId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(draftKey(docId));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function Editor({
   doc,
   loading,
@@ -72,6 +184,7 @@ export function Editor({
   currentUserId,
   isAdmin = false,
   onRemoteUpdate,
+  onConflict,
 }: {
   doc: Doc | null;
   loading?: boolean;
@@ -100,6 +213,13 @@ export function Editor({
   /** 管理员可删除任意用户发布的社区模板。 */
   isAdmin?: boolean;
   onRemoteUpdate?: () => void;
+  /**
+   * 冲突时的外部钩子（可选）。
+   *
+   * 默认由 Editor 自己弹 ConflictDialog 处理；传了本回调则交给外部
+   * （例如宿主页面想统一管理弹窗层级）。两者不会同时生效。
+   */
+  onConflict?: (err: RevisionConflictError) => void;
 }) {
   const toast = useToast();
   const [mode, setMode] = useState<Mode>("preview");
@@ -108,6 +228,18 @@ export function Editor({
   const [draftTitle, setDraftTitle] = useState("");
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
+  // 「有未保存改动」—— 驱动标题栏状态文案，也是草稿落盘与 beforeunload 的判据。
+  const [dirty, setDirty] = useState(false);
+  // 保存失败后的错误态（区别于冲突：冲突有专门的对话框）
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // 保存冲突（他人已改）：非空时弹 ConflictDialog。
+  const [conflict, setConflict] = useState<{
+    currentRevision: number;
+    currentTitle?: string;
+    currentUpdatedAt?: number;
+  } | null>(null);
+  // 冲突对话框上的「保留我的」正在进行中（防重复点击）
+  const [resolvingConflict, setResolvingConflict] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
   const [htmlPreview, setHtmlPreview] = useState("");
   const [copied, setCopied] = useState(false);
@@ -259,8 +391,50 @@ export function Editor({
       setDraftTitle(doc.title);
       setDraft(doc.body);
     }
+    // 切换文档时清掉上一个文档的未保存标记与错误态，
+    // 否则新文档一打开就顶着「未保存」或旧报错。
+    setDirty(false);
+    setSaveError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc?.key, doc?.type]);
+
+  /**
+   * 进入编辑态时恢复未提交草稿。
+   *
+   * 只在「本地草稿 ≠ 服务端当前内容」时恢复并提示 —— 否则用户刚保存完
+   * （草稿已清除，但极端情况下可能残留）会看到一次无意义的「已恢复草稿」。
+   */
+  /**
+   * 草稿恢复后，编辑器需要重新挂载才能显示恢复的内容。
+   *
+   * 原因：TipTap 的 `content` 只在初始化时读取一次，之后靠内部状态自行维护
+   * （`onChange` 把内容单向同步到 draft）。所以「恢复草稿」若只 setDraft，
+   * 编辑器仍显示它初始化时的 `value`（= doc.body 服务端内容）——
+   * 用户会看到「提示已恢复草稿，但正文没变」。
+   *
+   * 这里用一个自增 epoch 拼进编辑器 key：恢复草稿时 +1 → 强制重挂载 →
+   * 新挂载读到新的 value，草稿才真正显示出来。
+   */
+  const [editorEpoch, setEditorEpoch] = useState(0);
+
+  useEffect(() => {
+    if (mode !== "edit" || !doc?.key) return;
+    const draft = loadDraft(doc.key);
+    if (!draft) return;
+    const title = draft.title.trim() || doc.title;
+    if (title === doc.title && draft.body === doc.body) {
+      // 内容与服务端一致，属陈旧残留 —— 清掉，不打扰用户。
+      clearDraft(doc.key);
+      return;
+    }
+    setDraftTitle(title);
+    setDraft(draft.body);
+    setDirty(true);
+    // 递增 epoch 触发编辑器重挂载，否则正文仍显示服务端旧内容（见上方说明）。
+    setEditorEpoch((n) => n + 1);
+    toast.info("已恢复未保存的草稿");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, doc?.key]);
 
   // 多人协作：订阅文档 SSE（presence 在线列表 + 他人保存事件）
   useEffect(() => {
@@ -295,13 +469,19 @@ export function Editor({
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        if (mode === "edit" && !saving) handleSave();
+        if (mode !== "edit" || saving) return;
+        // 必须取消待触发的自动保存 —— 否则手动存完 1.5s 内防抖还会再存一次，
+        // 同一个改动发两次请求（第二次内容已相同，纯属浪费）。
+        if (autoSaveTimer.current) {
+          clearTimeout(autoSaveTimer.current);
+          autoSaveTimer.current = null;
+        }
+        void handleSaveRef.current?.();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, draftTitle, draft, saving]);
+  }, [mode, saving]);
 
   /**
    * 点击大纲跳转到第 index 个标题。
@@ -324,6 +504,187 @@ export function Editor({
     // 立刻反映选中态，不必等滚动事件回传
     setActiveHeading(index);
   }, []);
+
+  // ---------- 保存（手动 + 自动） ----------
+  // ⚠️ 必须放在上方「提前 return」之前：handleSave 是 useCallback（即 hook），
+  //    若留在 loading/!doc 的 return 之后，hook 数量会随文档是否加载而变化
+  //    → React 抛 #310 "Rendered more hooks than during the previous render"。
+  //    本文件既有约定：hook 一律在提前 return 之上，普通函数在其下。
+
+  /**
+   * 保存文档。
+   *
+   * auto=true 时为自动保存（防抖触发）：**不切回预览态** —— 自动保存切模式会在
+   * 用户打字过程中把编辑器卸掉，表现为「打着字突然不能输入了」。
+   * 手动保存（⌘S / 点「完成」）保留原有行为：存完回预览。
+   */
+  const handleSave = useCallback(
+    async (opts?: { auto?: boolean }) => {
+      if (!doc) return;
+      const auto = opts?.auto ?? false;
+      const title = draftTitle.trim();
+      if (!title) {
+        // 自动保存遇到空标题只静默跳过 —— 用户可能正在清空重写。
+        if (!auto) toast.warning("标题不能为空");
+        return;
+      }
+      setSaving(true);
+      setSaveError(null);
+      try {
+        const res = await updateDocument(doc.key, title, draft, doc.revision ?? null);
+        // 用响应里的新版本号刷新基线：不回写的话下一次保存仍带旧值，
+        // 会把「自己的连续保存」误判成冲突。
+        onSaved?.({ ...doc, revision: res.revision ?? doc.revision }, title, draft);
+        setDirty(false);
+        clearDraft(doc.key);
+        if (!auto) setMode("preview");
+      } catch (e) {
+        if (e instanceof RevisionConflictError) {
+          // 冲突：不 toast（toast 承载不了二选一），改为弹对话框让用户决定。
+          // 若外部传了 onConflict 则由外部处理，两者不会同时生效。
+          if (onConflict) onConflict(e);
+          else {
+            setConflict({
+              currentRevision: e.currentRevision,
+              currentTitle: e.currentTitle,
+              currentUpdatedAt: e.currentUpdatedAt,
+            });
+          }
+          return;
+        }
+        const msg = e instanceof Error ? e.message : "未知错误";
+        setSaveError(msg);
+        toast.error(`保存失败：${msg}`);
+      } finally {
+        setSaving(false);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [doc, draftTitle, draft, onSaved, onConflict, toast],
+  );
+
+  /**
+   * 冲突处置 A：保留我的 —— 以服务端最新 revision 为基线强制保存，覆盖对方内容。
+   *
+   * 关键：先把本地 doc 的 revision 推到服务端当前值，再走一次正常保存。
+   * 不这么做的话，下一次保存仍带旧 revision，会再次 409，陷入死循环。
+   */
+  const handleKeepMine = useCallback(async () => {
+    if (!doc || !conflict) return;
+    setResolvingConflict(true);
+    const title = draftTitle.trim();
+    try {
+      // 以对方的最新版本号为基线 —— 这一步是「显式覆盖」的语义表达：
+      // 我看到了冲突，且选择用我的版本盖过去。
+      const res = await updateDocument(doc.key, title, draft, conflict.currentRevision);
+      onSaved?.({ ...doc, revision: res.revision ?? conflict.currentRevision }, title, draft);
+      setDirty(false);
+      clearDraft(doc.key);
+      setConflict(null);
+      setMode("preview");
+      toast.success("已用你的版本覆盖");
+    } catch (e) {
+      if (e instanceof RevisionConflictError) {
+        // 极少数情况：在你决策的这几秒里又有人改了。直接把基线推到最新，
+        // 让用户再决定一次，而不是报一个他看不懂的错。
+        setConflict({
+          currentRevision: e.currentRevision,
+          currentTitle: e.currentTitle,
+          currentUpdatedAt: e.currentUpdatedAt,
+        });
+        toast.warning("刚刚又有人修改了，请再确认一次");
+      } else {
+        toast.error(`保存失败：${e instanceof Error ? e.message : "未知错误"}`);
+      }
+    } finally {
+      setResolvingConflict(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc, conflict, draftTitle, draft, onSaved, toast]);
+
+  /**
+   * 冲突处置 B：采用对方 —— 丢弃本地草稿，重新拉取服务端最新内容。
+   *
+   * 必须清掉本地草稿，否则下次进编辑态又会「恢复草稿」，把用户已经
+   * 主动放弃的内容塞回来。
+   */
+  const handleTakeTheirs = useCallback(async () => {
+    if (!doc) return;
+    clearDraft(doc.key);
+    setDirty(false);
+    setSaveError(null);
+    setConflict(null);
+    setMode("preview");
+    // 通知宿主重新拉取（Editor 本身不持有文档源，由 page.tsx 负责刷新）
+    onRemoteUpdate?.();
+    toast.info("已采用对方版本");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc, onRemoteUpdate, toast]);
+
+  // handleSave 的最新引用：供防抖回调与 blur 回调调用。
+  // 不把 handleSave 写进那些 effect 的依赖数组 —— 它依赖 draft/draftTitle，
+  // 进依赖会让 effect 在保存后再次触发，形成「保存→重排→再保存」的循环。
+  const handleSaveRef = useRef<typeof handleSave | null>(null);
+
+  useEffect(() => {
+    handleSaveRef.current = handleSave;
+  }, [handleSave]);
+
+  // 编辑态下停笔 AUTO_SAVE_DELAY_MS 后落盘。计时器用 ref 持有，不进依赖数组。
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (mode !== "edit" || !doc) return;
+    const title = draftTitle.trim();
+    // 与基线一致 → 没有真正改动，不算 dirty，也不排程保存。
+    // 这一步必须存在：否则打开编辑器（初始化 draft 会触发本 effect）就会立刻存一次，
+    // 把 revision 白白推高，而用户什么都没改。
+    const changed = title !== doc.title || draft !== doc.body;
+    if (!changed) return;
+
+    setDirty(true);
+    // 未提交草稿先落盘 —— 即使随后保存失败或页面被关掉，内容仍可恢复。
+    saveDraft(doc.key, draftTitle, draft);
+
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      void handleSaveRef.current?.({ auto: true });
+    }, AUTO_SAVE_DELAY_MS);
+
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, doc?.key, doc?.title, doc?.body, draftTitle, draft]);
+
+  // 离开页面兜底：有未保存改动时提示浏览器确认。
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      // 部分浏览器需要设置 returnValue 才会弹确认框
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
+
+  // 失焦即保存：切到别的应用/标签页时把内容落盘，不必等防抖。
+  useEffect(() => {
+    if (mode !== "edit") return;
+    const onBlur = () => {
+      if (dirty) void handleSaveRef.current?.({ auto: true });
+    };
+    window.addEventListener("blur", onBlur);
+    return () => window.removeEventListener("blur", onBlur);
+  }, [mode, dirty]);
+
+  // 切换文档时清掉待触发的计时器，避免保存到错误的文档上。
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    };
+  }, [doc?.key, mode]);
 
   if (loading && !doc) {
     return (
@@ -383,29 +744,13 @@ export function Editor({
 
   const handleSwitch = (m: Mode) => {
     if (m === "edit" && mode === "preview") {
+      // ⚠️ 不要在这里直接 setDraft(doc.body) —— 那会覆盖掉「草稿恢复」effect
+      //    刚刚还原的本地草稿，用户会看到「提示已恢复草稿，但内容还是旧的服务端版本」。
+      //    这里只把基线填进去，是否用草稿由下面那个 effect 决定（它跑在本函数之后）。
       setDraftTitle(doc.title);
       setDraft(doc.body);
     }
     setMode(m);
-  };
-
-  const handleSave = async () => {
-    if (!doc) return;
-    const title = draftTitle.trim();
-    if (!title) {
-      toast.warning("标题不能为空");
-      return;
-    }
-    setSaving(true);
-    try {
-      await updateDocument(doc.key, title, draft);
-      onSaved?.(doc, title, draft);
-      setMode("preview");
-    } catch (e) {
-      toast.error(`保存失败：${e instanceof Error ? e.message : "未知错误"}`);
-    } finally {
-      setSaving(false);
-    }
   };
 
   const copyMarkdown = async () => {
@@ -587,6 +932,7 @@ export function Editor({
               </Tooltip>
             ) : (
               <>
+                <SaveStatus saving={saving} dirty={dirty} error={saveError} />
                 <Tooltip content="放弃编辑">
                   <button
                     onClick={() => setMode("preview")}
@@ -598,7 +944,15 @@ export function Editor({
                 </Tooltip>
                 <Tooltip content="完成并保存">
                   <button
-                    onClick={handleSave}
+                    // 必须显式包一层：直接把 handleSave 交给 onClick 会把 MouseEvent
+                    // 当作 opts 传进去（虽然当前侥幸无害，但语义错误且极易在后续改动中踩坑）。
+                    onClick={() => {
+                      if (autoSaveTimer.current) {
+                        clearTimeout(autoSaveTimer.current);
+                        autoSaveTimer.current = null;
+                      }
+                      void handleSave();
+                    }}
                     disabled={saving}
                     className="btn btn-accent text-white"
                   >
@@ -759,16 +1113,18 @@ export function Editor({
               <div className="mt-4 border-b border-line" />
               <div className="mt-6">
                 <ErrorBoundary key={`${doc.key}-${mode}`} title="编辑器加载失败">
+                {/* 这几个编辑器同样只在挂载时读一次 value，且 key 必须带 epoch：
+                    否则草稿恢复后正文不会更新（与下方 LazyRichEditor 同理）。 */}
                 {doc.type === "table" ? (
-                  <LazyTableEditor key={doc.key} value={doc.body} onChange={setDraft} />
+                  <LazyTableEditor key={`${doc.key}:${editorEpoch}`} value={draft} onChange={setDraft} />
                 ) : doc.type === "board" ? (
-                  <LazyBoardEditor key={doc.key} value={doc.body} onChange={setDraft} />
+                  <LazyBoardEditor key={`${doc.key}:${editorEpoch}`} value={draft} onChange={setDraft} />
                 ) : doc.type === "datasheet" ? (
-                  <LazyDatasheetEditor key={doc.key} value={doc.body} onChange={setDraft} />
+                  <LazyDatasheetEditor key={`${doc.key}:${editorEpoch}`} value={draft} onChange={setDraft} />
                 ) : doc.type === "flowchart" ? (
                   <LazyFlowchartEditor
-                    key={doc.key}
-                    value={doc.body}
+                    key={`${doc.key}:${editorEpoch}`}
+                    value={draft}
                     onChange={setDraft}
                     currentUserId={currentUserId}
                     isAdmin={isAdmin}
@@ -776,8 +1132,8 @@ export function Editor({
                   />
                 ) : doc.type === "mindmap" ? (
                   <LazyMindMapEditor
-                    key={doc.key}
-                    value={doc.body}
+                    key={`${doc.key}:${editorEpoch}`}
+                    value={draft}
                     onChange={setDraft}
                     currentUserId={currentUserId}
                     isAdmin={isAdmin}
@@ -793,8 +1149,11 @@ export function Editor({
                   />
                 ) : (
                   <LazyRichEditor
-                    key={doc.key}
-                    value={doc.body}
+                    // key 里带 epoch：草稿恢复时 +1，强制重挂载以显示恢复后的内容。
+                    key={`${doc.key}:${editorEpoch}`}
+                    // 用 draft 而非 doc.body —— 重挂载时才能读到草稿恢复写入的内容。
+                    // 首次进入编辑态时 draft 已被初始化为 doc.body，行为不变。
+                    value={draft}
                     onChange={setDraft}
                     placeholder="开始输入内容…"
                   />
@@ -890,6 +1249,17 @@ export function Editor({
           onClose={() => setAiAssist(null)}
         />
       )}
+
+      {/* 保存冲突：他人已改，让用户选保留哪一份（绝不静默覆盖） */}
+      <ConflictDialog
+        open={conflict !== null}
+        currentTitle={conflict?.currentTitle}
+        currentUpdatedAt={conflict?.currentUpdatedAt}
+        busy={resolvingConflict}
+        onKeepMine={() => void handleKeepMine()}
+        onTakeTheirs={() => void handleTakeTheirs()}
+        onCancel={() => setConflict(null)}
+      />
     </main>
   );
 }

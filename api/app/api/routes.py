@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.core.config import DEFAULT_TOP_K, MEDIA_DIR, DATA_DIR, TEXT_EXTS, ai_config
-from app.services import media, parser, qa, llm, web_search, exporter, auth, settings, icon_search
+from app.services import db, media, parser, qa, llm, web_search, exporter, auth, settings, icon_search, share_password
 from app.services.store import store
 
 router = APIRouter(prefix="/api/v1")
@@ -203,6 +203,8 @@ class UpdateDocumentRequest(BaseModel):
     folder_id: str | None = None
     kb_id: str | None = None
     sort_order: float | None = None
+    # 乐观锁：前端携带「读取时的 revision」。不传则跳过校验（向后兼容旧客户端）。
+    expected_revision: int | None = None
 
 
 class CreateFolderRequest(BaseModel):
@@ -1009,6 +1011,8 @@ def get_document(doc_id: str, current_user: dict = Depends(get_current_user)):
         "type": doc.get("type", "doc"),
         "sort_order": doc.get("sort_order"),
         "updated_at": doc.get("updated_at") or doc.get("created_at"),
+        # 乐观锁基线：前端打开文档时记下它，保存时原样带回做冲突判定。
+        "revision": doc.get("revision", 0),
     }
 
 
@@ -1056,12 +1060,18 @@ def create_share(doc_id: str, payload: dict | None = None, current_user: dict = 
     """生成/复用文档分享链接，返回 token（前端拼接 URL）。
 
     可选 payload：{"password": "...", "expires_in": 秒}（0/缺省表示永久）。
+
+    密码**只以哈希形式入库**（pbkdf2 加盐）。响应里回传明文是**有意为之**：
+    创建者此刻需要把「链接 + 密码」一起发给对方，且这是他自己刚输入的串。
+    存量链接复用（existing 分支）不回传明文 —— 库里存的是哈希，无法还原。
     """
     if store.get(doc_id, current_user["id"]) is None:
         raise HTTPException(status_code=404, detail="文档不存在")
     existing = store.get_share_by_doc(doc_id)
     if existing is not None:
-        return {"token": existing["token"], "url": None, "password": existing.get("password"), "expires_at": existing.get("expires_at")}
+        # ⚠️ 不要在这里回传 existing["password"]：那是哈希串，
+        #    暴露给前端等于把「可离线爆破的材料」送到浏览器。
+        return {"token": existing["token"], "url": None, "password": None, "expires_at": existing.get("expires_at")}
     payload = payload or {}
     password = (payload.get("password") or "").strip() or None
     expires_in = payload.get("expires_in")
@@ -1072,13 +1082,25 @@ def create_share(doc_id: str, payload: dict | None = None, current_user: dict = 
         except (TypeError, ValueError):
             raise HTTPException(status_code=400, detail="有效期格式不正确")
     token = uuid.uuid4().hex
-    store.create_share(doc_id, token, password, expires_at)
+    store.create_share(doc_id, token, share_password.hash_for_storage(password) if password else None, expires_at)
     return {"token": token, "url": None, "password": password, "expires_at": expires_at}
 
 
 @router.delete("/documents/{doc_id}/share")
 def revoke_share(doc_id: str, current_user: dict = Depends(get_current_user)):
-    """撤销文档分享链接。"""
+    """撤销文档分享链接。
+
+    ⚠️ **必须做所有权校验**，不能只靠 `delete_share(doc_id)` 直接删。
+    原实现漏了这一步：任何登录用户只要知道（或猜到）doc_id，就能撤销别人的分享链接
+    —— 实测用户 B 连该文档都读不到（`GET /documents/{id}` → 404），
+    却能把 admin 的分享链接删掉（200）。危害虽轻于数据泄露，但「删掉别人的分享」
+    是明确的越权写操作。
+
+    这里用与 `create_share` 相同的可见性判定（`store.get(doc_id, current_user["id"])`）：
+    属主、或对所在知识库有权限的人可撤销；另放行管理员。
+    """
+    if store.get(doc_id, current_user["id"]) is None and current_user.get("role") != "admin":
+        raise HTTPException(status_code=404, detail="文档不存在")
     store.delete_share(doc_id)
     return {"ok": True}
 
@@ -1089,6 +1111,9 @@ def get_shared_doc(token: str, password: str | None = None):
 
     若分享设置了密码，需通过 ?password= 提供正确密码；
     若设置了有效期，过期后返回 410 Gone。
+
+    密码校验见 `services/share_password`：兼容存量明文记录，且**校验通过后就地升级为哈希**
+    （否则老链接永远停在明文态，安全修复只对新数据生效）。
     """
     share = store.get_share_by_token(token)
     if share is None:
@@ -1098,9 +1123,18 @@ def get_shared_doc(token: str, password: str | None = None):
     if expires_at and time.time() > expires_at:
         raise HTTPException(status_code=410, detail="分享链接已过期")
     # 密码校验
-    if share.get("password"):
-        if not password or password != share["password"]:
+    stored = share.get("password")
+    if stored:
+        if not share_password.check(password, stored):
             raise HTTPException(status_code=401, detail="需要密码访问")
+        # 存量明文 → 就地升级为哈希。
+        # ⚠️ 升级失败**不能**让本次访问失败：用户密码是对的，升级只是内部维护动作。
+        #    这里吞掉异常是刻意的（DB 抖动不该表现成「密码错误」）。
+        if not share_password.is_hashed(stored):
+            try:
+                store.set_share_password(token, share_password.hash_for_storage(password or ""))
+            except Exception:  # noqa: BLE001
+                pass
     doc = store.get(share["doc_id"])
     if doc is None:
         raise HTTPException(status_code=404, detail="文档不存在")
@@ -1548,7 +1582,27 @@ def update_document(
     if "sort_order" in req.model_fields_set:
         kwargs["sort_order"] = req.sort_order
 
-    doc = store.update(doc_id, user_id=current_user["id"], **kwargs)
+    try:
+        doc = store.update(
+            doc_id,
+            user_id=current_user["id"],
+            expected_revision=req.expected_revision,
+            **kwargs,
+        )
+    except db.RevisionConflict as e:
+        # 409 而非 403/400：语义是「请求本身合法，但基于的状态已过期」。
+        # 附上服务端最新状态，让前端能呈现「他人已改」并提供处置选项，
+        # 而不是让用户面对一个无信息量的失败。
+        cur = e.current
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "该文档已被他人修改",
+                "current_revision": cur.get("revision", 0),
+                "current_title": cur.get("title"),
+                "current_updated_at": cur.get("updated_at"),
+            },
+        )
     if not doc:
         raise HTTPException(status_code=404, detail="文档不存在")
     _audit(current_user, "update", "doc", doc["id"], f"更新文档「{doc['title']}」")
@@ -1568,6 +1622,9 @@ def update_document(
         "title": doc["title"],
         "folder_id": doc.get("folder_id"),
         "kb_id": doc.get("kb_id"),
+        # 回传新版本号，供前端更新本地基线；不回传的话前端每次保存后仍持旧值，
+        # 会把「自己的连续保存」误判成冲突。
+        "revision": doc.get("revision", 0),
     }
 
 
