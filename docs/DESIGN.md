@@ -931,3 +931,48 @@ viewport（pan/zoom）、自身尺寸、以及泳道父节点偏移影响——�
 - 两者 **Esc 一律取消**（丢弃草稿），失焦（`onBlur`）一律提交。
 - 输入框的 `onKeyDown` 必须 `stopPropagation()`：否则画布快捷键会吃掉
   `Backspace/Delete`（删节点）与方向键。
+
+## 5.19 媒体 URL 的解析与绝对化
+
+后端产出的媒体引用一律是**根绝对路径**，两种形态：
+
+| 形态 | 来源 | 服务方式 |
+|---|---|---|
+| `/api/v1/media/{sha1前16}.{ext}` | zip 导入时内容寻址存储 | 路由 `GET /media/{filename}`（在 `/api/v1` 下） |
+| `/uploads/{uuid}.{ext}` | 编辑器上传、AI 附件、头像 | `app.mount("/uploads", StaticFiles(...))`（挂在**应用根**） |
+
+**规则：渲染层按需绝对化，数据层保持相对。**
+
+- **数据层永不写入 origin**。文档正文里的引用保持根绝对路径，
+  否则换环境（本地 ↔ 生产）就会把旧 origin 写死进数据。
+- **渲染层按 `NEXT_PUBLIC_API_BASE` 判断是否同源**：
+  - 配成**绝对地址**（本地开发 `http://localhost:8000/api/v1`）→ 前后端不同源，
+    渲染时必须把 `/api/v1/media/*` 与 `/uploads/*` 补成**后端 origin**。
+  - 配成**相对路径或未设置**（生产静态导出，nginx 同域反代）→ **原样返回**。
+    此时浏览器按当前 origin 解析即可命中，任何改写都是多余的、且有风险。
+
+实现见 `web/src/lib/markdown.ts` 的 `absolutizeMediaUrls` / `mediaUrl`。
+
+### 必须覆盖的渲染入口
+
+同一个媒体 URL 会经由**多条独立代码路径**输出，只修一条就会漏：
+
+| 入口 | 渲染方式 | 接入点 |
+|---|---|---|
+| Markdown 预览 | `renderMarkdown` → `dangerouslySetInnerHTML` | 清洗后统一改写 |
+| HTML 文档直渲染 | `sanitizeHtml` → `dangerouslySetInnerHTML` | 清洗后统一改写 |
+| 编辑态所见即所得 | TipTap `Image.renderHTML` | 扩展 `renderHTML` 补 origin |
+| AI 附件缩略图 / 协作者头像 | 组件内联 `<img src>` | `mediaUrl()` |
+
+> **TipTap 只改渲染、不改数据**：保存走 `editor.storage.markdown.getMarkdown()`，
+> 文档源里仍是根绝对路径。若在 `renderHTML` 里改了 `getHTML()`，会把 origin
+> 写进正文——那是错的。
+
+### 排查要点
+
+- **先问「两个 origin 是否同源」**。同域反代会把相对路径的解析缺陷**完全掩盖**，
+  于是出现「本地裂图 / 线上正常」这种反直觉现象（本缺陷即是）。
+- **`curl` 后端 200 ≠ 前端能显示**。要分别探测**后端 origin**与**前端 origin**，
+  并在浏览器里读 `img.currentSrc` + `naturalWidth` —— 前者给出真实解析结果，
+  后者给出是否真的解码成功。`<img>` 有 `box` 尺寸但 `naturalWidth=0`
+  说明标签渲染正常、**只是 URL 拉不到资源**。

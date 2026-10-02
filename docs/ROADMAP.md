@@ -424,3 +424,65 @@ P0-1 的自动保存 / 冲突 / 长文档 / 草稿恢复四组脚本全部复跑
 
 **回归**：后端 **119 项测试全绿**；`tsc --noEmit` 干净；`npm run build` 成功；
 多选批量删除 8/8 PASS（本次改动了 SelectBox 定位方式，必须回归）。
+### 压缩包导入文档图片不显示（2026-10-02）
+
+**症状**：`data.zip` 导入的知识库文档，图片全部裂开；Markdown 预览、HTML 文档、
+编辑态三处都不显示。
+
+**根因**：后端产出的媒体引用一律是「根绝对路径」——
+`/api/v1/media/{sha1}.{ext}`（zip 导入时内容寻址）与 `/uploads/{uuid}.{ext}`
+（编辑器上传），而**前端渲染时从未把它绝对化**。
+
+- 生产是**同源**的：nginx 反代 `/api/` 与 `/uploads/` 到后端，浏览器按当前
+  origin 解析恰好命中 —— 所以线上一直没暴露。
+- 本地开发**前后端分端口**（前端 3001 / 后端 8000）就不同源了：浏览器去
+  `localhost:3001/api/v1/media/…` 取图 → **404** → 图片全裂。
+
+**实测证据**（修复前，Playwright 真机）：
+
+| 探测 | 结果 |
+|---|---|
+| `127.0.0.1:8000/api/v1/media/{file}` | **200**（后端正常） |
+| `localhost:3001/api/v1/media/{file}` | **404** |
+| `localhost:3001/uploads/{file}` | **404** |
+| 页面 `<img>` | 23 个，`natural=0x0`，`resolved=localhost:3001/…`，全部 404 |
+
+注意 `<img>` 的 `box=876x29` 证明 markdown 解析本身正常——**症状在 URL 解析，
+不在渲染**。
+
+**修复**：
+
+| 位置 | 改动 |
+|---|---|
+| `web/src/lib/markdown.ts` | 新增 `absolutizeMediaUrls` / `mediaUrl`；**仅当 `NEXT_PUBLIC_API_BASE` 是绝对地址**时才把 `/api/v1/media/*`、`/uploads/*` 补成后端 origin |
+| 同上 | 接入 `renderMarkdown`（markdown 预览）与 `sanitizeHtml`（HTML 文档直渲染）两条路径 |
+| `web/src/components/RichEditor.tsx` | TipTap `Image.renderHTML` 补 origin（编辑态所见即所得） |
+| `web/src/components/AiPanel.tsx` / `Editor.tsx` | AI 附件缩略图、协作者头像 |
+| `api/app/services/parser.py` | 新增 `replace_html_media_refs`，与 `replace_md_image_refs` 对称 |
+| `api/app/api/routes.py` | `_run_import_task` 对 `.html/.htm` 调用改写 |
+
+**同源生产零影响**（关键约束）：`deploy.sh:26` 生产构建时 `NEXT_PUBLIC_API_BASE=`
+**置空** → `mediaOrigin()` 返回 `null` → 改写逻辑**完全不触发**。已实证：生产方式
+构建的产物**不含** `localhost:8000`；而开发态构建含。
+
+**验证**：
+
+| 项 | 结果 |
+|---|---|
+| markdown 文档真机（Playwright） | **3/3 图片 `naturalWidth>0`**，媒体请求全 200 |
+| HTML 文档真机 | 应加载 **2/2 成功**，404 数 **0**；外链/缺失引用按预期不加载 |
+| 后端接口实测 | HTML `body` 里 2 个引用已改写，md 与 html 指向**同一 sha** |
+| 后端测试 | **129 项全绿**（新增 10 项） |
+| `tsc --noEmit` / `npm run build` | 干净 / 成功 |
+
+**对抗性验证**（防「断言恒真」）：回滚前端 `mediaOrigin` → **23 张图全部 404**
+（`resolved` 落在 3001）；回滚后端接线 → 集成测试立刻失败，失败信息精准复现
+原缺陷形态（`src="pics/red.png"` 未被改写）。
+
+**两个值得记住的教训**：
+
+1. **函数级测试会有假通过**。只测 `replace_html_media_refs` 时，把 `routes.py`
+   的接线整段删掉测试依然全绿——因为测试自己手工调用了函数。真正会坏的是
+   「路由层是否记得调用」，所以断言必须打在 `_run_import_task` 的**产物**上。
+2. **「本地正常、线上异常」的镜像同样存在**。这次是**本地异常、线上正常**：
+   同源反代把相对路径的解析问题完全掩盖了。排查时必须先问「两个 origin 是否同源」。
