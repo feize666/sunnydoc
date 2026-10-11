@@ -40,6 +40,31 @@ const TYPE_LABEL: Record<string, string> = {
   flowchart: "流程图",
 };
 
+/**
+ * 各类型的**初始内容**与默认标题。
+ *
+ * ⚠️ 必须与 `page.tsx` 的 `handleNew` 逐字一致 —— 两处若不一致，
+ * 会出现「从文件树新建」与「从卡片新建」得到不同初始结构的怪现象，
+ * 而各编辑器的解析器对结构有假设（如思维导图要求 nodes 数组）。
+ * 这里的取值是照抄 handleNew 的，不是自己编的。
+ */
+export const NEW_DOC_TEMPLATE: Record<EmbeddableType, { title: string; body: string }> = {
+  table: {
+    title: "未命名表格",
+    body: JSON.stringify([["", "", ""], ["", "", ""], ["", "", ""]]),
+  },
+  board: { title: "未命名画板", body: JSON.stringify([]) },
+  datasheet: {
+    title: "未命名数据表",
+    body: JSON.stringify({ columns: ["字段 1", "字段 2"], rows: [["", ""], ["", ""]] }),
+  },
+  mindmap: {
+    title: "未命名思维导图",
+    body: JSON.stringify({ nodes: [{ id: "1", text: "中心主题", parent: null }] }),
+  },
+  flowchart: { title: "未命名流程图", body: JSON.stringify({ nodes: [], edges: [] }) },
+};
+
 /** 按类型给出对应的懒加载编辑器。缺省返回 null（未知类型则不渲染内容）。 */
 function renderEmbedded(
   type: string | undefined,
@@ -180,14 +205,24 @@ export function DocumentEmbedView({ node, deleteNode, selected }: NodeViewProps)
 export function EmbedPicker({
   kbId,
   onPick,
+  onCreate,
   onClose,
 }: {
   kbId?: string | null;
   onPick: (doc: DocMeta) => void;
+  /**
+   * 新建并插入。
+   *
+   * 为什么需要这条路径：实测 5 个编辑器零使用的原因是**门槛**——
+   * 必须先离开当前文档去新建、再回来嵌入。一步式建+插把门槛降到接近零。
+   * 挂起期间由父组件负责显示「正在创建…」并禁用重复点击。
+   */
+  onCreate: (type: EmbeddableType) => void;
   onClose: () => void;
 }) {
   const [docs, setDocs] = useState<DocMeta[] | null>(null);
   const [kw, setKw] = useState("");
+  const [creating, setCreating] = useState<EmbeddableType | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -229,11 +264,34 @@ export function EmbedPicker({
         />
       </div>
       <div className="embed-picker-list">
+        {/* 新建并插入：省掉「先离开文档去新建、再回来嵌入」的两步 */}
+        <div className="px-3 pb-1 pt-1 text-[11px] text-faint">新建并插入</div>
+        <div className="flex flex-wrap gap-1 px-2 pb-2">
+          {EMBEDDABLE_TYPES.map((t) => (
+            <button
+              key={t}
+              type="button"
+              disabled={creating !== null}
+              className="embed-new-btn"
+              onClick={() => {
+                setCreating(t);
+                onCreate(t);
+              }}
+            >
+              {creating === t ? "创建中…" : `+ ${TYPE_LABEL[t]}`}
+            </button>
+          ))}
+        </div>
+        <div className="mx-2 border-t border-line" />
+        <div className="px-3 pb-1 pt-2 text-[11px] text-faint">
+          {kw.trim() ? "匹配结果" : "从已有文档选择"}
+        </div>
+
         {docs === null && <div className="px-3 py-3 text-[12px] text-faint">加载中…</div>}
         {docs !== null && shown.length === 0 && (
           <div className="px-3 py-3 text-[12px] text-faint">
             {docs.length === 0
-              ? "还没有可嵌入的文档。先在文件树里新建一个表格 / 思维导图 / 流程图等，再回来插入。"
+              ? "还没有可嵌入的文档 —— 用上面的「新建并插入」直接建一个。"
               : "没有匹配的文档。"}
           </div>
         )}

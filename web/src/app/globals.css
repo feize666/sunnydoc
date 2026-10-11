@@ -1650,3 +1650,26 @@ mark.search-hit {
   overflow-y: auto;
   padding-bottom: 4px;
 }
+
+/* 「新建并插入」按钮：小号胶囊，横向排列 */
+.embed-new-btn {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--text);
+  padding: 3px 8px;
+  font-size: 12px;
+  line-height: 18px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.embed-new-btn:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.embed-new-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

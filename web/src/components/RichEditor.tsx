@@ -10,9 +10,9 @@ import Placeholder from "@tiptap/extension-placeholder";
 import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
 import { Markdown } from "tiptap-markdown";
-import { uploadImage, uploadAttachment, aiAssist, type AIAssistAction } from "@/lib/api";
+import { uploadImage, uploadAttachment, aiAssist, createDocument, type AIAssistAction } from "@/lib/api";
 import { mediaUrl } from "@/lib/markdown";
-import { DocumentEmbedView, EmbedPicker } from "./DocumentEmbed";
+import { DocumentEmbedView, EmbedPicker, NEW_DOC_TEMPLATE, type EmbeddableType } from "./DocumentEmbed";
 import { Tooltip } from "./Tooltip";
 import { useToast } from "./Toast";
 import {
@@ -1344,6 +1344,27 @@ export function RichEditor({
                   { type: "paragraph" },
                 ])
                 .run();
+            }}
+            onCreate={async (t) => {
+              const tpl = NEW_DOC_TEMPLATE[t];
+              try {
+                // 不跳转：建完直接插进**当前**文档，用户停在原地继续写。
+                // 跳去新文档会让「插入卡片」变成「离开当前文档」，与意图相反。
+                const created = await createDocument(tpl.title, tpl.body, kbId ?? null, null, t);
+                setEmbedOpen(false);
+                editor
+                  .chain()
+                  .focus()
+                  .insertContent([
+                    { type: "documentEmbed", attrs: { docId: created.id } },
+                    { type: "paragraph" },
+                  ])
+                  .run();
+                toast.success(`已新建「${tpl.title}」并插入卡片`);
+              } catch (e) {
+                setEmbedOpen(false);
+                toast.error(`新建失败：${e instanceof Error ? e.message : "未知错误"}`);
+              }
             }}
           />
         )}
