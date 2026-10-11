@@ -1253,6 +1253,7 @@ export function Editor({
                     value={draft}
                     onChange={setDraft}
                     placeholder="开始输入内容…"
+                    kbId={doc.kbId}
                   />
                 )}
                 </ErrorBoundary>

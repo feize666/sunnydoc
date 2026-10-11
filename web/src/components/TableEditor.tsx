@@ -64,9 +64,19 @@ type Sel = { r1: number; c1: number; r2: number; c2: number } | null;
 export function TableEditor({
   value,
   onChange,
+  readOnly = false,
 }: {
   value: string;
   onChange: (json: string) => void;
+  /**
+   * 只读模式。
+   *
+   * 补齐这个 prop 修掉一个既有缺陷：本组件原先**只声明了 value/onChange**，
+   * 调用方传 `readOnly` 会被静默忽略 —— 于是预览态和「卡片嵌入」里的表格
+   * 实际可编辑，而改动不会回到来源文档，形成「改了但没保存」的错觉。
+   * 其余 4 个编辑器（数据表/画板/思维导图/流程图）都正确实现了它。
+   */
+  readOnly?: boolean;
 }) {
   const [data, setData] = useState<string[][]>(() => parseData(value));
   // 合并单元格：key = "r,c"，值为被合并（跳过渲染）的单元格
@@ -157,6 +167,8 @@ export function TableEditor({
 
   return (
     <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
+      {/* 只读时不渲染工具栏：没有「加了行但存不下来」的误导入口 */}
+      {!readOnly && (
       <div className="flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
         <Tooltip content="添加行">
           <button onClick={addRow} className="icon-btn text-muted hover:text-text">
@@ -184,6 +196,7 @@ export function TableEditor({
           {data.length} 行 × {cols} 列 · 公式 =SUM(A1:B2)
         </span>
       </div>
+      )}
 
       <div className="flex-1 overflow-auto p-3">
         <table className="border-collapse" onMouseUp={() => { selStart.current = null; }}>
@@ -207,18 +220,20 @@ export function TableEditor({
                   return (
                     <td
                       key={c}
-                      onMouseDown={() => cellDown(r, c)}
-                      onMouseEnter={() => cellEnter(r, c)}
-                      className={`border border-line p-0 ${inSel(r, c) ? "bg-accent-soft/40" : ""}`}
+                      onMouseDown={readOnly ? undefined : () => cellDown(r, c)}
+                      onMouseEnter={readOnly ? undefined : () => cellEnter(r, c)}
+                      className={`border border-line p-0 ${!readOnly && inSel(r, c) ? "bg-accent-soft/40" : ""}`}
                     >
                       <input
                         value={disp}
-                        onChange={(e) => setCell(r, c, e.target.value)}
-                        className={`h-9 w-32 bg-transparent px-2 text-[14px] outline-none focus:bg-accent-soft/40 ${raw.startsWith("=") ? "font-mono text-accent" : "text-text"}`}
+                        readOnly={readOnly}
+                        onChange={readOnly ? undefined : (e) => setCell(r, c, e.target.value)}
+                        className={`h-9 w-32 bg-transparent px-2 text-[14px] outline-none ${readOnly ? "" : "focus:bg-accent-soft/40"} ${raw.startsWith("=") ? "font-mono text-accent" : "text-text"}`}
                       />
                     </td>
                   );
                 })}
+                {!readOnly && (
                 <td className="w-8 border-0">
                   <button
                     onClick={() => removeRow(r)}
@@ -228,8 +243,10 @@ export function TableEditor({
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
                   </button>
                 </td>
+                )}
               </tr>
             ))}
+            {!readOnly && (
             <tr>
               {Array.from({ length: cols }, (_, c) => (
                 <td key={c} className="border border-line p-0">
@@ -244,6 +261,7 @@ export function TableEditor({
               ))}
               <td />
             </tr>
+            )}
           </tbody>
         </table>
       </div>

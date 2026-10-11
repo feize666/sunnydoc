@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, ReactNodeViewRenderer } from "@tiptap/react";
 import { Selection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import { Mark, Node, Extension, mergeAttributes } from "@tiptap/core";
@@ -12,6 +12,7 @@ import Image from "@tiptap/extension-image";
 import { Markdown } from "tiptap-markdown";
 import { uploadImage, uploadAttachment, aiAssist, type AIAssistAction } from "@/lib/api";
 import { mediaUrl } from "@/lib/markdown";
+import { DocumentEmbedView, EmbedPicker } from "./DocumentEmbed";
 import { Tooltip } from "./Tooltip";
 import { useToast } from "./Toast";
 import {
@@ -32,6 +33,7 @@ import {
   IndentIcon,
   OutdentIcon,
   PaperclipIcon,
+  EmbedIcon,
 } from "./icons";
 
 /* ---------- 上传插入图片（粘贴 / 拖拽共用） ---------- */
@@ -190,6 +192,54 @@ const Table = Node.create({
   },
   renderHTML({ HTMLAttributes }) {
     return ["table", mergeAttributes(HTMLAttributes), ["tbody", 0]];
+  },
+});
+
+/**
+ * 正文里的「文档卡片」节点。
+ *
+ * 只存 `docId`，**不存内容快照** —— 卡片在渲染时按 id 拉取来源文档，
+ * 这样来源更新后卡片自动跟随，不会像截图那样一存就过期。
+ *
+ * 序列化：**走原生 HTML 往返**，不自定义 markdown 语法。
+ * 原因是实测 tiptap-markdown 自带 `markdownHTMLNode` 兜底：只要
+ * `Markdown.configure({ html: true })`，未显式注册的节点会自动序列化成
+ * `<div data-doc-id="…"></div>` 并由 markdown-it 的 html 规则解析回来，
+ * 而本节点正好用 `parseHTML({ tag: "div[data-doc-id]" })` 接住它。
+ * 这比自写 markdown-it 插件更短、更不易随库升级失配。
+ *
+ * `atom: true` + 空 content：卡片是不可拆分的整体，光标不能进入其内部
+ * （内部是只读渲染的另一个编辑器，允许光标进入会造成两套选区打架）。
+ */
+const DocumentEmbed = Node.create({
+  name: "documentEmbed",
+  group: "block",
+  atom: true,
+  draggable: true,
+  selectable: true,
+
+  addAttributes() {
+    return {
+      docId: {
+        default: "",
+        parseHTML: (el) => (el as HTMLElement).getAttribute("data-doc-id") || "",
+        renderHTML: (attrs) => ({ "data-doc-id": attrs.docId }),
+      },
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: "div[data-doc-id]" }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    // 预览态（renderMarkdown 产出）不渲染真实卡片内容，只留占位标记：
+    // 卡片内容由编辑器 NodeView 渲染；预览态若也渲染会重复加载重型编辑器。
+    return ["div", mergeAttributes(HTMLAttributes, { class: "doc-embed" })];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(DocumentEmbedView);
   },
 });
 
@@ -388,10 +438,13 @@ export function RichEditor({
   value,
   onChange,
   placeholder,
+  kbId,
 }: {
   value: string;
   onChange: (markdown: string) => void;
   placeholder?: string;
+  /** 当前文档所属知识库：供「插入卡片」选择器过滤候选文档。 */
+  kbId?: string | null;
 }) {
   const toast = useToast();
   const [colorOpen, setColorOpen] = useState(false);
@@ -418,6 +471,8 @@ export function RichEditor({
   const [alignOpen, setAlignOpen] = useState(false);
   // 附件选择用的隐藏 file input（工具栏「插入附件」按钮触发）
   const attachInputRef = useRef<HTMLInputElement>(null);
+  /** 「插入卡片」选择器开关 */
+  const [embedOpen, setEmbedOpen] = useState(false);
 
   const editor = useEditor({
     extensions: [
@@ -458,6 +513,7 @@ export function RichEditor({
       Placeholder.configure({
         placeholder: placeholder ?? "开始输入内容…",
       }),
+      DocumentEmbed,
     ],
     content: value,
     immediatelyRender: false,
@@ -1261,6 +1317,36 @@ export function RichEditor({
             files.forEach((f) => insertUploadedAttachment(editor.view, f, toast));
           }}
         />
+        {/* 插入文档卡片：把表格/思维导图/流程图等作为可跟随的卡片嵌入正文 */}
+        <Tooltip content="插入卡片（表格 / 思维导图 / 流程图…）">
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setEmbedOpen((v) => !v)}
+            className={`tool-btn ${embedOpen ? "tool-btn-on" : ""}`}
+            aria-label="插入卡片"
+          >
+            <EmbedIcon size={17} />
+          </button>
+        </Tooltip>
+        {embedOpen && (
+          <EmbedPicker
+            kbId={kbId}
+            onClose={() => setEmbedOpen(false)}
+            onPick={(d) => {
+              setEmbedOpen(false);
+              // 插入原子节点：docId 进属性，内容由 NodeView 按需拉取
+              editor
+                .chain()
+                .focus()
+                .insertContent([
+                  { type: "documentEmbed", attrs: { docId: d.id } },
+                  { type: "paragraph" },
+                ])
+                .run();
+            }}
+          />
+        )}
         <ToolBtn title="插入表格" tone="text-accent" onClick={insertTable}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="1" />

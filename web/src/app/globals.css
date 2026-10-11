@@ -1517,3 +1517,136 @@ mark.search-hit {
   border-bottom: 1px dashed var(--line-strong);
   cursor: default;
 }
+
+/* ==========================================================================
+   文档卡片嵌入（P2-3）
+   把表格 / 数据表 / 画板 / 思维导图 / 流程图作为可跟随的卡片放进正文。
+   全部引用 design token，禁止裸色值（见 DESIGN.md §5.19 与工程约定）。
+   ========================================================================== */
+
+/* 卡片外框：与正文其他块级元素一致地占满宽度，四周围出可辨的边界 */
+.doc-embed {
+  margin: 14px 0;
+}
+
+.doc-embed-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.doc-embed-card:hover {
+  border-color: var(--line-strong);
+}
+
+/* 被选中时给出明确反馈（ProseMirror 选中原子节点） */
+.doc-embed-card.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.doc-embed-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.doc-embed-badge {
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.doc-embed-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.doc-embed-title:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.doc-embed-title.is-muted {
+  color: var(--faint);
+  text-decoration: none;
+}
+
+.doc-embed-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 2px;
+}
+
+.doc-embed-btn {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.doc-embed-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.doc-embed-body {
+  /* 内容高度由嵌入的编辑器决定，这里只保证加载态有合适留白 */
+  min-height: 0;
+}
+
+.doc-embed-placeholder {
+  padding: 18px 12px;
+  font-size: 12px;
+  color: var(--faint);
+  text-align: center;
+}
+
+/* 嵌入的编辑器自带外框与内边距，这里去掉一层避免「框套框」显得厚重 */
+.doc-embed-canvas > * {
+  border: none !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+}
+
+/* ---- 插入卡片的选择器 ---- */
+
+.embed-picker {
+  position: absolute;
+  z-index: 40;
+  width: 300px;
+  margin-top: 4px;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+}
+
+.embed-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 4px 10px;
+}
+
+.embed-picker-list {
+  overflow-y: auto;
+  padding-bottom: 4px;
+}

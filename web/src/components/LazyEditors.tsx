@@ -25,6 +25,8 @@ type EditorProps = {
   isAdmin?: boolean;
   /** 文档标题 —— 图表编辑器用它命名导出文件（缺省回退到类型名）。 */
   title?: string;
+  /** 所属知识库 —— 「插入卡片」选择器用它过滤候选文档。 */
+  kbId?: string | null;
 };
 
 const loading = () => (

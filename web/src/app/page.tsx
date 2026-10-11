@@ -509,6 +509,8 @@ export default function Home() {
               type: detail.type ?? "doc",
               // 打开文档即记下版本号，供后续保存做乐观锁基线
               revision: detail.revision ?? 0,
+              // 供「插入卡片」选择器在本知识库内筛选候选文档
+              kbId: detail.kb_id ?? null,
             },
           }));
           void recordRecent(detail.id);
@@ -540,6 +542,37 @@ export default function Home() {
     },
     [activeKey],
   );
+
+  /**
+   * 正文里的「文档卡片」点击跳转到来源文档。
+   *
+   * 为什么走自定义事件而不是把 openDoc 层层透传：卡片渲染在 TipTap 的
+   * NodeView 里，该组件由 ProseMirror 管理、实例生命周期不受 React 树控制；
+   * 透传回调要穿过 RichEditor → Node 扩展 → NodeView 三层，任一层重渲染
+   * 都可能丢引用。事件桥接解耦干净，也不会因编辑器重挂载而失效。
+   *
+   * 必须放在 openDoc 声明之后 —— 放在前面会触发 TS2448
+   * （Block-scoped variable used before its declaration）。
+   */
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+      if (!id) return;
+      // 必须清空搜索态再打开：
+      // `openDoc` 本身不动 searchQuery（这是有意的 —— 从搜索结果点开文档时要
+      // 保留关键词并高亮命中，见 handleOpenSearchResult）。但卡片跳转是
+      // 「跳去另一篇」，若不清空，侧栏仍显示搜索结果、正文区不切到文档，
+      // 用户看到的就是「点了没反应」。实测确认过：事件派发了、标签页也开了，
+      // 但界面停在搜索结果页。
+      setSearchQuery("");
+      setSearchType("");
+      setSearchTag("");
+      setHighlight("");
+      void openDoc(id);
+    };
+    window.addEventListener("sunnydoc:open-doc", onOpen);
+    return () => window.removeEventListener("sunnydoc:open-doc", onOpen);
+  }, [openDoc]);
 
   // 全文搜索（防抖 300ms，支持类型/标签过滤 + 排序）
   useEffect(() => {

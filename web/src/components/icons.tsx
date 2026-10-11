@@ -405,6 +405,19 @@ export function ImportIcon(p: IconProps) {
   );
 }
 
+/** 插入卡片：矩形卡片 + 内部内容线，表达「把别处的文档嵌进来」。 */
+export function EmbedIcon(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 9h18" />
+      <path d="M7 13h6" />
+      <path d="M7 16.5h4" />
+      <circle cx="17" cy="15" r="2.2" />
+    </svg>
+  );
+}
+
 export function EyeIcon(p: IconProps) {
   return (
     <svg {...base(p)}>

@@ -13,6 +13,13 @@ export interface Doc {
    * 会被误判成冲突。
    */
   revision?: number;
+  /**
+   * 所属知识库 id。
+   *
+   * 供「插入卡片」选择器过滤候选文档（只在本库内挑，避免跨库嵌入
+   * 引发权限混乱）。`openDoc` 拉取详情时写入。
+   */
+  kbId?: string | null;
 }
 
 export interface TreeNode {
