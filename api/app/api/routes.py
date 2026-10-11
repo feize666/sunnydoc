@@ -408,6 +408,27 @@ def _dedupe_title(store, title: str, user_id: str | None = None) -> str:
     return f"{title}({i})"
 
 
+def _search_rank(r: dict) -> tuple:
+    """搜索结果排序键：(标题未命中, -正文命中次数)。
+
+    修复前是 `(not match_in_title, title.lower())` —— **第二级用了标题字典序**，
+    于是同组内完全按文件名排。实测搜「磁盘」命中 57 篇，标题带「磁盘」的只有
+    1 篇，其余全靠字典序：结果**清一色 `01-` 开头的低相关文档霸占第 2~10 位**
+    （正文只命中 1~3 次），而真正最相关的（命中 19 / 12 / 11 次）被挤到十名之外。
+    `match_count` 其实早已算出，只是从未参与排序。
+
+    为什么保留「标题命中优先」而不改成纯相关性打分：标题里出现关键词是**强信号**
+    （几乎必然是用户要找的那篇），而正文命中次数会被「大杂烩长文档」刷高——
+    实测搜 docker 时，标题叫「01-常用命令」的杂烩文档正文命中 451 次，
+    但真正该给用户的是标题带 Docker 的那几篇。因此保持两层：
+    先按标题命中分组，**组内再按命中量降序**（替换原来的字典序）。
+
+    刻意不用「命中密度 / 长度归一」类公式：实测对比后发现它与本方案在前几名
+    上重叠度很高，却引入了"短文档因基数小而得高分"的怪异行为，更难解释。
+    """
+    return (not r.get("match_in_title"), -(r.get("match_count") or 0))
+
+
 def _make_snippet(text: str, idx: int, qlen: int, radius: int = 60) -> str:
     """截取命中位置前后各 radius 字符的片段，首尾补省略号、换行压成空格。"""
     start = max(0, idx - radius)
@@ -931,7 +952,8 @@ def search_documents(
     if sort == "created":
         results.sort(key=lambda r: r.get("created_at") or 0, reverse=True)
     else:
-        results.sort(key=lambda r: (not r["match_in_title"], r["title"].lower()))
+        # 相关性排序：标题命中优先，组内按正文命中量降序（详见 _search_rank）
+        results.sort(key=_search_rank)
     return {"query": q, "total": len(results), "results": results[:limit]}
 
 
