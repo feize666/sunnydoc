@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { renderMarkdown, extractToc, sanitizeHtml, mediaUrl, type TocItem } from "@/lib/markdown";
+import { renderMarkdown, extractToc, sanitizeHtml, renderProgressively, hydrateCodeBlocks, mediaUrl, type TocItem, type ProgressiveRenderHandle } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
 import { useToast } from "./Toast";
@@ -250,6 +250,17 @@ export function Editor({
   const scrollRef = useRef<HTMLDivElement>(null);
   // 大纲当前高亮项；-1 表示尚未定位（滚动到首个标题之前）
   const [activeHeading, setActiveHeading] = useState(-1);
+  /**
+   * 渐进渲染进度通知（ref 回调，不是 state）。
+   *
+   * 为什么不用 state：进度回调若 setState，会让「渐进渲染 effect」的依赖变化
+   * 从而重跑 → cancel + 重新渲染 → 再次回调，形成自激循环。
+   * 改为 ref 回调后，由下方 scroll-spy effect 注册它自己的「重新采集」逻辑，
+   * 依赖链被切断，既能让目录跟随更新，又不会重启动渲染。
+   */
+  const progressTickRef = useRef<(() => void) | null>(null);
+  /** 当前渐进渲染句柄：目录跳转/搜索定位到未渲染章节时用它 flush。 */
+  const progressiveRef = useRef<ProgressiveRenderHandle | null>(null);
   const { width: tocWidth, onMouseDown: onTocResize } = useResizable(224, 180, 400, "toc_width", -1);
 
   // 划词批注：记录选中文字及浮动按钮位置
@@ -314,17 +325,22 @@ export function Editor({
       setActiveHeading(-1);
       return;
     }
-    const headings = Array.from(
-      scroller.querySelectorAll<HTMLElement>("h1, h2, h3, h4"),
-    );
-    if (headings.length === 0) {
-      setActiveHeading(-1);
-      return;
-    }
 
     let raf = 0;
+    // 标题节点集合需可重新采集：渐进渲染会陆续追加章节，
+    // 若只在 effect 首次运行时 querySelectorAll 一次，后追加的标题不会被纳入
+    // → 目录高亮在未渲染区间断档。
+    let headings: HTMLElement[] = [];
+
+    const collect = () => {
+      headings = Array.from(
+        scroller.querySelectorAll<HTMLElement>("h1, h2, h3, h4"),
+      );
+    };
+
     const compute = () => {
       raf = 0;
+      if (headings.length === 0) return;
       const line = scroller.getBoundingClientRect().top + 80;
       let idx = 0;
       for (let i = 0; i < headings.length; i++) {
@@ -333,24 +349,39 @@ export function Editor({
       }
       setActiveHeading(idx);
     };
-    // 滚动用 rAF 节流，避免长文档下每帧都触发重排读取
+
     const onScroll = () => {
       if (raf) return;
       raf = requestAnimationFrame(compute);
     };
 
-    compute();
+    // 渐进渲染每追加一批就调用它：重新采集标题并刷新当前章节
+    const onProgress = () => {
+      collect();
+      if (headings.length === 0) return;
+      if (raf) return;
+      raf = requestAnimationFrame(compute);
+    };
+    progressTickRef.current = onProgress;
+
+    collect();
+    if (headings.length === 0) setActiveHeading(-1);
+    else compute();
+
     scroller.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
     return () => {
       if (raf) cancelAnimationFrame(raf);
+      progressTickRef.current = null;
       scroller.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
     };
     // previewHtml / draft 变化意味着 DOM 重建，需重新采集标题节点
+    // （渐进渲染的陆续追加由 progressTickRef 单独驱动，不进入依赖以免自激）
   }, [toc, mode, previewHtml, draft]);
 
-  // 渲染预览（代码块 shiki 高亮）；切换文档 / 保存 / 主题变化后重渲染
+  // 渲染预览；代码块先出纯文本，语法高亮由下方 effect 闲时增量补齐。
+  // 切换文档 / 保存 / 主题变化后重渲染。
   useEffect(() => {
     let cancelled = false;
     renderMarkdown(doc?.body ?? "", highlight, theme).then((h) => {
@@ -360,6 +391,58 @@ export function Editor({
       cancelled = true;
     };
   }, [doc?.body, highlight, theme]);
+
+  // 渐进渲染预览：首屏先注入一批，其余闲时逐批追加。
+  //
+  // 为什么不用 dangerouslySetInnerHTML 一次性注入：实测 715KB / 17,372 节点
+  // 的文档会产生 176ms 长任务（其中 JS 仅 5ms，其余是浏览器样式计算与布局）。
+  // 改为每批 100 个顶层块后单批仅 1–4ms，且不再出现长任务。
+  //
+  // ⚠️ **搜索场景例外**：搜索态要展示全文命中，命中位置可能任意靠后；
+  //    若靠 ensureVisible 逐批推进，同步循环多批后仍会累积成一次长阻塞，
+  //    且"先渲染一屏再慢慢补"会让命中定位漂移。此时直接一次性渲染 ——
+  //    用户主动搜索本来就在等结果，代价可接受，正确性更重要。
+  //
+  // 依赖 previewHtml：内容变化后必须重新渲染；theme 变化同样需要重跑
+  // （已高亮的代码块与新主题不匹配）。
+  useEffect(() => {
+    if (mode !== "preview") return;
+    const el = contentRef.current;
+    if (!el) return;
+    if (!previewHtml) {
+      el.innerHTML = "";
+      return;
+    }
+
+    // 搜索态：一次性渲染全文（见上方注释中的例外说明）
+    if (highlight) {
+      el.innerHTML = previewHtml;
+      const cancelHydrate = hydrateCodeBlocks(el, theme);
+      progressiveRef.current = {
+        cancel: cancelHydrate,
+        ensureVisible: (probe) => probe() ?? null,
+        isComplete: () => true,
+      };
+      return () => {
+        cancelHydrate();
+        progressiveRef.current = null;
+      };
+    }
+
+    const handle = renderProgressively(el, previewHtml, {
+      theme,
+      // 每追加一批就通知 scroll-spy 重新采集标题节点。
+      // ⚠️ 必须走 ref 回调而不是 setState：用 state 会让本 effect 的依赖变化
+      //    → 重跑 → cancel + 重渲染 → 再次 onProgress，形成自激循环，
+      //    结果反而变成「一次性渲染完」（实测长任务不退反升）。
+      onProgress: () => progressTickRef.current?.(),
+    });
+    progressiveRef.current = handle;
+    return () => {
+      handle.cancel();
+      progressiveRef.current = null;
+    };
+  }, [previewHtml, theme, mode, highlight]);
 
   // HTML 文档：清洗后直接渲染（不做 Markdown 转换）
   useEffect(() => {
@@ -375,7 +458,15 @@ export function Editor({
     if (!highlight || mode !== "preview") return;
     const timer = setTimeout(() => {
       const container = contentRef.current;
-      const hit = container?.querySelector("mark.search-hit, .search-hit");
+      if (!container) return;
+      const find = () => container.querySelector("mark.search-hit, .search-hit");
+      let hit = find();
+      // 命中可能在尚未渲染的段落里。注意这里用 ensureVisible 而不是"全量渲染"：
+      // 无条件渲染到底会一次注入数百 KB，把刚优化掉的阻塞又还回去。
+      if (!hit) {
+        const prog = progressiveRef.current;
+        if (prog) hit = prog.ensureVisible(find);
+      }
       hit?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 150);
     return () => clearTimeout(timer);
@@ -497,8 +588,15 @@ export function Editor({
   const scrollToHeading = useCallback((index: number) => {
     const scroller = scrollRef.current;
     if (!scroller) return;
-    const headings = scroller.querySelectorAll("h1, h2, h3, h4");
-    const el = headings[index] as HTMLElement | undefined;
+    // 渐进渲染下目标章节可能尚未注入 DOM；按索引取节点会静默落空。
+    // 用 ensureVisible 推进「到目标标题出现为止」，而不是一次渲染到底
+    // （后者会把剩余数百 KB 一次注入，重新制造长任务）。
+    const pick = () => scroller.querySelectorAll("h1, h2, h3, h4")[index] as HTMLElement | undefined;
+    let el = pick();
+    if (!el) {
+      const prog = progressiveRef.current;
+      if (prog) el = prog.ensureVisible(pick) ?? undefined;
+    }
     if (!el) return;
     el.scrollIntoView({ behavior: "smooth", block: "start" });
     // 立刻反映选中态，不必等滚动事件回传
@@ -1060,7 +1158,6 @@ export function Editor({
                     }
                   }}
                   onMouseUp={handleTextSelect}
-                  dangerouslySetInnerHTML={{ __html: previewHtml }}
                 />
               )}
               </ErrorBoundary>

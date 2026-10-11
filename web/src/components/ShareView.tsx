@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { getSharedDoc, type SharedDoc } from "@/lib/api";
-import { renderMarkdown } from "@/lib/markdown";
+import { renderMarkdown, hydrateCodeBlocks } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { PasswordInput } from "./PasswordInput";
 import { ThemeToggle } from "./ThemeToggle";
@@ -16,6 +16,7 @@ export function ShareView({ token }: { token: string }) {
   const [needPassword, setNeedPassword] = useState(false);
   const [password, setPassword] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -54,6 +55,12 @@ export function ShareView({ token }: { token: string }) {
       cancelled = true;
     };
   }, [doc, theme]);
+
+  // 闲时增量补语法高亮（与编辑器预览同一策略：首屏纯文本、空闲再高亮）
+  useEffect(() => {
+    if (!html) return;
+    return hydrateCodeBlocks(bodyRef.current, theme);
+  }, [html, theme]);
 
   if (needPassword) {
     return (
@@ -135,6 +142,7 @@ export function ShareView({ token }: { token: string }) {
           </h1>
           <div className="mt-4 border-b border-line" />
           <div
+            ref={bodyRef}
             className="md-body mt-6"
             onClick={handleCodeBlockCopy}
             dangerouslySetInnerHTML={{ __html: html }}

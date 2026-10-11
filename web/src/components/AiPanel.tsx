@@ -19,7 +19,7 @@ import {
   ImportIcon,
   CloseIcon,
 } from "./icons";
-import { renderMarkdown, mediaUrl } from "@/lib/markdown";
+import { renderMarkdown, hydrateCodeBlocks, mediaUrl } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
 import { useToast } from "./Toast";
@@ -90,6 +90,7 @@ function AiMarkdown({
 }) {
   const [html, setHtml] = useState("");
   const renderId = useRef(0);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const id = ++renderId.current;
@@ -102,8 +103,15 @@ function AiMarkdown({
     };
   }, [content, theme]);
 
+  // 闲时增量补语法高亮（AI 回答里常带代码示例）
+  useEffect(() => {
+    if (!html) return;
+    return hydrateCodeBlocks(bodyRef.current, theme);
+  }, [html, theme]);
+
   return (
     <div
+      ref={bodyRef}
       className="md-body"
       onClick={handleCodeBlockCopy}
       dangerouslySetInnerHTML={{ __html: html }}
