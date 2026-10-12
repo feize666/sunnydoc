@@ -520,6 +520,31 @@ export function RichEditor({
     content: value,
     immediatelyRender: false,
     editorProps: {
+      /**
+       * 点击落在文档卡片上时，直接告诉 ProseMirror「这次点击我已处理」。
+       *
+       * 为什么必须拦：卡片是 `atom: true` 的 leaf 节点，内部又是**可交互 DOM**
+       * （图表编辑器有自己的按钮、输入框、画布）。ProseMirror 默认会走
+       * `selectClickedLeaf` → 对 atom 做 `NodeSelection`，而卡片内部结构在
+       * 切编辑态/加载内容时会变，`posAtCoords` 解析出的位置随之失效 →
+       * 抛 `RangeError: Selection passed to setSelection must point at the
+       * current document`（实测：点「编辑卡片」必现，控制台报错、点按无响应）。
+       *
+       * ⚠️ 试过但**无效**的两种做法（别再试）：
+       *  1. React `onMouseUpCapture` + `stopPropagation` —— 与卡片内按钮的
+       *     `onClick` 同属 React 合成事件链，捕获阻断会把按钮点击一起吞掉
+       *     （实测：点了「编辑」进不去编辑态）。
+       *  2. `dom.addEventListener(type, stopPropagation, true)` 阻断原生事件 ——
+       *     同样吞掉按钮点击（实测同样进不去编辑态）。
+       *
+       * 正解用 ProseMirror 官方扩展点：`handleClickOn` 返回 `true` 即表示
+       * "这次点击由我处理"，PM 便不再执行 `selectClickedLeaf`，
+       * 而卡片内部的事件（含按钮 onClick）完全不受影响。
+       */
+      handleClickOn: (_view, _pos, node) => {
+        if (node.type.name === "documentEmbed") return true;
+        return false;
+      },
       handleKeyDown: (view, event) => {
         if (!editor) return false;
         const mod = event.metaKey || event.ctrlKey;

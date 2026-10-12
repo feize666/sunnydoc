@@ -667,6 +667,25 @@ export default function Home() {
     }
   }, []);
 
+  /**
+   * 卡片就地编辑保存后，刷新对应的来源文档。
+   *
+   * 为什么必须做：来源文档可能正开在另一个标签页里。用户刚在卡片里改完，
+   * 切过去却看到旧内容 —— 更糟的是接着编辑保存会把刚存的内容覆盖掉。
+   * 复用协作场景的 `refreshDoc`（它已同步 revision 基线，避免下次保存 409）。
+   *
+   * ⚠️ 必须放在 `refreshDoc` 声明之后：放在前面会触发 TS2448
+   * （Block-scoped variable used before its declaration）—— 实测踩过。
+   */
+  useEffect(() => {
+    const onSaved = (e: Event) => {
+      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+      if (id) void refreshDoc(id);
+    };
+    window.addEventListener("sunnydoc:doc-saved", onSaved);
+    return () => window.removeEventListener("sunnydoc:doc-saved", onSaved);
+  }, [refreshDoc]);
+
   // 删除文档
   const handleDelete = useCallback(
     async (key: string) => {

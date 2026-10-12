@@ -40,12 +40,16 @@ const MAX_CARD_H = 560; // 卡片高度上限（含头部 44px + 内容 460px + 
   const kb = p.locator("button, a").filter({ hasText: "云计算知识库" }).first();
   if (await kb.count()) { await kb.click(); await sleep(2200); }
 
+  // 容器标题参数化：曾硬编码上一轮的文档名，那个文档被清理后脚本就静默搜不到、
+  // 从而"一张卡片都没抓到"（而 every() 对空数组恒真，看起来全过）。
+  const CONTAINER = process.argv[2] || "卡片观感-容器";
   const box = p.locator('input[type="search"], input[placeholder*="搜索"]').first();
-  await box.fill("卡片高度测试-容器");
+  await box.fill(CONTAINER);
   await sleep(2000);
-  const hit = p.getByText("卡片高度测试-容器", { exact: true }).first();
+  const hit = p.getByText(CONTAINER, { exact: true }).first();
+  check("容器文档可被搜到", (await hit.count()) > 0, "未找到 " + CONTAINER);
   if (await hit.count()) await hit.click({ force: true }).catch(() => {});
-  await sleep(5000);
+  await sleep(4000);
 
   // ── 预览态 ──
   console.log("=== A. 预览态（默认视图）===");
@@ -70,15 +74,15 @@ const MAX_CARD_H = 560; // 卡片高度上限（含头部 44px + 内容 460px + 
   });
   check("预览态渲染出卡片本体", preview.length > 0 && preview.every((c) => c.hasCard),
     JSON.stringify(preview));
-  check("预览态卡片有可见高度（> 100px）", preview.every((c) => c.h > 100),
+  check("预览态卡片有可见高度（> 100px）", preview.length > 0 && preview.every((c) => c.h > 100),
     preview.map((c) => c.h).join(", "));
-  check("预览态卡片高度受控（每个 < " + MAX_CARD_H + "px）", preview.every((c) => c.h < MAX_CARD_H),
+  check("预览态卡片高度受控（每个 < " + MAX_CARD_H + "px）", preview.length > 0 && preview.every((c) => c.h < MAX_CARD_H),
     preview.map((c) => c.h).join(", "));
   check("预览态卡片渲染出真实内容（表格 input 或 svg）",
-    preview.every((c) => c.innerInputs > 0 || c.innerSvg > 0 || c.innerTable > 0),
+    preview.length > 0 && preview.every((c) => c.innerInputs > 0 || c.innerSvg > 0 || c.innerTable > 0),
     JSON.stringify(preview.map((c) => ({ i: c.innerInputs, t: c.innerTable, s: c.innerSvg }))));
   check("预览态不显示「移除卡片」按钮（只读视图不该有删除入口）",
-    preview.every((c) => !c.hasRemoveBtn), JSON.stringify(preview.map((c) => c.hasRemoveBtn)));
+    preview.length > 0 && preview.every((c) => !c.hasRemoveBtn), JSON.stringify(preview.map((c) => c.hasRemoveBtn)));
   console.log("  卡片明细: " + JSON.stringify(preview.map((c) => ({ type: c.type, h: c.h, title: c.title.slice(0, 12) }))));
 
   // ── 编辑态 ──
@@ -105,24 +109,37 @@ const MAX_CARD_H = 560; // 卡片高度上限（含头部 44px + 内容 460px + 
     });
   });
   check("编辑态卡片数与原一致", edit.length === preview.length, edit.length + " vs " + preview.length);
-  check("编辑态卡片高度受控（每个 < " + MAX_CARD_H + "px）", edit.every((c) => c.h < MAX_CARD_H),
+  check("编辑态卡片高度受控（每个 < " + MAX_CARD_H + "px）", edit.length > 0 && edit.every((c) => c.h < MAX_CARD_H),
     edit.map((c) => c.h).join(", "));
   // 判据不能用 input 数：思维导图是 DOM div 渲染，本来就没有 input（同类坑踩过一次）。
   // 改用「有真实内容」的多通道判据：input / table / svg / 文本 四者取或。
   check("编辑态仍然渲染出真实内容",
-    edit.every((c) => c.innerInputs > 0 || c.innerTable > 0 || c.innerSvg > 0 || c.innerText > 0),
+    edit.length > 0 && edit.every((c) => c.innerInputs > 0 || c.innerTable > 0 || c.innerSvg > 0 || c.innerText > 0),
     JSON.stringify(edit.map((c) => ({ i: c.innerInputs, t: c.innerTable, s: c.innerSvg, x: c.innerText }))));
-  check("编辑态保留「移除卡片」按钮", edit.every((c) => c.hasRemoveBtn),
+  check("编辑态保留「移除卡片」按钮", edit.length > 0 && edit.every((c) => c.hasRemoveBtn),
     JSON.stringify(edit.map((c) => c.hasRemoveBtn)));
   check("data-embed-type 两态一致且非空",
-    edit.every((c) => c.type) && edit.map((c) => c.type).join() === preview.map((c) => c.type).join(),
+    edit.length > 0 && edit.every((c) => c.type) && edit.map((c) => c.type).join() === preview.map((c) => c.type).join(),
     edit.map((c) => c.type).join() + " vs " + preview.map((c) => c.type).join());
 
   // ── 切回预览态：确认卡片能复原（验证 unmount 后 WeakMap 清理正确）──
   console.log("\n=== C. 切回预览态（验证卡片可复原）===");
-  const pv = p.locator("button").filter({ hasText: /^预览$/ }).first();
+  // 按钮文案是「取消」（放弃编辑，回预览），**不是「预览」** ——
+  // 曾猜错文案导致根本没切回去，却误判为「切回后卡片不可见」（假失败）。
+  const pv = p.locator("button").filter({ hasText: /^取消$/ }).first();
+  check("找到「取消」按钮（切回预览态）", (await pv.count()) > 0, "未找到");
   if (await pv.count()) await pv.click({ force: true }).catch(() => {});
-  await sleep(3500);
+  await sleep(2500);
+  // 轮询等卡片重新挂载（预览态是重新 hydrate 的一份，不是保留编辑态那份）
+  let backWait = 0;
+  while (backWait < 30000) {
+    const n = await p.evaluate(
+      () => document.querySelectorAll(".md-body .doc-embed .doc-embed-card").length,
+    );
+    if (n > 0) break;
+    await sleep(500);
+    backWait += 500;
+  }
   const back = await p.evaluate(() => {
     const wraps = Array.from(document.querySelectorAll(".md-body .doc-embed"));
     return wraps.map((w) => {

@@ -1076,3 +1076,61 @@ viewport（pan/zoom）、自身尺寸、以及泳道父节点偏移影响——�
 
 **不要直接改组件里的 `min-h-[calc(100vh-300px)]`** —— 独立打开文档时那是正确的。
 在容器层覆盖，组件保持自己的全屏假设。
+
+## 6.7 卡片就地编辑（2026-10-12）
+
+卡片默认**只读**，点「编辑」才可写；保存写回**来源文档**（卡片只是引用）。
+
+### 为什么默认只读
+
+卡片内嵌的是完整编辑器。长期可写会让「改卡片 vs 改正文」的焦点归属含糊，
+也容易误触。用户明确要改时再切，意图清晰。
+
+### 三条硬约束
+
+1. **用 `draft !== null` 判编辑态，不要用「内容是否非空」**。
+   五个图表编辑器的内容都是 JSON 串，**新建的空表格/空画板内容就是 `""` 或 `{}`**。
+   若用「非空」判编辑态，空图表一进编辑态就会被判成「没在编辑」。
+   → **编辑态必须是显式状态，不能从内容反推。**
+   （`draft` 初值 `null` = 未编辑；进入编辑置为当前内容，哪怕它是空串。）
+
+2. **`onChange` 只在已进入编辑态后才接**。
+   图表编辑器在挂载后会**自动 commit 一次**
+   （如 `FlowchartEditor` 的 `mounted` effect 会 `setTimeout(commit, 200)` → `onChange`），
+   若 `onChange` 无条件置编辑态，卡片会在预览态**自己进入编辑态**并显示「保存」
+   —— 实测踩到（reload 后 flowchart 卡片 `editing=true`）。
+   实现用**函数式更新**读当前状态：
+   ```tsx
+   // 传 onChange 而没开编辑态 = 该卡片不该被当成脏数据
+   const flush = () => {...};
+   const [draft, setDraft] = useState<string | null>(null);
+   const onChange = (v: string) => setDraft((prev) => (prev === null ? prev : v));
+   ```
+   这在语义上表示「没在编辑态就不接收」。
+
+3. **切换 `readOnly` 时不要更换组件类型**。`renderEmbedded` 按文档类型选组件，
+   但只读/编辑两态必须渲染**同一个**组件（只改 `readOnly` prop），
+   即 `{type === "table" && <LazyTableEditor value={...} readOnly={!editing} .../>}`，
+   而不是 `{editing ? <EditableX/> : <ReadonlyX/>}`。
+   换了类型会让 React 卸载重建编辑器实例 → 内部状态（画布缩放、滚动位置、
+   正在输入的内容）全部丢失。
+   ⚠️ 注意 `value` 也要跟着切：只读时给 `doc.text`，编辑时给 `draft`，
+   否则用户看不到自己的输入。
+
+### 保存与冲突
+
+- 保存带 `expectedRevision`（`doc.revision`），来源被别人改过 → **409**。
+- **用 `RevisionConflictError` 判冲突，不要字符串匹配**（后者会把网络错误里的
+  `409` 之类误判成冲突）。项目里已定义该类，直接 `instanceof`。
+- 冲突时**不覆盖**，提示用户刷新后重试。
+- 保存成功后广播 `sunnydoc:doc-saved`，主界面复用协作场景的 `refreshDoc` 刷新
+  可能正开着的来源文档标签页（否则用户切过去看到旧内容，再保存会覆盖刚存的东西）。
+
+### 各类型的编辑器都会「挂载后自动 commit」
+
+排查同类问题（卡片/预览/嵌入）时的通用检查项：
+- Flowchart：`mounted` effect → `setTimeout(commit, 200)`
+- MindMap：见 `MindMapEditor` 的自动提交
+- Datasheet / Board：同族模式
+→ **任何把 `onChange` 当「用户开始编辑」信号的写法都不可靠**，
+  必须用显式状态标记编辑态。

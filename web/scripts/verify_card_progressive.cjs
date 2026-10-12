@@ -57,10 +57,20 @@ const check = (n, c, d) => {
   if (await kb.count()) { await kb.click(); await sleep(2500); }
 
   // ★ 直接在文件树点开（非搜索态）
-  const node = p.locator("button").filter({ hasText: TITLE }).first();
+  // ⚠️ 必须用 getByText 而不是 locator("button").filter({hasText})：
+  //    文件树里文档行的文本在一个 `SPAN.block` 内、其祖先才是 `BUTTON.group`，
+  //    用 button 过滤会匹配到但点击目标不是行本身（实测点不开、md-body 不存在）。
+  const node = p.getByText(TITLE, { exact: true }).first();
   const nodeCount = await node.count();
   check("文件树里能找到目标文档（非搜索态路径可用）", nodeCount > 0, "未找到 " + TITLE);
   if (nodeCount) await node.click({ force: true }).catch(() => {});
+  await sleep(2000);
+  // 断言确实进入了文档视图且未停留在搜索结果页 —— 否则后面的断言毫无意义
+  const inDoc = await p.evaluate(() => ({
+    mdBody: !!document.querySelector(".md-body"),
+    resultPanel: (document.body.innerText || "").includes("条结果"),
+  }));
+  check("已进入文档视图（非搜索结果页）", inDoc.mdBody && !inDoc.resultPanel, JSON.stringify(inDoc));
 
   const samples = [];
   for (let i = 0; i < 8; i++) {
@@ -102,13 +112,17 @@ const check = (n, c, d) => {
   });
   console.log("  卡片明细: " + JSON.stringify(detail));
 
-  check("远置的 3 张卡片全部挂载（不在首批也要出现）",
-    detail.length === 3 && detail.every((c) => c.hasCard), JSON.stringify(detail));
-  check("卡片类型正确（datasheet/board/flowchart）",
-    detail.map((c) => c.type).sort().join() === "board,datasheet,flowchart",
-    detail.map((c) => c.type).join());
+  // 卡片数量与类型不再硬编码：不同测试数据不同。核心是「不在首批的卡片也要出现」。
+  const EXPECT = parseInt(process.argv[3] || "0", 10);
+  check("远置的卡片全部挂载（不在首批也要出现）",
+    detail.length > 0 && detail.every((c) => c.hasCard), JSON.stringify(detail));
+  if (EXPECT > 0) {
+    check("卡片数量符合预期（" + EXPECT + "）", detail.length === EXPECT, detail.length);
+  }
+  check("每张卡片都识别出了类型（非空）",
+    detail.length > 0 && detail.every((c) => !!c.type), detail.map((c) => c.type).join());
   check("卡片渲染完成（高度 > 100、无 loading 占位）",
-    detail.every((c) => c.h > 100 && !c.loading),
+    detail.length > 0 && detail.every((c) => c.h > 100 && !c.loading),
     JSON.stringify(detail.map((c) => ({ h: c.h, l: c.loading }))));
   check("无运行时错误", errs.length === 0, errs.slice(0, 2).join(" | "));
 

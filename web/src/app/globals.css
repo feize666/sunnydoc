@@ -1557,6 +1557,34 @@ mark.search-hit {
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
+/* 就地编辑中：外框用强调色，让「这张卡片正在被改」一眼可辨 */
+.doc-embed-card.is-editing {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+/* 「保存」按钮：尺寸收小以适配 20px 高的卡片头。
+   ⚠️ 不能直接加 `.btn`（36px 高 / 14px 字）—— 会把卡片头撑坏。
+   只借 `.btn-accent` 的渐变底，并补上文字色（`.doc-embed-btn` 默认是 --faint，
+   在蓝底上不可读；与项目里其它强调色底一样用白字，见 .logo-mark）。 */
+.doc-embed-btn.is-primary {
+  width: auto;
+  min-width: 36px;
+  padding: 0 7px;
+  font-size: 11px;
+  line-height: 20px;
+  color: #fff;
+}
+
+.doc-embed-btn.is-primary:hover:not(:disabled) {
+  color: #fff;
+}
+
+.doc-embed-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .doc-embed-head {
   display: flex;
   align-items: center;

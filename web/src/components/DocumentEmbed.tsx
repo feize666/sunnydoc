@@ -3,7 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
-import { getDocument, listDocuments, type DocDetail, type DocMeta } from "@/lib/api";
+import {
+  getDocument,
+  listDocuments,
+  updateDocument,
+  RevisionConflictError,
+  type DocDetail,
+  type DocMeta,
+} from "@/lib/api";
+import { useToast } from "./Toast";
 import {
   LazyTableEditor,
   LazyBoardEditor,
@@ -66,23 +74,31 @@ export const NEW_DOC_TEMPLATE: Record<EmbeddableType, { title: string; body: str
   flowchart: { title: "未命名流程图", body: JSON.stringify({ nodes: [], edges: [] }) },
 };
 
-/** 按类型给出对应的懒加载编辑器。缺省返回 null（未知类型则不渲染内容）。 */
+/**
+ * 按类型给出对应的懒加载编辑器。
+ *
+ * `readOnly` 由调用方决定：卡片默认只读，进入编辑态后才可写。
+ * `onChange` 在只读时被忽略（各编辑器自身也会忽略）。
+ */
 function renderEmbedded(
   type: string | undefined,
   body: string,
   title: string,
+  opts: { readOnly: boolean; onChange: (v: string) => void },
 ): React.ReactNode {
+  const { readOnly, onChange } = opts;
+  const common = { value: body, onChange, readOnly, title };
   switch (type) {
     case "table":
-      return <LazyTableEditor value={body} onChange={() => {}} readOnly title={title} />;
+      return <LazyTableEditor {...common} />;
     case "datasheet":
-      return <LazyDatasheetEditor value={body} onChange={() => {}} readOnly title={title} />;
+      return <LazyDatasheetEditor {...common} />;
     case "board":
-      return <LazyBoardEditor value={body} onChange={() => {}} readOnly title={title} />;
+      return <LazyBoardEditor {...common} />;
     case "mindmap":
-      return <LazyMindMapEditor value={body} onChange={() => {}} readOnly title={title} />;
+      return <LazyMindMapEditor {...common} />;
     case "flowchart":
-      return <LazyFlowchartEditor value={body} onChange={() => {}} readOnly title={title} />;
+      return <LazyFlowchartEditor {...common} />;
     default:
       return null;
   }
@@ -95,20 +111,34 @@ function renderEmbedded(
  * 卡片在那里只剩一个空的 `<div data-doc-id>`。若把渲染逻辑写两遍，两态必然出现
  * 「编辑态能看、预览态空白」这类不一致 —— 而且改动只落到其中一处。
  *
+ * **就地编辑（2026-10-12）**：
+ * - 默认**只读**，点「编辑」才切到可写。理由：卡片内嵌的是完整编辑器，
+ *   长期可写会让「改卡片 vs 改正文」的焦点归属变得含糊，也容易误触。
+ * - 编辑结果写回**来源文档**（不是当前文档）—— 卡片只是引用，内容归属不变。
+ *   保存带 `expectedRevision` 乐观锁：来源被别人改过则提示冲突，**绝不静默覆盖**。
+ * - 预览态（分享页等无 `onEdit` 的场景）**永远只读**，不显示编辑按钮。
+ *
  * @param docId 来源文档 id。渲染时按需拉取内容，**不存快照**（存快照会立刻过期）
  * @param onRemove 提供时才显示「移除卡片」按钮（编辑态才有意义，预览态没有）
+ * @param onSaved 保存成功后回调（供主界面刷新标签页 / 目录）
  */
 export function DocumentEmbedCard({
   docId,
   selected,
   onRemove,
+  onSaved,
 }: {
   docId: string;
   selected?: boolean;
   onRemove?: () => void;
+  onSaved?: (id: string) => void;
 }) {
   const [doc, setDoc] = useState<DocDetail | null>(null);
   const [state, setState] = useState<"loading" | "ok" | "missing" | "error">("loading");
+  /** 编辑态草稿；null = 未进入编辑 */
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     let cancelled = false;
@@ -117,6 +147,7 @@ export function DocumentEmbedCard({
       return;
     }
     setState("loading");
+    setDraft(null); // 换来源文档时丢弃上一份草稿，避免写到错误的文档上
     getDocument(docId)
       .then((d) => {
         if (cancelled) return;
@@ -132,14 +163,49 @@ export function DocumentEmbedCard({
   }, [docId]);
 
   const label = TYPE_LABEL[doc?.type ?? ""] ?? "文档";
+  const editing = draft !== null;
+  const dirty = editing && draft !== (doc?.text ?? "");
+  // 只有「编辑态」的 NodeView 才允许改（预览态没传 onRemove）
+  const canEdit = !!onRemove && state === "ok";
+
+  const save = async () => {
+    if (!doc || draft === null || saving) return;
+    setSaving(true);
+    try {
+      // 乐观锁：带上拉取时的版本号。来源被他人改过 → 409，不覆盖
+      const res = await updateDocument(doc.id, doc.title || "", draft, doc.revision ?? null);
+      const next = { ...doc, text: draft, revision: res.revision ?? doc.revision };
+      setDoc(next as DocDetail);
+      setDraft(null);
+      toast.success("卡片已保存");
+      // 广播给主界面：来源文档可能正开在某个标签页里，那边的内容已经过期，
+      // 需要重新拉取（否则用户切过去会看到旧内容并可能覆盖掉刚存的东西）。
+      window.dispatchEvent(
+        new CustomEvent("sunnydoc:doc-saved", { detail: { id: doc.id, fromEmbed: true } }),
+      );
+      onSaved?.(doc.id);
+    } catch (e) {
+      // 用专门的错误类型判定冲突，不用字符串匹配 —— 后者会把「网络失败」
+      // 里偶然包含的 "409" 之类误判成冲突。
+      if (e instanceof RevisionConflictError) {
+        toast.error("来源文档已被修改，你的改动未覆盖对方内容（请刷新后重试）");
+      } else {
+        const msg = e instanceof Error ? e.message : "未知错误";
+        toast.error(`保存失败：${msg}`);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div
-      className={`doc-embed-card${selected ? " is-selected" : ""}`}
+      className={`doc-embed-card${selected ? " is-selected" : ""}${editing ? " is-editing" : ""}`}
       // `data-embed-type` 只有拉到文档后才可知，所以放在卡片本体而非外层占位 div。
       // 编辑态与预览态都从这里读，两态取值一致。
       data-embed-type={doc?.type ?? ""}
-      // 卡片内的点击不应把光标放进卡片（否则会以为能直接编辑）
+      data-embed-editing={editing ? "true" : "false"}
+      // 卡片内的点击不应把光标放进卡片（否则会以为能直接编辑正文）
       contentEditable={false}
     >
       <div className="doc-embed-head">
@@ -164,8 +230,46 @@ export function DocumentEmbedCard({
             {state === "loading" ? "加载中…" : "来源文档不存在"}
           </span>
         )}
-        {onRemove && (
-          <span className="doc-embed-actions">
+        <span className="doc-embed-actions">
+          {canEdit && !editing && (
+            <Tooltip content="就地编辑（保存后写回来源文档）">
+              <button
+                type="button"
+                className="doc-embed-btn"
+                onClick={() => setDraft(doc?.text ?? "")}
+                aria-label="编辑卡片"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+              </button>
+            </Tooltip>
+          )}
+          {editing && (
+            <>
+              <Tooltip content={dirty ? "保存到来源文档" : "没有改动"}>
+                <button
+                  type="button"
+                  className="doc-embed-btn is-primary btn-accent"
+                  onClick={save}
+                  disabled={saving || !dirty}
+                  aria-label="保存卡片"
+                >
+                  {saving ? "…" : "保存"}
+                </button>
+              </Tooltip>
+              <Tooltip content="放弃改动">
+                <button
+                  type="button"
+                  className="doc-embed-btn"
+                  onClick={() => setDraft(null)}
+                  disabled={saving}
+                  aria-label="取消编辑"
+                >
+                  取消
+                </button>
+              </Tooltip>
+            </>
+          )}
+          {onRemove && !editing && (
             <Tooltip content="移除卡片">
               <button
                 type="button"
@@ -176,8 +280,8 @@ export function DocumentEmbedCard({
                 ✕
               </button>
             </Tooltip>
-          </span>
-        )}
+          )}
+        </span>
       </div>
 
       <div className="doc-embed-body">
@@ -189,8 +293,17 @@ export function DocumentEmbedCard({
         )}
         {state === "error" && <div className="doc-embed-placeholder">卡片内容加载失败。</div>}
         {state === "ok" && doc && (
-          <div className="doc-embed-canvas">
-            {renderEmbedded(doc.type, doc.text ?? "", doc.title ?? "")}
+          <div className="doc-embed-canvas" data-embed-editing={editing ? "true" : "false"}>
+            {renderEmbedded(doc.type, editing ? (draft ?? "") : (doc.text ?? ""), doc.title ?? "", {
+              readOnly: !editing,
+              // ⚠️ 只在**已进入编辑态**时接收变更。
+              // 图表编辑器在挂载后会自动 commit 一次（如 Flowchart 的 `mounted`
+              // effect 会 `setTimeout(commit, 200)` → onChange），若这里无条件
+              // `setDraft`，卡片会在预览态**自己进入编辑态**并显示「保存」按钮
+              // —— 实测踩到（flowchart 卡片 reload 后自动变 editing=true）。
+              // 用函数式更新读取当前 editing，避免闭包拿到过期的 draft。
+              onChange: (v) => setDraft((prev) => (prev === null ? prev : v)),
+            })}
           </div>
         )}
       </div>
@@ -236,11 +349,26 @@ export function DocumentEmbedView({ node, deleteNode, selected }: NodeViewProps)
  *   所以 schedule 在每批之后重复调用本函数即可。
  * - **异步**：编辑器是 `next/dynamic` 懒加载的，首次挂载会拉 chunk。这没问题 ——
  *   卡片本来就是按需加载，正是我们希望的行为。
+ *
+ * ⚠️ **去重表必须按容器隔离**（2026-10-12 修复）：`WeakMap` 是模块级的，而
+ * 「编辑态 NodeView」与「预览态静态挂载」是**两套独立的 React 树**，它们的
+ * 容器元素可能被浏览器复用（同位置重建后拿到同一个对象）。共用一个去重表时，
+ * 切回预览态会因「表里已有」而**跳过挂载**，从而保留上一轮编辑态的整棵树 ——
+ * 实测表现：预览态卡片仍带 `is-editing`、仍显示编辑/移除按钮。
+ * 因此以**容器元素自身**为键，容器换了自然重新挂载。
  */
-const mountedRoots = new WeakMap<Element, Root>();
+const mountedRoots = new WeakMap<Element, Map<Element, Root>>();
 
 export function hydrateEmbeds(container: HTMLElement | null): () => void {
   if (!container) return () => {};
+
+  // 该容器专属的去重表；容器不同则互不影响
+  let table = mountedRoots.get(container);
+  if (!table) {
+    table = new Map<Element, Root>();
+    mountedRoots.set(container, table);
+  }
+  const roots = table;
 
   const placeholders = container.querySelectorAll<HTMLElement>("div[data-doc-id]");
   const mounted: Element[] = [];
@@ -249,23 +377,23 @@ export function hydrateEmbeds(container: HTMLElement | null): () => void {
     // 编辑态的 NodeView 外层也带 data-doc-id；但那个外层内部已经有 .doc-embed-card，
     // 说明卡片已由 NodeView 渲染过，这里跳过，避免重复挂载。
     if (el.querySelector(".doc-embed-card")) continue;
-    if (mountedRoots.has(el)) continue;
+    if (roots.has(el)) continue;
 
     const docId = el.getAttribute("data-doc-id") || "";
     // 标记成 .doc-embed，让卡片样式（外框/选中态）对预览态同样生效
     el.classList.add("doc-embed");
     const root = createRoot(el);
     root.render(<DocumentEmbedCard docId={docId} />);
-    mountedRoots.set(el, root);
+    roots.set(el, root);
     mounted.push(el);
   }
 
   return () => {
     for (const el of mounted) {
-      const root = mountedRoots.get(el);
+      const root = roots.get(el);
       // 必须同时清掉去重表：否则该节点若仍在 DOM 里（渐进渲染会保留已追加的批次），
       // 后续 hydrateEmbeds 会因「表里已存在」而跳过，卡片永远无法复原。
-      mountedRoots.delete(el);
+      roots.delete(el);
       // unmount 放到微任务之后：React 18 的 createRoot().render() 是异步提交的，
       // 同步 unmount 可能落在提交之前，触发 "Attempted to synchronously unmount
       // a root while React was already rendering" 警告。
