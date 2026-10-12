@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { getSharedDoc, type SharedDoc } from "@/lib/api";
 import { renderMarkdown, hydrateCodeBlocks } from "@/lib/markdown";
+import { hydrateEmbeds } from "./DocumentEmbed";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { PasswordInput } from "./PasswordInput";
 import { ThemeToggle } from "./ThemeToggle";
@@ -61,6 +62,13 @@ export function ShareView({ token }: { token: string }) {
     if (!html) return;
     return hydrateCodeBlocks(bodyRef.current, theme);
   }, [html, theme]);
+
+  // 分享页里的文档卡片：与编辑器预览同理，HTML 里只有空的 div[data-doc-id]，
+  // 必须挂载 React 卡片组件才可见。
+  useEffect(() => {
+    if (!html) return;
+    return hydrateEmbeds(bodyRef.current);
+  }, [html]);
 
   if (needPassword) {
     return (

@@ -233,8 +233,10 @@ const DocumentEmbed = Node.create({
   },
 
   renderHTML({ HTMLAttributes }) {
-    // 预览态（renderMarkdown 产出）不渲染真实卡片内容，只留占位标记：
-    // 卡片内容由编辑器 NodeView 渲染；预览态若也渲染会重复加载重型编辑器。
+    // 这里只产出**占位 div**，不带渲染好的内容 —— 因为编辑器序列化时并不知道
+    // 卡片内容（内容在渲染时按 docId 拉取，见 DocumentEmbedCard）。
+    // 预览态由 `hydrateEmbeds` 扫描 `div[data-doc-id]` 并挂载 React 卡片组件，
+    // 两态因此共用同一份渲染实现（保证不会出现「编辑态能看、预览态空白」）。
     return ["div", mergeAttributes(HTMLAttributes, { class: "doc-embed" })];
   },
 

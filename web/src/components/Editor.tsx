@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { renderMarkdown, extractToc, sanitizeHtml, renderProgressively, hydrateCodeBlocks, mediaUrl, type TocItem, type ProgressiveRenderHandle } from "@/lib/markdown";
+import { hydrateEmbeds } from "./DocumentEmbed";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
 import { useToast } from "./Toast";
@@ -414,10 +415,24 @@ export function Editor({
       return;
     }
 
+    // 预览态卡片：renderMarkdown 只在 HTML 里留下空的 div[data-doc-id]，
+    // 必须挂载 React 卡片组件才可见（否则用户看到的是空白 —— 实测到的缺陷）。
+    // 渐进渲染会逐批追加 HTML，所以每批之后都要重新扫描一次。
+    //
+    // 用**累积数组**收集 cleanup：每次 hydrateEmbeds 只返回「本次新挂载」的清理函数，
+    // 若直接覆盖变量，前面批次的 root 就永远 unmount 不掉（泄漏 + 往脱离 DOM 写入）。
+    const stopEmbedsList: (() => void)[] = [];
+    const mountEmbeds = () => stopEmbedsList.push(hydrateEmbeds(el));
+    const stopAllEmbeds = () => {
+      for (const fn of stopEmbedsList) fn();
+      stopEmbedsList.length = 0;
+    };
+
     // 搜索态：一次性渲染全文（见上方注释中的例外说明）
     if (highlight) {
       el.innerHTML = previewHtml;
       const cancelHydrate = hydrateCodeBlocks(el, theme);
+      mountEmbeds();
       progressiveRef.current = {
         cancel: cancelHydrate,
         ensureVisible: (probe) => probe() ?? null,
@@ -425,6 +440,7 @@ export function Editor({
       };
       return () => {
         cancelHydrate();
+        stopAllEmbeds();
         progressiveRef.current = null;
       };
     }
@@ -435,11 +451,18 @@ export function Editor({
       // ⚠️ 必须走 ref 回调而不是 setState：用 state 会让本 effect 的依赖变化
       //    → 重跑 → cancel + 重渲染 → 再次 onProgress，形成自激循环，
       //    结果反而变成「一次性渲染完」（实测长任务不退反升）。
-      onProgress: () => progressTickRef.current?.(),
+      onProgress: () => {
+        progressTickRef.current?.();
+        // 只挂载、不先卸载 —— hydrateEmbeds 自带 WeakMap 去重，重复调用只处理新增的
+        // 占位 div。若在此处先卸载再重挂，已渲染的卡片会被卸掉，而它们仍留在 DOM 里
+        // （渐进追加不删旧内容），表现就是「滚动过程中卡片突然消失」。
+        mountEmbeds();
+      },
     });
     progressiveRef.current = handle;
     return () => {
       handle.cancel();
+      stopAllEmbeds();
       progressiveRef.current = null;
     };
   }, [previewHtml, theme, mode, highlight]);
@@ -452,6 +475,18 @@ export function Editor({
       setHtmlPreview("");
     }
   }, [doc?.body, doc?.type]);
+
+  // HTML 文档路径的卡片挂载。
+  //
+  // 为什么单独一个 effect：上面那条预览渲染 effect 开头就 `if (mode !== "preview") return`，
+  // 而 HTML 文档（`type === "html"`）走的是 `dangerouslySetInnerHTML` + htmlPreview，
+  // 与 markdown 预览是两条独立分支。两者都用同一个 contentRef，但触发时机不同
+  // （htmlPreview 是另一个 state）。不补这条，HTML 文档里的卡片会一直是空白。
+  useEffect(() => {
+    if (doc?.type !== "html" || !htmlPreview) return;
+    const stop = hydrateEmbeds(contentRef.current);
+    return stop;
+  }, [htmlPreview, doc?.type]);
 
   // 搜索命中定位：预览渲染后，滚动到第一个高亮标记
   useEffect(() => {

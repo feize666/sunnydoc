@@ -119,13 +119,17 @@ const check = (n, c, d) => {
   const card = await p.evaluate((newId) => {
     const all = Array.from(document.querySelectorAll(".doc-embed"));
     const el = all.find((e) => e.getAttribute("data-doc-id") === newId) || null;
-    return el ? {
+    if (!el) return { notFound: true, totalCards: all.length, ids: all.map((e) => e.getAttribute("data-doc-id")) };
+    // ⚠️ data-embed-type 挂在**卡片本体**上（只有拉到文档后才知道类型），
+    //    不是外层占位 div —— 从外层读会恒为 null（编辑态与预览态都如此）。
+    const cardEl = el.querySelector(".doc-embed-card");
+    return {
       docId: el.getAttribute("data-doc-id"),
-      type: el.getAttribute("data-embed-type"),
+      type: cardEl ? cardEl.getAttribute("data-embed-type") : null,
       title: (el.querySelector(".doc-embed-title")?.textContent || "").trim(),
       tableCells: el.querySelectorAll("table input").length,
       totalCards: all.length,
-    } : { notFound: true, totalCards: all.length, ids: all.map((e) => e.getAttribute("data-doc-id")) };
+    };
   }, created.newId);
   console.log("  卡片: " + JSON.stringify(card));
   check("本次新建的卡片已插入正文", !!card && !card.notFound, JSON.stringify(card));

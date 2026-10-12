@@ -85,6 +85,12 @@
   --radius-md: 8px;
   --radius-lg: 12px;
 
+  /* 文档卡片嵌入：内容区限高与内层编辑器高度。
+     为什么需要：5 个图表编辑器硬编码 min-h-[calc(100vh-300px)]（独立打开时合理），
+     嵌进正文会把卡片撑到 71% 视口（实测）。卡片场景必须给一个受控高度。 */
+  --doc-embed-max-h: 460px;
+  --doc-embed-inner-h: 420px;
+
   /* 阴影（冷调，偏蓝，层级由浅入深） */
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(47, 107, 255, 0.04);
   --shadow-md: 0 4px 16px rgba(15, 23, 42, 0.07), 0 2px 6px rgba(47, 107, 255, 0.05);
@@ -178,6 +184,10 @@
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
+
+  /* 文档卡片嵌入：尺寸与主题无关，此处对称声明（见亮色 :root 的说明） */
+  --doc-embed-max-h: 460px;
+  --doc-embed-inner-h: 420px;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(47, 107, 255, 0.08);
   --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(47, 107, 255, 0.1);
@@ -1611,6 +1621,10 @@ mark.search-hit {
 .doc-embed-body {
   /* 内容高度由嵌入的编辑器决定，这里只保证加载态有合适留白 */
   min-height: 0;
+  /* 卡片里的内容可能很高（表格/画板/思维导图），限高并让它自己滚，
+     避免一张卡片把正文挤到看不见（实测未限高时卡片占 71% 视口）。 */
+  max-height: var(--doc-embed-max-h);
+  overflow: auto;
 }
 
 .doc-embed-placeholder {
@@ -1625,6 +1639,11 @@ mark.search-hit {
   border: none !important;
   border-radius: 0 !important;
   margin: 0 !important;
+  /* ⚠️ 5 个图表编辑器都硬编码了 min-h-[calc(100vh-300px)]（整屏假设），
+     独立打开时正确，但嵌进正文会把卡片撑到 71% 视口（实测）。
+     这里是卡片场景，必须覆盖掉那个整屏最小高度，改由 .doc-embed-body 限高。 */
+  min-height: 0 !important;
+  height: var(--doc-embed-inner-h) !important;
 }
 
 /* ---- 插入卡片的选择器 ---- */

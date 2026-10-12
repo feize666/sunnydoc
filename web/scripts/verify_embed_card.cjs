@@ -14,8 +14,10 @@ const { chromium } = require("playwright");
 const fs = require("fs");
 // token 走环境变量，避免把凭据写进仓库
 const TOKEN = process.env.SUNNYDOC_TOKEN || fs.readFileSync(process.env.SUNNYDOC_TOKEN_FILE || "/tmp/sunnydoc-token.txt", "utf8").trim();
-const CONTAINER_ID = "4a573de96439428ab89add125b0e597f";
-const SOURCE_TITLE = "嵌入测试-表格源";
+// 容器与来源都用**标题**定位，不硬编码 id —— 否则换一次测试环境脚本就失效
+// （曾因写死 id 而读到空正文，误判为「卡片标记没保存」）。
+const CONTAINER_TITLE = process.env.SUNNYDOC_CONTAINER || "嵌入测试-容器文档";
+const SOURCE_TITLE = process.env.SUNNYDOC_SOURCE || "嵌入测试-表格源";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let fail = 0;
@@ -39,11 +41,26 @@ const check = (n, c, d) => {
   const kb = p.locator("button, a").filter({ hasText: "云计算知识库" }).first();
   if (await kb.count()) { await kb.click(); await sleep(2200); }
 
+  // 按标题查出两个文档的 id（供后续精确断言用；不硬编码）
+  const ids = await p.evaluate(async ([ct, st]) => {
+    const tok = localStorage.getItem("sunnydoc.token");
+    const r = await fetch("http://localhost:8000/api/v1/documents", {
+      headers: { Authorization: "Bearer " + tok },
+    });
+    const all = (await r.json()).documents || [];
+    return {
+      container: all.find((x) => x.title === ct)?.id || null,
+      source: all.find((x) => x.title === st)?.id || null,
+    };
+  }, [CONTAINER_TITLE, SOURCE_TITLE]);
+  const SOURCE_ID = ids.source;
+  console.log("  定位: 容器=" + (ids.container || "未找到") + " 来源=" + (ids.source || "未找到"));
+
   // 打开容器文档（用搜索，避免折叠目录问题）
   const box = p.locator('input[type="search"], input[placeholder*="搜索"]').first();
-  await box.fill("嵌入测试-容器文档");
+  await box.fill(CONTAINER_TITLE);
   await sleep(2000);
-  const hit = p.getByText("嵌入测试-容器文档", { exact: true }).first();
+  const hit = p.getByText(CONTAINER_TITLE, { exact: true }).first();
   check("容器文档可被搜到", (await hit.count()) > 0, "未找到");
   if (await hit.count()) { await hit.click({ force: true }).catch(() => {}); }
   await sleep(4000);
@@ -86,7 +103,8 @@ const check = (n, c, d) => {
     return {
       exists: true,
       docId: el.getAttribute("data-doc-id"),
-      type: el.getAttribute("data-embed-type"),
+      // data-embed-type 在卡片本体上（两态一致），不是外层占位 div
+      type: cardEl ? cardEl.getAttribute("data-embed-type") : null,
       title: (el.querySelector(".doc-embed-title")?.textContent || "").trim(),
       badge: (el.querySelector(".doc-embed-badge")?.textContent || "").trim(),
       // 卡片内是否真的渲染出表格内容
@@ -100,7 +118,12 @@ const check = (n, c, d) => {
   console.log("  卡片内容: " + JSON.stringify(card));
   check("正文里出现了卡片", !!(card && card.exists), "未找到 .doc-embed");
   if (card && card.exists) {
-    check("卡片记录了来源 docId", card.docId === CONTAINER_ID.replace(/.*/, card.docId) && card.docId.length === 32, card.docId);
+    // 断言 docId 是合法 id 且与来源文档一致。
+    // ⚠️ 原写法 `CONTAINER_ID.replace(/.*/, card.docId)` 是**恒真表达式**
+    //   （replace 无论如何都返回第二参），等于没断言 —— 已改为与来源文档 id 比对。
+    check("卡片记录了来源 docId（32 位且等于来源文档 id）",
+      card.docId === SOURCE_ID && card.docId.length === 32,
+      `card.docId=${card.docId} SOURCE_ID=${SOURCE_ID}`);
     check("卡片显示来源标题", card.title === SOURCE_TITLE, card.title);
     check("卡片显示类型徽标", card.badge === "表格", card.badge);
     check("卡片内渲染出表格内容（非空壳）", card.innerTable > 0, "table 数=" + card.innerTable);
@@ -110,14 +133,22 @@ const check = (n, c, d) => {
   // ---- 4) 保存后重新打开，卡片仍在 ----
   await p.keyboard.press("Meta+s").catch(() => {});
   await sleep(3000);
-  const saved = await p.evaluate(async (id) => {
+  // 按标题定位容器（不依赖硬编码 id，脚本才可复用）；并轮询等保存落盘 ——
+  // 保存是 1.5s 防抖，固定 sleep 可能读在保存之前（曾读到空串而误判）。
+  const saved = await p.evaluate(async (title) => {
     const tok = localStorage.getItem("sunnydoc.token");
-    const r = await fetch(`http://localhost:8000/api/v1/documents/${id}`, {
-      headers: { Authorization: "Bearer " + tok },
-    });
-    const d = await r.json();
-    return (d.text || "").slice(0, 400);
-  }, CONTAINER_ID);
+    const h = { Authorization: "Bearer " + tok };
+    const list = await (await fetch("http://localhost:8000/api/v1/documents", { headers: h })).json();
+    const hit = (list.documents || []).find((x) => x.title === title);
+    if (!hit) return "";
+    for (let i = 0; i < 12; i++) {
+      const d = await (await fetch(`http://localhost:8000/api/v1/documents/${hit.id}`, { headers: h })).json();
+      const t = d.text || "";
+      if (/data-doc-id/.test(t)) return t.slice(0, 400);
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    return "";
+  }, CONTAINER_TITLE);
   console.log("  保存后的正文: " + JSON.stringify(saved.replace(/\n+/g, " ").slice(0, 200)));
   check("保存后正文里保留了卡片标记", /data-doc-id/.test(saved), saved.slice(0, 160));
 
