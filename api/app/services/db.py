@@ -1586,6 +1586,13 @@ def search_chunks(
 
     kb_ids 提供时按「知识库可见性」召回（该 kb 集合内的所有文档 + 用户自有未归属 kb 的文档）；
     否则 user_id 提供时按文档属主召回。返回结构与 JSON 路径的候选一致。
+
+    ⚠️ **三个分支都必须过滤 `d.deleted_at IS NULL`**（2026-10-12 修复）。
+    软删除只改 `documents.deleted_at`，**分片仍留在 chunks 表**（这是有意的 ——
+    回收站恢复时内容必须还在）。但检索当年只 `JOIN documents` 不过滤删除位，
+    实测后果：**83 篇已删文档的 3365 行分片仍被召回**，并作为「引用来源」
+    出现在 AI 回答里 → 用户点进去是一片 404，引用溯源直接失去可信度。
+    注意：只在此处过滤即可，**不要**改成「删除时清 chunks」（会破坏恢复）。
     """
     conn = _connect()
     with conn.cursor() as cur:
@@ -1595,7 +1602,8 @@ def search_chunks(
                 "SELECT d.id, d.title, d.source, c.segment_index, c.text, c.vector"
                 " FROM chunks c"
                 " JOIN documents d ON d.id = c.doc_id"
-                f" WHERE c.vector IS NOT NULL AND (d.kb_id IN ({placeholders})"
+                f" WHERE c.vector IS NOT NULL AND d.deleted_at IS NULL"
+                f" AND (d.kb_id IN ({placeholders})"
                 " OR (d.user_id = %s AND d.kb_id IS NULL))"
                 " ORDER BY c.vector <=> %s::vector"
                 " LIMIT %s"
@@ -1606,7 +1614,7 @@ def search_chunks(
                 "SELECT d.id, d.title, d.source, c.segment_index, c.text, c.vector"
                 " FROM chunks c"
                 " JOIN documents d ON d.id = c.doc_id"
-                " WHERE c.vector IS NOT NULL"
+                " WHERE c.vector IS NOT NULL AND d.deleted_at IS NULL"
                 " ORDER BY c.vector <=> %s::vector"
                 " LIMIT %s"
             )
@@ -1616,7 +1624,7 @@ def search_chunks(
                 "SELECT d.id, d.title, d.source, c.segment_index, c.text, c.vector"
                 " FROM chunks c"
                 " JOIN documents d ON d.id = c.doc_id"
-                " WHERE c.vector IS NOT NULL AND d.user_id = %s"
+                " WHERE c.vector IS NOT NULL AND d.deleted_at IS NULL AND d.user_id = %s"
                 " ORDER BY c.vector <=> %s::vector"
                 " LIMIT %s"
             )

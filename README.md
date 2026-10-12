@@ -35,7 +35,7 @@
 | 文档解析 | PyMuPDF（PDF）、python-docx（Word）、openpyxl（Excel） |
 | 检索 | jieba 分词 + Embedding 向量召回 + Rerank 精排 |
 | 导出 | reportlab（PDF）、markdown、python-docx |
-| 模型 | 阿里云百炼：qwen3-max（LLM）、text-embedding-v4（向量）、qwen3-rerank（重排） |
+| 模型 | 阿里云百炼：qwen-plus（LLM，可换任意已开通型号）、text-embedding-v4（向量）、qwen3-rerank（重排） |
 
 ### 检索问答链路
 

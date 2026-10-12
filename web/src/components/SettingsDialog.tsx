@@ -51,7 +51,7 @@ const PROVIDERS: ProviderPreset[] = [
     llmBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     embeddingBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     rerankBaseUrl: "https://dashscope.aliyuncs.com/compatible-api/v1",
-    llmModel: "qwen3-max",
+    llmModel: "qwen-plus",
     embeddingModel: "text-embedding-v4",
     rerankModel: "qwen3-rerank",
     note: "百炼兼容模式（OpenAI 协议）",
@@ -695,7 +695,7 @@ export function SettingsDialog({
                       label="模型"
                       value={llmModel}
                       onChange={setLlmModel}
-                      placeholder="gpt-4o-mini / qwen3-max / deepseek-chat"
+                      placeholder="gpt-4o-mini / qwen-plus / deepseek-chat"
                     />
                     <Note group="llm" />
 

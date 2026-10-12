@@ -28,7 +28,12 @@ DEFAULT_TOP_K = 5
 # LLM 配置（OpenAI 兼容接口，未配置则降级为规则式回答）
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-LLM_MODEL = os.getenv("LLM_MODEL", "qwen3-max")
+# ⚠️ 默认模型必须选「DashScope 各账号普遍可用」的型号。
+# 曾默认 qwen3-max：它并非所有账号都开通，实测某 Key 直接 404「Model not exist」
+# → 代码里所有降级判断都以「返回 None」为前提，而 404 是抛异常，
+#   结果 AI 问答**全程降级为规则拼接**且把「大模型错误 404」打给用户看。
+# qwen-plus 为实测 200 可用的稳定型号；如账号已开通更强模型，用设置页或 env 覆盖即可。
+LLM_MODEL = os.getenv("LLM_MODEL", "qwen-plus")
 
 # Embedding 配置（OpenAI 兼容接口，未配置则降级为纯关键词检索）
 EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", "")
