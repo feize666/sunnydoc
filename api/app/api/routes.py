@@ -5,6 +5,7 @@ import asyncio
 import io
 import json
 import os
+import re
 import shutil
 import tempfile
 import threading
@@ -20,7 +21,7 @@ from pydantic import BaseModel
 
 from app.core.config import DEFAULT_TOP_K, MEDIA_DIR, DATA_DIR, TEXT_EXTS, ai_config
 from app.services import db, media, parser, qa, llm, web_search, exporter, auth, settings, icon_search, share_password
-from app.services.store import store
+from app.services.store import store, _tokenize
 
 router = APIRouter(prefix="/api/v1")
 
@@ -436,6 +437,86 @@ def _make_snippet(text: str, idx: int, qlen: int, radius: int = 60) -> str:
     prefix = "…" if start > 0 else ""
     suffix = "…" if end < len(text) else ""
     return prefix + text[start:end].replace("\n", " ") + suffix
+
+
+# 检索用词下限：长度 ≥ 该值的词才单独参与匹配（仅用于**中文**分词结果）。
+# 中文单字（如「墙」）单独匹配几乎必然命中无关文档，只添噪声。
+_SEARCH_TERM_MIN = 2
+
+# 是否含中日韩统一表意文字 —— 决定该片段走「分词 OR」还是「精确子串」
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _search_groups(query: str) -> list[list[str]]:
+    """把查询拆成「AND 分组」，每组内是「OR 候选词」。
+
+    **为什么需要它（2026-10-12，实测缺陷）**
+
+    `/search` 原先把**整个查询串**当一个词做子串匹配，而中文书写习惯不加空格，
+    于是「虚拟机怎么开机」要求文档里**原样出现这 7 个连续汉字** ——
+    实测返回 **0 条**；而仅插入一个空格（「虚拟机 开机」）就返回 **11 条**。
+
+    同一个知识库、同一个问题：侧栏搜索 0 条，AI 问答却能给 5 条引用
+    （因为检索链路 `store.search` 用了 `_tokenize` 分词，而 `/search` 没用）。
+    **又是「算好了却没用上」这族缺陷** —— 分词器早就在，只是这条路径没接。
+
+    **规则：按空白分组做 AND；组内再按「片段是否含中文」分流**
+
+    | 片段类型 | 组内候选 | 理由 |
+    |---|---|---|
+    | **含中文** | jieba 分词结果（OR） | 中文不加空格，必须切开才能匹配（修复目标） |
+    | **纯英文/数字/符号** | **原串精确匹配**（不切） | 见下 |
+
+    **为什么纯英文片段不能用分词碎片**（实测踩到）：
+
+    jieba 对英文是**按符号切**的，产生的碎片在标识符语境下只是噪声 ——
+    修复过程中一度对所有片段都做分词 OR，实测 `/dev/sda` 从「精确匹配」变成
+    **124 条**（`dev` 命中 development 之类）、`vt-x` 变成 **20 条**（`vt`）。
+    而 `vt-x`、`/dev/sda`、`ceph-osd` 这类标识符**本就该精确匹配**
+    （想宽松搜就直接搜 `sda`）。所以纯英文片段只保留原串。
+
+    这条规则还有一个好处：**`kvm virsh` 这类纯英文多词查询完全保持原行为**
+    （两个分组都是精确子串 → AND），不引入任何语义回退。
+
+    引号包裹的片段整段保留为一个词（给用户一条显式的原样匹配途径）。
+    """
+    groups: list[list[str]] = []
+    quoted = re.findall(r'"([^"]+)"', query)
+    rest = re.sub(r'"[^"]*"', " ", query)
+
+    for part in rest.split():
+        raw = part.strip().lower()
+        if not raw:
+            continue
+        if _CJK_RE.search(part):
+            # 中文：分词后 OR（这才是修复无空格中文查询的关键）
+            terms = [t for t in _tokenize(part) if len(t) >= _SEARCH_TERM_MIN]
+            # 分词全被停用词/长度过滤掉（如只输入「怎么」）→ 退回原串，别让分组消失
+            terms = terms or [raw]
+        else:
+            # 非中文：原串精确匹配，不做碎片 OR
+            terms = [raw]
+        # 去重但保序（同一词多次出现不重复计分）
+        seen: set[str] = set()
+        groups.append([t for t in terms if not (t in seen or seen.add(t))])
+
+    for q in quoted:
+        t = q.strip().lower()
+        if t:
+            groups.append([t])
+    return groups
+
+
+def _search_terms(groups: list[list[str]]) -> list[str]:
+    """把 AND 分组拍平成去重后的词表，回传给前端做高亮。"""
+    out: list[str] = []
+    seen: set[str] = set()
+    for g in groups:
+        for t in g:
+            if t not in seen:
+                seen.add(t)
+                out.append(t)
+    return out
 
 
 # ---------- 异步导入任务 ----------
@@ -904,14 +985,32 @@ def search_documents(
 
     kb_id 提供时仅在指定知识库内搜索；type 按节点类型过滤；tag 按标签过滤；
     sort=relevance（标题命中优先）/ created（按更新时间倒序）。
+
+    **匹配语义（2026-10-12 修正）**：按空白分组做 AND，**组内再用 jieba 分词做 OR**。
+    修正前是「整串子串匹配」，导致**无空格的中文查询常态性返回 0 条**
+    （「虚拟机怎么开机」→ 0 条，「虚拟机 开机」→ 11 条）。详见 `_search_groups`。
+
+    响应新增 `terms`：实际参与匹配的词表，供前端高亮。**必须回传** ——
+    前端若仍用原始查询串高亮，分词匹配出的结果会出现「有结果但零高亮」。
     """
     query = q.strip()
     if not query:
-        return {"query": q, "total": 0, "results": []}
+        return {"query": q, "total": 0, "results": [], "terms": []}
 
-    # 多关键词：按空白拆分，全部命中才匹配（AND 语义）
-    ql = query.lower()
-    kws = [k for k in ql.split() if k]
+    groups = _search_groups(query)
+
+    def _hit(haystack: str, needle: str) -> bool:
+        return needle in haystack
+
+    def _find_first(haystack: str, terms: list[str]) -> int:
+        """返回任一词在文本中的最早出现位置（用于 snippet 定位）；无则 -1。"""
+        best = -1
+        for t in terms:
+            i = haystack.find(t)
+            if i >= 0 and (best == -1 or i < best):
+                best = i
+        return best
+
     results: list[dict] = []
     for d in store.all(kb_id, current_user["id"], with_chunks=False):
         if type and d.get("type", "doc") != type:
@@ -922,24 +1021,33 @@ def search_documents(
         text = d.get("text") or ""
         title_lower = title.lower()
         text_lower = text.lower()
-        # 每个关键词都要在标题或正文中命中
-        if not all(k in title_lower or k in text_lower for k in kws):
+
+        # 每个 AND 分组都必须在标题或正文中命中；组内任一 OR 词命中即可
+        if not all(
+            any(_hit(title_lower, t) or _hit(text_lower, t) for t in g) for g in groups
+        ):
             continue
-        # snippet 定位到首个关键词在正文中的命中位置
-        first_kw = kws[0]
-        text_idx = text_lower.find(first_kw)
-        title_idx = title_lower.find(first_kw)
+
+        # snippet 定位到「正文里最早出现的任一命中词」；正文没命中则用标题命中词
+        all_terms = [t for g in groups for t in g]
+        text_idx = _find_first(text_lower, all_terms)
         if text_idx >= 0:
-            snippet = _make_snippet(text, text_idx, len(first_kw))
+            hit_term = next(t for t in all_terms if text_lower.find(t) == text_idx)
+            snippet = _make_snippet(text, text_idx, len(hit_term))
         else:
             snippet = text[:120].replace("\n", " ")
+
         results.append(
             {
                 "doc_id": d["id"],
                 "title": title,
                 "snippet": snippet,
-                "match_in_title": all(k in title_lower for k in kws),
-                "match_count": sum(text_lower.count(k) for k in kws),
+                # 标题命中：任一 AND 分组在标题里命中即算（比原先「全部词都要在标题里」宽松，
+                # 因为组内是 OR 语义，要求「全部词」会与分词结果矛盾）
+                "match_in_title": any(
+                    any(_hit(title_lower, t) for t in g) for g in groups
+                ),
+                "match_count": sum(text_lower.count(t) for t in all_terms),
                 "folder_id": d.get("folder_id"),
                 "kb_id": d.get("kb_id"),
                 "source": d.get("source"),
@@ -954,7 +1062,12 @@ def search_documents(
     else:
         # 相关性排序：标题命中优先，组内按正文命中量降序（详见 _search_rank）
         results.sort(key=_search_rank)
-    return {"query": q, "total": len(results), "results": results[:limit]}
+    return {
+        "query": q,
+        "total": len(results),
+        "results": results[:limit],
+        "terms": _search_terms(groups),
+    }
 
 
 @router.get("/documents")

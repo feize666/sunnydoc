@@ -58,6 +58,7 @@ import {
   getUnreadCount,
   subscribeSSE,
   searchDocuments,
+  searchDocumentsFull,
   getMe,
   logout,
   getToken,
@@ -171,6 +172,8 @@ export default function Home() {
   // 全文搜索
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  /** 后端实际参与匹配的词（供高亮；与搜索结果为同一次请求的产物） */
+  const [searchTerms, setSearchTerms] = useState<string[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchType, setSearchType] = useState<string>("");
   const [searchTag, setSearchTag] = useState<string>("");
@@ -585,11 +588,20 @@ export default function Home() {
     setSearching(true);
     const timer = setTimeout(async () => {
       try {
-        setSearchResults(
-          await searchDocuments(q, currentKbId, searchType || null, searchTag || null, searchSort),
+        const { results, terms } = await searchDocumentsFull(
+          q,
+          currentKbId,
+          searchType || null,
+          searchTag || null,
+          searchSort,
         );
+        setSearchResults(results);
+        // 高亮词用后端实际匹配的词（中文分词后「虚拟机怎么开机」命中的是
+        // 「虚拟机」「开机」，文档里根本没有整串），否则会「有结果但零高亮」
+        setSearchTerms(terms);
       } catch {
         setSearchResults([]);
+        setSearchTerms([]);
       } finally {
         setSearching(false);
       }
@@ -598,12 +610,14 @@ export default function Home() {
   }, [searchQuery, currentKbId, searchType, searchTag, searchSort]);
 
   // 点击搜索结果：打开文档并高亮关键词
+  // 高亮串优先用「后端实际匹配的词」（空格拼接，渲染层本就支持多关键词），
+  // 后端未返回时回退到原始查询串（保持对旧后端的兼容）。
   const handleOpenSearchResult = useCallback(
     (docId: string) => {
       openDoc(docId);
-      setHighlight(searchQuery.trim());
+      setHighlight(searchTerms.length > 0 ? searchTerms.join(" ") : searchQuery.trim());
     },
-    [openDoc, searchQuery],
+    [openDoc, searchQuery, searchTerms],
   );
 
   // 点击 AI 引用：打开对应文档并高亮片段（取片段开头作为关键词定位）
@@ -1189,6 +1203,7 @@ export default function Home() {
     searchSort,
     onSearchSortChange: setSearchSort,
     searchResults,
+    searchTerms,
     searching,
     onOpenSearchResult: handleOpenSearchResult,
     sortBy,

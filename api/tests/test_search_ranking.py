@@ -131,3 +131,78 @@ def test_empty_query_returns_empty(monkeypatch):
     out = routes.search_documents(q="   ", current_user={"id": "u1"})
     assert out["total"] == 0
     assert out["results"] == []
+
+
+# ---------------------------------------------------------------------------
+# 中文自然语言查询（2026-10-12 新增）
+#
+# **缺陷背景（实测，非推测）**：`/search` 原先把**整个查询串**当一个词做子串匹配，
+# 而中文书写习惯不加空格 → 「虚拟机怎么开机」要求文档里原样出现这 7 个连续汉字
+# → 实测返回 **0 条**；仅插入一个空格（「虚拟机 开机」）就返回 11 条。
+# 同一知识库同一问题：侧栏搜索 0 条，AI 问答却有 5 条引用
+# （`store.search` 用了 jieba 分词，`/search` 没用 —— 又一个「算好了没用上」）。
+#
+# **断言为什么这样设计**：只断「能搜到」会被历史数据满足（恒真风险）；
+# 必须构造**只有分词匹配才能命中**的数据 —— 文档里刻意**不出现**整串，
+# 只出现两个词。这样旧实现（整串匹配）必然 0 条、新实现必然命中，可区分。
+# ---------------------------------------------------------------------------
+
+_CJK_DOCS = [
+    # 文档里**没有**「虚拟机怎么开机」这个整串，只有分开的「虚拟机」和「开机」
+    _doc("c1", "运维手册", "虚拟机 的日常维护：开机 前检查磁盘，关机 后清理缓存。" * 3),
+    _doc("c2", "无关文档", "这里没有任何相关词汇，只有一点别的记录。"),
+]
+
+
+def test_cjk_query_without_spaces_matches_tokenized_words(monkeypatch):
+    """核心回归：无空格中文查询必须能命中（旧实现此处恒为 0 条）。"""
+    monkeypatch.setattr(routes, "store", FakeStore(_CJK_DOCS))
+    out = routes.search_documents(q="虚拟机怎么开机", current_user={"id": "u1"})
+    titles = _titles(out)
+    assert titles == ["运维手册"], titles
+
+
+def test_cjk_query_returns_terms_for_highlight(monkeypatch):
+    """必须回传 terms —— 前端用它高亮，否则会「有结果但零高亮」。
+
+    文档里不存在整串，所以用原始查询串高亮必然高亮不到任何东西。
+    """
+    monkeypatch.setattr(routes, "store", FakeStore(_CJK_DOCS))
+    out = routes.search_documents(q="虚拟机怎么开机", current_user={"id": "u1"})
+    assert "terms" in out, "响应必须带 terms（前端高亮契约）"
+    terms = out["terms"]
+    assert "虚拟机" in terms and "开机" in terms, terms
+    # 整串不应作为高亮词出现（它在文档里根本不存在）
+    assert "虚拟机怎么开机" not in terms, terms
+
+
+def test_spaced_and_unspaced_cjk_agree(monkeypatch):
+    """带空格与不带空格的同义查询应得到一致结果（这正是原先的最大怪异点）。"""
+    monkeypatch.setattr(routes, "store", FakeStore(_CJK_DOCS))
+    a = _titles(routes.search_documents(q="虚拟机怎么开机", current_user={"id": "u1"}))
+    b = _titles(routes.search_documents(q="虚拟机 开机", current_user={"id": "u1"}))
+    assert a == b == ["运维手册"], (a, b)
+
+
+def test_ascii_identifier_not_shredded(monkeypatch):
+    """英文标识符必须精确匹配，不能被 jieba 切成碎片做 OR。
+
+    修复过程中一度对所有片段都分词 OR → 实测 `/dev/sda` 从精确匹配膨胀到 **124 条**
+    （`dev` 命中 development 之类）、`vt-x` 涨到 **20 条**（`vt`）。
+    这里构造「只有碎片、没有完整标识符」的文档，确保它**不被命中**。
+    """
+    docs = [
+        _doc("d1", "含完整标识符", "执行 vt-x 检查虚拟化支持"),
+        _doc("d2", "只有碎片", "development 环境里有 vt 两个字但无完整标识符"),
+    ]
+    monkeypatch.setattr(routes, "store", FakeStore(docs))
+    out = routes.search_documents(q="vt-x", current_user={"id": "u1"})
+    assert _titles(out) == ["含完整标识符"], _titles(out)
+    assert out["terms"] == ["vt-x"], out["terms"]
+
+
+def test_quoted_phrase_stays_exact(monkeypatch):
+    """引号包裹的片段整段作为一个词（原样匹配的显式途径）。"""
+    monkeypatch.setattr(routes, "store", FakeStore(_CJK_DOCS))
+    out = routes.search_documents(q='"虚拟机 的日常"', current_user={"id": "u1"})
+    assert _titles(out) == ["运维手册"], _titles(out)

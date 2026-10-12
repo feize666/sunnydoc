@@ -143,6 +143,7 @@ export function Sidebar({
   searchSort,
   onSearchSortChange,
   searchResults,
+  searchTerms,
   searching,
   onOpenSearchResult,
   sortBy,
@@ -189,6 +190,12 @@ export function Sidebar({
   searchSort: string;
   onSearchSortChange: (s: string) => void;
   searchResults: SearchResult[];
+  /**
+   * 后端实际参与匹配的词。**高亮必须用它**：后端按中文分词 OR 匹配，
+   * 「虚拟机怎么开机」命中的是「虚拟机」「开机」，文档里没有整串 ——
+   * 若用原始查询串高亮会「有结果但零高亮」。空数组时回退到原始查询串。
+   */
+  searchTerms: string[];
   searching: boolean;
   onOpenSearchResult: (docId: string) => void;
   sortBy: SortBy;
@@ -197,6 +204,16 @@ export function Sidebar({
   mobile?: boolean;
   onCloseMobile?: () => void;
 }) {
+  /**
+   * 高亮用的关键词串。
+   *
+   * 优先用后端回传的 `searchTerms`（空格拼接 —— `highlightKw` 本就按空白拆多词）。
+   * 为什么不能只用 `searchQuery`：后端按中文分词 OR 匹配，
+   * 「虚拟机怎么开机」命中的词是「虚拟机」「开机」，**文档里没有这个整串**，
+   * 用原始串高亮会「有结果但零高亮」。`searchTerms` 为空时（旧后端/空查询）回退。
+   */
+  const hlKw = searchTerms.length > 0 ? searchTerms.join(" ") : searchQuery.trim();
+
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
@@ -667,13 +684,13 @@ export function Sidebar({
                   <span
                     className="truncate text-[16px] text-text"
                     dangerouslySetInnerHTML={{
-                      __html: highlightKw(r.title, searchQuery.trim()),
+                      __html: highlightKw(r.title, hlKw),
                     }}
                   />
                   <span
                     className="line-clamp-2 text-[13px] leading-snug text-faint"
                     dangerouslySetInnerHTML={{
-                      __html: highlightKw(r.snippet, searchQuery.trim()),
+                      __html: highlightKw(r.snippet, hlKw),
                     }}
                   />
                   {(r.match_count ?? 0) > 0 && (

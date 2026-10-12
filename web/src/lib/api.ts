@@ -161,6 +161,40 @@ export interface SearchResult {
   created_at?: number;
 }
 
+export interface SearchResponse {
+  results: SearchResult[];
+  /**
+   * 实际参与匹配的词表（后端按分词/精确规则算出）。
+   *
+   * **为什么必须用它而不是原始查询串做高亮**：后端已改为「空白分组 AND +
+   * 组内按中文分词 OR」，所以「虚拟机怎么开机」命中的词是 `虚拟机` / `开机`，
+   * 文档里**并不存在**「虚拟机怎么开机」这个整串。前端若继续用原始串高亮，
+   * 会出现「有结果但零高亮」的怪异表现。旧后端没有该字段 → 回退到档案行为。
+   */
+  terms: string[];
+}
+
+export async function searchDocumentsFull(
+  q: string,
+  kbId?: string | null,
+  type?: string | null,
+  tag?: string | null,
+  sort?: string | null,
+): Promise<SearchResponse> {
+  const params = new URLSearchParams({ q });
+  if (kbId) params.set("kb_id", kbId);
+  if (type) params.set("type", type);
+  if (tag) params.set("tag", tag);
+  if (sort) params.set("sort", sort);
+  const data = await request<{ total: number; results: SearchResult[]; terms?: string[] }>(
+    `/search?${params.toString()}`,
+  );
+  return {
+    results: Array.isArray(data?.results) ? data.results : [],
+    terms: Array.isArray(data?.terms) ? data.terms : [],
+  };
+}
+
 export async function searchDocuments(
   q: string,
   kbId?: string | null,
@@ -168,15 +202,7 @@ export async function searchDocuments(
   tag?: string | null,
   sort?: string | null,
 ): Promise<SearchResult[]> {
-  const params = new URLSearchParams({ q });
-  if (kbId) params.set("kb_id", kbId);
-  if (type) params.set("type", type);
-  if (tag) params.set("tag", tag);
-  if (sort) params.set("sort", sort);
-  const data = await request<{ total: number; results: SearchResult[] }>(
-    `/search?${params.toString()}`,
-  );
-  return Array.isArray(data?.results) ? data.results : [];
+  return (await searchDocumentsFull(q, kbId, type, tag, sort)).results;
 }
 
 export async function listFolders(kbId?: string | null): Promise<Folder[]> {
