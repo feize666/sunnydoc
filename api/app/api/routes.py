@@ -483,6 +483,19 @@ _DANGLING_MD_TAIL_RE = re.compile(r"\]\([^)]*$")
 _MEDIA_PATH_RE = re.compile(r"/?(?:api/v1/media|uploads)/[A-Za-z0-9._-]+\)?")
 
 
+# ---------- 搜索片段的跨度常量（选位与渲染必须共用，否则选位会「选偏」）----------
+#
+# 🔴 **选位跨度必须等于渲染跨度**（2026-10-13 真机对照抓出）：
+# `_best_hit` 若用 200 字符窗找「最密集处」，而 `_make_snippet` 只渲染
+# 约 `radius*2` 个字符，则「最密集的 200 字符窗」居中后截到 140 字符，
+# **未必是最密集的 140 字符窗** —— 实测片段密度只有 80% ≥ 首命中窗口。
+# 两者共用本常量后升到 94%（真机 99 条对照）。
+#
+# 计算：片段目标长度 ≈ `radius*2`，清洗会剥掉部分字符（markdown 噪声），
+# 故选位窗取 **`radius`**（半宽），与「以锚点为中心、前后各 radius」严格一致。
+_SNIPPET_RADIUS = 70
+
+
 def _clean_snippet_text(s: str) -> str:
     """把 markdown 结构噪声降级成普通可读文本（图片/围栏删掉，链接留文字）。"""
     s = _ZERO_WIDTH_RE.sub("", s)
@@ -521,7 +534,7 @@ def _trim_to_word_boundary(s: str, window: int = 20) -> str:
     return s
 
 
-def _make_snippet(text: str, idx: int, qlen: int, radius: int = 70) -> str:
+def _make_snippet(text: str, idx: int, qlen: int, radius: int = _SNIPPET_RADIUS) -> str:
     """在命中点附近取一段**贴行边界 + 已清洗**的可读文本。
 
     步骤（顺序重要）：
@@ -1149,14 +1162,62 @@ def search_documents(
     def _hit(haystack: str, needle: str) -> bool:
         return needle in haystack
 
-    def _find_first(haystack: str, terms: list[str]) -> int:
-        """返回任一词在文本中的最早出现位置（用于 snippet 定位）；无则 -1。"""
-        best = -1
+    def _best_hit(text_lower: str, terms: list[str]) -> tuple[int, str]:
+        """挑「命中最密集」的簇，返回 (簇内**最接近簇中心**的命中位置, 命中的词)。
+
+        **为什么不是「第一个命中点」**（2026-10-13 实测）：
+
+        464 条结果里 **293 条（63%）** 的密集窗口命中数明显高于首命中所在窗口。
+        极端例：20 万字符的「openEuler安全配置基线」搜「日志」，首命中落在
+        @13063（全文 6% 处）且周围仅 1 次，而密集窗口有 **14** 次；
+        「故障处理」搜 nginx，首命中在 @10441/17081（61% 处）周围 1 次，密集窗 11 次。
+        → **首命中常常落在目录 / 引言 / 顺带提及处**，不是真正讨论该主题的地方。
+
+        **为什么返回「最接近簇中心」而不是「簇内第一个命中」**（同日第二次修正）：
+
+        `_make_snippet` 是**以返回位置为中心**取前后各 `radius` 字符的。
+        若返回簇内**第一个**命中，片段只覆盖密集簇的前半段、还有一半半径浪费在簇外 ——
+        真机对照实测只有 **80%** 的片段密度 ≥ 首命中窗口（多为 `A<B`）。
+        返回**最接近簇中心**的位置后，片段对称覆盖整个簇。
+        """
+        window = _SNIPPET_RADIUS  # 与 `_make_snippet` 的渲染跨度对齐（理由见常量处注释）
+        cap = 5000  # 防御：极高频词在长文档里可能上万次命中
+        positions: list[int] = []
         for t in terms:
-            i = haystack.find(t)
-            if i >= 0 and (best == -1 or i < best):
-                best = i
-        return best
+            if not t:
+                continue
+            start = 0
+            while len(positions) < cap:
+                i = text_lower.find(t, start)
+                if i < 0:
+                    break
+                positions.append(i)
+                start = i + 1  # 允许重叠命中
+        if not positions:
+            return -1, ""
+        positions.sort()
+        # 双指针滑窗找命中数最多的簇（并列时取更早的，稳定且更可能靠近开头概述）
+        best_count = 0
+        best_left = 0
+        best_right = 0
+        left = 0
+        for right in range(len(positions)):
+            while positions[right] - positions[left] >= window:
+                left += 1
+            if right - left + 1 > best_count:
+                best_count = right - left + 1
+                best_left = left
+                best_right = right
+        # 锚点 = 簇内最接近簇中心的那次命中（让片段对称覆盖簇）
+        center = (positions[best_left] + positions[best_right]) // 2
+        anchor = min(
+            positions[best_left : best_right + 1], key=lambda p: abs(p - center)
+        )
+        # 回查锚点命中的是哪个词（供 snippet 定位长度 + 前端高亮对齐）
+        for t in terms:
+            if t and text_lower.startswith(t, anchor):
+                return anchor, t
+        return anchor, terms[0] if terms else ""
 
     results: list[dict] = []
     for d in store.all(kb_id, current_user["id"], with_chunks=False):
@@ -1175,7 +1236,8 @@ def search_documents(
         ):
             continue
 
-        # snippet 定位到「正文里最早出现的任一命中词」；正文没命中则取正文开头。
+        # snippet 取自「命中最密集的窗口」（不是第一个命中点，理由见 `_best_hit`）；
+        # 正文完全没命中时取正文开头（清洗后的）。
         #
         # ⚠️ **两个分支都必须清洗**（2026-10-13 踩到）：最初只改了 `_make_snippet`，
         # 而这个 else 兜底分支是直接 `text[:120]` 的原样切片 —— 真机验证时它单独
@@ -1185,9 +1247,8 @@ def search_documents(
         # **改一个渲染分支时必须检查同一功能的其它分支**（同族教训：`search_chunks`
         # 三个 SQL 分支、分享接口多个动词只鉴权一个）。
         all_terms = [t for g in groups for t in g]
-        text_idx = _find_first(text_lower, all_terms)
+        text_idx, hit_term = _best_hit(text_lower, all_terms)
         if text_idx >= 0:
-            hit_term = next(t for t in all_terms if text_lower.find(t) == text_idx)
             snippet = _make_snippet(text, text_idx, len(hit_term))
         else:
             snippet = _lead_snippet(text)

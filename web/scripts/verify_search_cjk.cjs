@@ -117,11 +117,23 @@ const check = (n, c, d) => {
     check("搜索出结果（修复前恒为 0）", r.count > 0, `count=${r.count}（应为 0 之外的正数）`);
     check("实际渲染了结果行", r.rows > 0, `rows=${r.rows}`);
     check("有高亮标记（防「有结果但零高亮」）", r.marks > 0, `marks=${r.marks}`);
-    // 高亮必须落在分词后的词上，而不是原始整串
-    const allCjk = r.markTexts.every((t) => ["虚拟机", "开机"].includes(t));
+    // 高亮词必须来自分词结果 `虚拟机` / `开机`，**但允许它们相邻被合并**。
+    //
+    // ⚠️ **判据修正（第二版，原判据过严 → 假失败）**
+    // 原判据要求每个 mark 文本都**恰好等于**某个分词。实测出现 `虚拟机开机`：
+    //   ① API 的 `terms` 确认是 `['虚拟机','开机']` 两个独立词（不是合并 term）；
+    //   ② 语料里**确实存在**「虚拟机开机」这个连续串
+    //      （`kvm日常使用命令` @10570，数据库直查确认）；
+    //   ③ `highlightKw` 的区间合并条件是 `r[0] <= last[1]` —— 对**恰好相邻**
+    //      （`r[0] == last[1]`）同样成立 → 两个 mark 合成一个。
+    // → 那是**高亮器的正确行为**，不是缺陷。
+    // 本项在改动前未出现，只是因为片段当时没落在「两词相邻」的位置上。
+    const fromTerms = r.markTexts.every((t) =>
+      ["虚拟机", "开机", "虚拟机开机"].includes(t),
+    );
     check(
-      "高亮词恰为分词结果（虚拟机 / 开机）",
-      r.markTexts.length > 0 && allCjk,
+      "高亮词来自分词结果（允许相邻合并成「虚拟机开机」）",
+      r.markTexts.length > 0 && fromTerms,
       `markTexts=${JSON.stringify(r.markTexts)}`,
     );
     check(
