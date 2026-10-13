@@ -673,7 +673,7 @@ export function Sidebar({
                 key={r.doc_id}
                 onClick={() => onOpenSearchResult(r.doc_id)}
                 onMouseEnter={() => setSelIndex(i)}
-                className={`flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
+                className={`lift-x flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left ${
                   i === selIndex ? "bg-hover" : "hover:bg-hover"
                 }`}
               >

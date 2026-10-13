@@ -388,7 +388,7 @@ export function HomeView({
                   <button
                     key={kb.id}
                     onClick={() => onOpenKb(kb.id)}
-                    className="group relative flex flex-col gap-2.5 overflow-hidden rounded-xl border border-line bg-background p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-glow"
+                    className="lift group relative flex flex-col gap-2.5 overflow-hidden rounded-xl border border-line bg-background p-4 text-left shadow-sm hover:border-accent/40 hover:shadow-glow"
                   >
                     {/* hover 时顶部浮现渐变装饰条 */}
                     <span className="kb-topline" />
@@ -488,7 +488,7 @@ export function HomeView({
                 {/* 新建知识库卡片 */}
                 <button
                   onClick={onCreateKb}
-                  className="flex min-h-[7.5rem] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line text-faint transition-all hover:-translate-y-0.5 hover:border-accent/50 hover:bg-accent-soft/40 hover:text-accent"
+                  className="lift flex min-h-[7.5rem] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line text-faint hover:border-accent/50 hover:bg-accent-soft/40 hover:text-accent"
                 >
                   <PlusIcon size={22} />
                   <span className="text-xs">新建知识库</span>
@@ -521,7 +521,7 @@ export function HomeView({
                   <li key={r.doc_id} data-flip-key={`recent:${r.doc_id}`}>
                     <button
                       onClick={() => onOpenRecent(r.doc_id, r.kb_id)}
-                      className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-hover"
+                      className="lift-x group flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-hover"
                     >
                       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-surface-2 text-faint transition-colors group-hover:bg-accent-soft group-hover:text-accent">
                         <svg
@@ -593,7 +593,7 @@ export function HomeView({
                   <li key={d.id} data-flip-key={`fav:${d.id}`}>
                     <button
                       onClick={() => onOpenFavorite(d)}
-                      className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-hover"
+                      className="lift-x group flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-hover"
                     >
                       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">

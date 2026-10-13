@@ -1428,3 +1428,66 @@ viewport（pan/zoom）、自身尺寸、以及泳道父节点偏移影响——�
 - 前端：`web/scripts/verify_citation_anchor.cjs` —— **真的点击引用**，
   读正文里的 `mark.search-hit` 数量与文本。
 - 对抗性：忽略 `full_text`（退回只看分片）→ 单测精确失败 **且真机高亮回到 0**。
+
+## 6.13 悬停动效体系（`.lift` / `.lift-sm` / `.lift-x` / `.tree-row`）
+
+### 为什么要有这一节
+
+实测全站 `hover:` **397 处**、`transition` **212 处**，但 `duration-` 仅 **3 处**、
+`scale-` 13、`translate-` 20 —— **以颜色变化为主，缺有幅度的交互反馈**。
+本节把「位移 + 缩放 + 阴影」收口成 token 化类名，改一处即可调全站手感。
+
+### 四类及其适用场景（**幅度分场景，不是一处大到底**）
+
+| 类 | 幅度 | 用于 |
+|---|---|---|
+| `.lift` | `translateY(-3px) scale(1.03)` + `--shadow-lg` | 卡片、首页入口（点击目标） |
+| `.lift-sm` | `translateY(-1px) scale(1.008)` + `--shadow-md` | 密集网格（stat-tile） |
+| `.lift-x` | `translateX(3px)` | **`overflow-hidden` 容器内的列表行** |
+| `.tree-row` | 无几何变换，仅左侧强调条 | **文件树行（刻意）** |
+
+后两条都是「不能位移」的场景，理由不同：
+
+- `.lift-x`：列表容器是 `overflow-hidden rounded-xl`，垂直位移/缩放会在
+  **首尾行被裁切成半截** → 改用水平轻推。
+- `.tree-row`：树行缩进由 `paddingLeft = BASE + depth * STEP` 精确控制，
+  位移/缩放会让文字横向偏移或行间重叠，**看起来就像「层级变了」** ——
+  对树形列表这是**功能性误导**（项目有专门的缩进纪律，见 §5.18）。
+  → 用「背景 + 左侧强调条」做强反馈。
+
+### token
+
+```
+--dur-fast: 120ms      纯颜色变化
+--dur-base: 180ms      位移+缩放
+--dur-slow: 260ms      大面板展开
+--ease-out / --ease-spring
+--lift-sm: -1px  --lift-md: -3px
+```
+
+### 🔴 陷阱：入场动画会把 `transform` 永久钉死
+
+`.stagger > *` 原用 `animation: rise-in ... both`。**`both` 含 `forwards`**，
+而 **CSS 动画优先级高于普通声明** → `rise-in` 的 `to { transform: translateY(0) }`
+把元素的 transform 永久钉住，**任何 `:hover { transform: ... }` 全被压住**。
+
+实测症状极隐蔽（值得记住的诊断手法）：
+
+- `.stagger` 里的知识库卡片 hover 时 `--shadow-glow` **正常生效**，
+  `getComputedStyle().transform` 却**恒为** `matrix(1,0,0,1,0,0)`；
+- 而**同一套 `.lift` 用在 `.stagger` 之外**（最近浏览列表行）**完全正常**。
+
+→ **「同一个类在 A 处生效、B 处不生效」时，先查 B 处有没有别的规则占用了同一属性。**
+→ 修法：入场动画一律用 **`backwards`**（只在开始前应用首帧），
+  动画结束后不再占用 transform。`.anim-rise-in` 同理。
+
+### 🔴 无障碍硬要求
+
+`prefers-reduced-motion: reduce` 下**必须关掉位移与缩放**（前庭功能障碍用户会不适），
+但**保留颜色/阴影反馈** —— 否则 hover 完全没反应，用户不知道指针在哪一项上。
+
+### 验收方式
+
+`web/scripts/verify_hover_motion.cjs` —— 读 `getComputedStyle().transform` 与
+`getBoundingClientRect()` 的**实测值**（不是查 className 里有没有 "lift"），
+并用 `reducedMotion: "reduce"` 另开页面验证降级。

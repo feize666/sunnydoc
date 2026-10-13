@@ -342,7 +342,7 @@ function FileTreeNode({
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`group relative flex w-full items-center gap-1 rounded-md py-1 text-left text-[16px] transition-colors ${
+          className={`tree-row group relative flex w-full items-center gap-1 rounded-md py-1 text-left text-[16px] transition-colors ${
             dropPos === "inside" ? "bg-accent-soft ring-1 ring-inset ring-accent" : "text-text hover:bg-hover"
           } ${dropClass} ${isSelected ? "bg-accent-soft" : ""}`}
           style={{ paddingLeft: TREE_BASE_PAD + depth * INDENT_STEP }}

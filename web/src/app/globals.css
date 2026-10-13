@@ -98,6 +98,19 @@
   /* 微光：蓝色光晕（用于 hover / 主按钮 / 命令面板等强调层级） */
   --shadow-glow: 0 0 0 1px rgba(47, 107, 255, 0.22), 0 8px 24px rgba(47, 107, 255, 0.18);
 
+  /* ---- 动效（2026-10-13 新增）----
+     为什么单独立 token：全站 hover 有 397 处但只改颜色（`duration-` 仅 3 处），
+     缺少「位移/缩放」这类有幅度的手感。统一收口成 token 后，
+     改一处即可调整全站手感，也避免各处手写裸数值。 */
+  --dur-fast: 120ms;   /* 纯颜色变化（按钮/链接） */
+  --dur-base: 180ms;   /* 位移+缩放（卡片/列表行） */
+  --dur-slow: 260ms;   /* 大面板展开 */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);    /* 通用：快出慢收，用于 hover */
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);   /* 轻微回弹，用于按压缩放 */
+  /* 悬停上浮幅度 —— 「小」用于密集列表（长时间浏览不晃眼），「大」用于卡片/首页入口 */
+  --lift-sm: -1px;
+  --lift-md: -3px;
+
   /* 聚焦环 */
   --focus-ring: 0 0 0 3px rgba(47, 107, 255, 0.25);
 
@@ -519,6 +532,102 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
+/* ==========================================================================
+   悬停上浮（.lift / .lift-sm / .press）—— 2026-10-13
+   --------------------------------------------------------------------------
+   为什么需要：全站 `hover:` 有 397 处但**只改颜色**（`duration-` 仅 3 处），
+   缺少有幅度的交互反馈。这里把「位移 + 缩放 + 阴影」收口成 3 个类名。
+
+   两条纪律：
+   1. **幅度分场景**：`.lift`（卡片/首页入口，-3px + 1.03）用于点击目标；
+      `.lift-sm`（列表行/树节点，-1px + 1.008）用于**长时间浏览的密集区域** ——
+      密集列表里用大幅度会晃眼，也会因行高微变导致命中位置漂移。
+   2. **必须尊重 prefers-reduced-motion**：前庭功能障碍用户会因位移/缩放不适，
+      系统开了「减少动态效果」时应只保留颜色变化（见文件末尾的媒体查询）。
+
+   为什么**不用** `:where(:not(:disabled, ...))` 这种「把排除条件塞进单个 :where」的写法：
+   实测它在该元素的层叠里**没有赢得 transform**（computed 值始终是恒等矩阵），
+   而同一份规则在 `--shadow-glow` 上却生效了 —— 说明问题出在 `:hover:where(...)`
+   这一具体的组合形式上，而不是 token 或变量。改用**多个平铺的 :not()**
+   （每个都显式排除，语义更直白，也不依赖 `:where()` 的权重技巧）。
+   ========================================================================== */
+.lift,
+.lift-sm {
+  will-change: transform;
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-fast) ease,
+    background-color var(--dur-fast) ease;
+}
+
+.lift:hover:not(:disabled):not([aria-disabled="true"]):not(.no-lift) {
+  transform: translateY(var(--lift-md)) scale(1.03);
+  box-shadow: var(--shadow-lg);
+}
+
+.lift-sm:hover:not(:disabled):not([aria-disabled="true"]):not(.no-lift) {
+  transform: translateY(var(--lift-sm)) scale(1.008);
+  box-shadow: var(--shadow-md);
+}
+
+/* 列表行专用（.lift-x）：容器常有 `overflow-hidden`（圆角列表），
+   垂直位移/缩放会在首尾行被裁切成「半截」。水平轻推既有明显反馈、
+   又不会被纵向裁切。配合背景色变化使用。 */
+.lift-x {
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    background-color var(--dur-fast) ease;
+}
+.lift-x:hover:not(:disabled):not([aria-disabled="true"]):not(.no-lift) {
+  transform: translateX(3px);
+}
+
+/* 文件树行专用（.tree-row）—— **刻意不用几何变换**
+   --------------------------------------------------------------------------
+   树行的缩进由 `paddingLeft = BASE + depth * STEP` 精确控制（全站有缩进纪律，
+   历史上修过「缩进被算两次」的缺陷）。位移/缩放会让文字横向偏移或行间重叠，
+   看起来就像「层级变了」—— 对树形列表这是**功能性误导**，不只是观感问题。
+   因此这里用「背景 + 左侧强调条」做强反馈，不含 transform。 */
+.tree-row {
+  position: relative;
+}
+.tree-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0;
+  transform: scaleY(0.4);
+  transition:
+    opacity var(--dur-fast) ease,
+    transform var(--dur-base) var(--ease-out);
+}
+.tree-row:hover:not([aria-disabled="true"])::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+/* 按下：轻微回缩，用带一点回弹的曲线（比默认 ease 更有「按下去了」的实感） */
+.lift:active:not(:disabled):not([aria-disabled="true"]),
+.lift-sm:active:not(:disabled):not([aria-disabled="true"]),
+.press:active:not(:disabled):not([aria-disabled="true"]) {
+  transform: translateY(0) scale(0.985);
+  transition-duration: var(--dur-fast);
+  transition-timing-function: var(--ease-spring);
+}
+
+/* 键盘可达性：焦点态给和 hover 同级的反馈（只用键盘的用户也该看到「我在这里」） */
+.lift:focus-visible,
+.lift-sm:focus-visible {
+  transform: translateY(var(--lift-sm));
+  box-shadow: var(--shadow-md);
+}
+
 /* ---- 编辑器 / 面板专用：工具栏按钮与浮层 ----
    尺寸阶梯（全站统一，勿在组件里另造新规格）：
      36px —— .btn / .input / .select        主表单、对话框主操作
@@ -745,12 +854,16 @@ body {
   background: var(--background);
   padding: 14px 16px;
   box-shadow: var(--shadow-sm);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  transition:
+    border-color var(--dur-fast) ease,
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
 }
 .stat-tile:hover {
   border-color: color-mix(in srgb, var(--accent) 42%, transparent);
   box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
+  /* 上浮幅度对齐 .lift-sm（密集网格里用小幅，避免晃眼） */
+  transform: translateY(var(--lift-sm)) scale(1.008);
 }
 
 /* 区块标题：左侧蓝色短竖条 + 计数徽标位 */
@@ -980,10 +1093,24 @@ body {
 .anim-slide-down-in { animation: slide-down-in 0.14s ease; }
 .anim-slide-in-right { animation: slide-in-right 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
 .anim-exit { animation: exit-collapse 0.18s ease forwards; pointer-events: none; }
-.anim-rise-in { animation: rise-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.anim-rise-in { animation: rise-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
 
-/* 依次浮现：给同容器内子项按序号加延迟（首页分区） */
-.stagger > * { animation: rise-in 0.34s cubic-bezier(0.16, 1, 0.3, 1) both; }
+/* 依次浮现：给同容器内子项按序号加延迟（首页分区）
+   --------------------------------------------------------------------------
+   🔴 **入场动画必须用 `backwards` 而不是 `both`**（2026-10-13 实测踩到）
+   `both` = `forwards + backwards`，其中 **forwards 让动画终态永久生效**，
+   而 **CSS 动画的优先级高于普通声明** —— 于是 `rise-in` 的
+   `to { transform: translateY(0) }` 把元素的 transform **永久钉死**，
+   任何 `:hover { transform: ... }` 都被压住。
+
+   实测症状极隐蔽：`.stagger` 里的知识库卡片 hover 时 `--shadow-glow` 正常生效、
+   `getComputedStyle().transform` 却恒为 `matrix(1,0,0,1,0,0)`；
+   而**同一套 `.lift` 用在 `.stagger` 之外**（最近浏览列表行）就正常。
+   → **「同一个类在 A 处生效、B 处不生效」时，先查 B 处有没有别的规则占用了同一属性。**
+
+   改用 `backwards`（只在动画开始前应用首帧）：动画结束后不再占用 transform，
+   而 `animation-delay` 错峰依旧成立（backwards 会保持首帧可见性）。 */
+.stagger > * { animation: rise-in 0.34s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
 .stagger > *:nth-child(1) { animation-delay: 0.02s; }
 .stagger > *:nth-child(2) { animation-delay: 0.06s; }
 .stagger > *:nth-child(3) { animation-delay: 0.1s; }
@@ -1011,6 +1138,22 @@ body {
   }
   .stat-tile:hover {
     transform: none;
+  }
+  /* 悬停上浮：位移与缩放会让前庭功能障碍用户不适。
+     这里只关掉「几何变化」，**保留颜色/阴影**反馈 —— 否则 hover 会完全没反应，
+     用户反而不知道指针在哪一项上。 */
+  .lift,
+  .lift-sm,
+  .lift-x,
+  .lift:hover,
+  .lift-sm:hover,
+  .lift-x:hover,
+  .lift:active,
+  .lift-sm:active,
+  .lift:focus-visible,
+  .lift-sm:focus-visible,
+  .press:active {
+    transform: none !important;
   }
 }
 
