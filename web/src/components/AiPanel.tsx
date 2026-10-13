@@ -129,7 +129,14 @@ export function AiPanel({
   theme: "light" | "dark";
   open: boolean;
   onClose: () => void;
-  onOpenCitation?: (docId: string, snippet: string) => void;
+  /**
+   * 点击引用：打开来源文档并定位高亮。
+   *
+   * 第二个参数是 `Citation`（不只是 snippet）—— 因为定位词应由后端下发
+   * （`c.terms`，已清洗、必然可搜到），而不是前端从裸分片里拼
+   * （实测那样只有 50% 能定位到）。传整个 citation 让上层自己取。
+   */
+  onOpenCitation?: (docId: string, citation: Citation) => void;
   kbs?: Kb[];
 }) {
   const toast = useToast();
@@ -848,7 +855,7 @@ export function AiPanel({
                     <button
                       key={j}
                       type="button"
-                      onClick={() => onOpenCitation?.(c.doc_id, c.snippet)}
+                      onClick={() => onOpenCitation?.(c.doc_id, c)}
                       className="flex w-full items-center gap-1 text-left text-accent hover:underline"
                     >
                       <LinkIcon size={11} />

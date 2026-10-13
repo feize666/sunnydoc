@@ -78,6 +78,7 @@ import {
   type Kb,
   type RecentDoc,
   type SearchResult,
+  type Citation,
   type User,
   type Stats,
   type Backlink,
@@ -620,11 +621,16 @@ export default function Home() {
     [openDoc, searchQuery, searchTerms],
   );
 
-  // 点击 AI 引用：打开对应文档并高亮片段（取片段开头作为关键词定位）
+  // 点击 AI 引用：打开对应文档并高亮片段。
+  // 定位词优先用后端下发的 `citation.terms`（已清洗、内部无空白的连续词，
+  // 必然能在正文里搜到）；缺失时（旧后端）才回退到「snippet 前 20 字」——
+  // 那条路实测只有 50% 命中（snippet 是裸分片，含换行/表格对齐空格）。
   const handleOpenCitation = useCallback(
-    (docId: string, snippet: string) => {
+    (docId: string, citation: Citation) => {
       openDoc(docId);
-      const kw = snippet.replace(/\s+/g, " ").trim().slice(0, 20);
+      const kw =
+        citation.terms?.trim() ||
+        citation.snippet.replace(/\s+/g, " ").trim().slice(0, 20);
       setHighlight(kw);
       setAiOpen(false);
     },

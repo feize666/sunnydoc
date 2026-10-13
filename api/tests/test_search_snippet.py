@@ -204,3 +204,135 @@ def test_both_branches_produce_clean_output():
     b_out = _lead_snippet(noisy)
     for name, s in (("正文命中", a), ("仅标题命中", b_out)):
         assert _noise(s) == [], f"{name} 分支漏出噪声: {s!r}"
+
+
+# ---------------------------------------------------------------------------
+# 定位词（点击引用后高亮用）—— 2026-10-13 新增
+#
+# 前端把定位词拿到**未清洗的正文**里做子串匹配，所以词必须：
+#   ① 内部无空白（清洗会压空白，原文不会）
+#   ② 原样存在于原文（清洗可能删除字符）
+#   ③ **不在代码块内**（前端高亮不进入代码块 → 否则「跳过去了但零高亮」）
+# ---------------------------------------------------------------------------
+def test_locate_term_survives_whitespace_and_marks():
+    """含换行/制表/表格标记的分片也要能选出可定位的词（旧逻辑仅 50% 命中）。"""
+    from app.api.routes import _locate_term
+
+    cases = [
+        "温馨提示:\r\n\t上述两条命令必须在KVM虚拟机中执行，不能在KVM的宿主机执行~",
+        "使用firewall-cmd命令将当前防火墙配置固化到配置文件中，使之永久生效：",
+        "| 常见原因                | 排查        | 如何解决 |",
+        "- **小结：**\r\n    - **inode耗尽导致磁盘空间不足.**",
+    ]
+    for c in cases:
+        w = _locate_term(c)
+        assert w, f"未选出定位词：{c!r}"
+        assert w in c, f"选出的词在原文中找不到：{w!r} / {c!r}"
+        assert " " not in w and "\n" not in w and "\t" not in w, f"词含空白：{w!r}"
+
+
+def test_locate_term_avoids_code_blocks():
+    """**核心**：定位词必须来自代码块之外。
+
+    前端高亮走 `renderMarkdown`，**代码块内的文字不做关键词高亮**
+    （由 shiki 处理、内容在 `<code>` 里）。选到块内的词 →
+    「文档跳过去了、正文里也搜得到，但一个高亮都没有」（真机实测 marks=0）。
+    """
+    from app.api.routes import _locate_term
+
+    # 命中词在代码块【内】→ 应选块外的词
+    inside = (
+        "前置正文介绍在这里\n```sh\n[root@a ~]# reboot\n"
+        "温馨提示: 上述两条命令必须在KVM虚拟机中执行\n```\n"
+        "## 连接console虚拟机\n如上图所示我们已经成功连接到console虚拟机啦\n"
+    )
+    w = _locate_term(inside)
+    assert w, "未选出定位词"
+    assert w in inside
+    assert "上述两条命令" not in w, f"选中了代码块内的词：{w!r}"
+
+    # 命中词在代码块【外】→ 正常选中
+    outside = (
+        "前置正文\n```sh\n[root@a ~]# reboot 命令输出\n```\n"
+        "## 连接console虚拟机\n温馨提示: 上述两条命令必须在KVM虚拟机中执行，不能在宿主机\n"
+    )
+    w2 = _locate_term(outside)
+    assert "上述两条命令" in w2, f"块外的词没被选中：{w2!r}"
+
+
+def test_locate_term_returns_empty_for_all_code():
+    """整片都是代码块 → 返回空串（前端走回退），不要硬塞一个块内词。"""
+    from app.api.routes import _locate_term
+
+    assert _locate_term("```sh\nkvm 命令一二三四五\n```") == ""
+
+
+def test_locate_term_uses_full_text_for_code_detection():
+    """**核心**：块内外必须按「整篇正文」判断，不能按分片。
+
+    `_segment` 按空行/句子切片、**不知道代码块结构** → 分片边界会截断代码块
+    （实测某分片开头就是块内文字、却只含 1 个行首围栏）。
+    这个测试模拟该形态：分片看起来「只有 1 个围栏」（像块外），
+    但放到整篇里，该分片内容其实在代码块**内**。
+    """
+    from app.api.routes import _locate_term
+
+    # 整篇：代码块从 ```sh 开始，到 ``` 结束；命中词在块【内】
+    full = (
+        "## 章节标题\n```sh\n[root@a ~]# reboot\n"
+        "温馨提示: 上述两条命令必须在KVM虚拟机中执行\n```\n"
+        "## 下一节\nvnc有使用限制，要求VNC客户端和KVM主机在同一网段\n"
+    )
+    # 分片：恰好从块内文字开始（末尾只带 1 个围栏）—— 这是真实的切分形态
+    chunk = "温馨提示: 上述两条命令必须在KVM虚拟机中执行\n```\n## 下一节\nvnc有使用限制，要求VNC客户端和KVM主机在同一网段"
+
+    only_chunk = _locate_term(chunk)
+    with_full = _locate_term(chunk, full)
+
+    import re
+
+    def in_code(t: str) -> bool:
+        p = full.find(t)
+        assert p >= 0, f"词不在整篇里：{t!r}"
+        return len(re.findall(r"(?m)^[ \t]*```", full[:p])) % 2 == 1
+
+    # 只看分片：容易选到块内词（块内外判断失真）
+    assert only_chunk, "只看分片也应能选出词"
+    # 用整篇：必须选到**块外**的词
+    assert with_full, "用整篇后不应为空（块外有可读内容）"
+    assert not in_code(with_full), f"选到了代码块内的词：{with_full!r}"
+
+
+def test_non_code_text_splits_pairs_only():
+    """`_non_code_text` 只按**行首**围栏切分（行内单反引号不算围栏）。
+
+    用「统计围栏个数」的做法会误判：` ``` ` 也可能出现在行内代码里。
+    """
+    from app.api.routes import _non_code_text
+
+    text = "正文A `行内代码` 继续\n```sh\n块内命令\n```\n正文B\n"
+    outside = _non_code_text(text)
+    assert "正文A" in outside and "正文B" in outside, outside
+    assert "块内命令" not in outside, outside
+
+
+def test_build_citations_shape():
+    """引用必须带 `terms`（前端定位契约），且字段与既有保持一致。"""
+    from app.api.routes import _build_citations
+
+    hits = [
+        {
+            "doc_id": "d1",
+            "title": "T",
+            "source": "s.md",
+            "segment_index": 3,
+            "text": "这是一段足够长的可读正文，用来验证引用字段齐全。",
+        }
+    ]
+    out = _build_citations(hits)
+    assert len(out) == 1
+    c = out[0]
+    for k in ("doc_id", "title", "source", "segment_index", "snippet", "terms"):
+        assert k in c, f"缺字段 {k}"
+    assert c["doc_id"] == "d1" and c["segment_index"] == 3
+    assert c["terms"], "terms 不应为空（该文本有明显的可读词）"

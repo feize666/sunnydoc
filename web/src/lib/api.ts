@@ -86,6 +86,15 @@ export interface Citation {
   source: string;
   segment_index: number;
   snippet: string;
+  /**
+   * 定位词（后端下发）：点引用后用它去正文里高亮。
+   *
+   * **为什么不能自己从 snippet 拼**：`snippet` 是分片的**裸原文**，
+   * 前 20 字符常含换行/制表/表格对齐空格，压缩成单行后与原文不再匹配 ——
+   * 实测 12 条引用里只有 6 条（50%）能定位到。后端已清洗并给出
+   * 「内部无空白的连续词」，必然可搜到。缺失时（旧后端）回退旧逻辑。
+   */
+  terms?: string;
 }
 
 export interface ChatResponse {

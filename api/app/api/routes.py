@@ -430,174 +430,43 @@ def _search_rank(r: dict) -> tuple:
     return (not r.get("match_in_title"), -(r.get("match_count") or 0))
 
 
-# ---------- 搜索片段（snippet）的清洗 ----------
+# ---------- 搜索片段 / 引用的清洗与选词 ----------
 #
-# **为什么需要清洗（2026-10-13 实测）**
-#
-# 原实现是「以命中点为中心、固定半径的原样切片」：
-#     text[idx-60 : idx+60].replace("\n", " ")
-# 命中点若落在 markdown 结构里，切出来的就是结构噪声。实测 10 个高频查询
-# 共 185 条结果，**142 条（77%）含噪声**，类型与条数：
-#     标题号 109 · 代码围栏 41 · 长空白（表格对齐空格）29 · 图片/链接 29 · 表格竖线 22
-#
-# 真实样例（搜「磁盘」命中「15-磁盘管理」）：
-#     `…                    ```    ## 2、磁盘管理 ### 2.1、磁盘`
-# —— 一大段空格 + 一个孤立围栏，用户看不出这行为什么命中。
-#
-# 清洗后同一处：
-#     `…df -h /mnt cd /mnt/Packages/ 2、磁盘管理 2.1、磁盘 - 磁盘/硬盘：永久存放数据…`
-#
-# **为什么可以放心清洗**：前端 `highlightKw` 是**自己在渲染文本里搜词**的，
-# 不依赖后端给的字符偏移；`match_count` / `match_in_title` 也都基于原始文本。
-# 所以 snippet 只是给人看的「展示串」，清洗不影响任何逻辑。
-_IMG_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
-_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
-_FENCE_RE = re.compile(r"```[a-zA-Z0-9+#._-]*")
-_HTML_TAG_RE = re.compile(r"</?[a-zA-Z][^>]{0,60}>")
-# 残留的 markdown 记号，统一换成空格而不是删除 —— 删除会把相邻词粘成一个
-# （实测：`磁盘</td><td>类型` 删标签后会变成「磁盘类型」这种假词）
-_MD_CHARS_RE = re.compile(r"[|>#*`_~]")
-_WS_RE = re.compile(r"\s+")
-# 表格分隔行清洗后的残留：`---- ---- ----`（原本是 `| --- | --- |`）。
-# 规则：**连续 3 个及以上的短横线**（允许中间夹空格）整段删掉。
-#                      ↑ 用 3 个而非 2 个，是为了不误伤 `--disk`、`--vcpus`
-#                        这类命令行参数（实测片段里大量出现）。
-_SEP_RUN_RE = re.compile(r"(?:-{3,}\s*)+")
-# 零宽字符（BOM、\u200b 等）一开始就清掉：它们会让「贴行边界」的查找错位
-_ZERO_WIDTH_RE = re.compile(r"[\ufeff\u200b-\u200f\u2028\u2029]")
-
-# 🔴 **截断残留**（2026-10-13 真机验证抓出，残留 3/206）：
-# 宽松窗口的**边界可能落在图片/链接语法中间**，于是切出 `![img](/api` 这种
-# **不完整**标记 —— 上面那些完整模式匹配不到它，就漏给用户了。
-# 真实残留样例：`…PiVw 提取码：zhuz 这里注意内存和磁盘给大点 ![img](/api`。
-#
-# 分两条规则，覆盖两种截断位置：
-#   ① 尾部截断：`![img](/api` —— `![...` 之后还有 `](` 与半个 URL，`$` 匹配不到
-#      单独一个 `![`，所以用「**尾部含 `![` 就整段砍掉**」处理；
-#   ② 中部残留：`前文 ![image`（`![` 已在结尾）→ 用 `!\[[^\]]*$`。
-_DANGLING_IMG_TAIL_RE = re.compile(r"!\[.*$")
-_DANGLING_IMG_RE = re.compile(r"!\[[^\]]*$")
-_DANGLING_MD_TAIL_RE = re.compile(r"\]\([^)]*$")
-# 项目自身的媒体路径（`/api/v1/media/<name>` / `/uploads/<name>`）对读者永远是噪声，
-# 无论完整与否都清掉 —— 这同时兜住「窗口开头落在 URL 中间」的头截断情况
-_MEDIA_PATH_RE = re.compile(r"/?(?:api/v1/media|uploads)/[A-Za-z0-9._-]+\)?")
+# 实现在 `app/services/snippet.py`（**两条产出路径共用**）。
+# 收成独立模块的原因：片段/引用有 `/search`、`/chat`、`/chat/stream` 三条产出路径，
+# 历史上各写各的，于是出现过「清洗只做了一条」「定位词只加了一条」两次分叉
+# （都是真机验证才暴露）。**根因不是忘了改第二处，而是第二处没有共用的东西可改。**
+# 前端 `highlightKw` 自己在渲染文本里搜词，所以 snippet 只是展示串，清洗不影响逻辑。
+from app.services.snippet import (
+    _SNIPPET_RADIUS,
+    _non_code_text,
+    build_citations as _build_citations,
+    clean_snippet_text as _clean_snippet_text,
+    lead_snippet as _lead_snippet,
+    locate_term as _locate_term,
+    make_snippet as _make_snippet,
+)
 
 
-# ---------- 搜索片段的跨度常量（选位与渲染必须共用，否则选位会「选偏」）----------
-#
-# 🔴 **选位跨度必须等于渲染跨度**（2026-10-13 真机对照抓出）：
-# `_best_hit` 若用 200 字符窗找「最密集处」，而 `_make_snippet` 只渲染
-# 约 `radius*2` 个字符，则「最密集的 200 字符窗」居中后截到 140 字符，
-# **未必是最密集的 140 字符窗** —— 实测片段密度只有 80% ≥ 首命中窗口。
-# 两者共用本常量后升到 94%（真机 99 条对照）。
-#
-# 计算：片段目标长度 ≈ `radius*2`，清洗会剥掉部分字符（markdown 噪声），
-# 故选位窗取 **`radius`**（半宽），与「以锚点为中心、前后各 radius」严格一致。
-_SNIPPET_RADIUS = 70
+def _full_texts(hits: list[dict]) -> dict[str, str]:
+    """取 {doc_id: 整篇正文}，供引用定位词判断「是否在代码块内」。
 
-
-def _clean_snippet_text(s: str) -> str:
-    """把 markdown 结构噪声降级成普通可读文本（图片/围栏删掉，链接留文字）。"""
-    s = _ZERO_WIDTH_RE.sub("", s)
-    s = _IMG_RE.sub(" ", s)
-    s = _LINK_RE.sub(r"\1", s)
-    s = _FENCE_RE.sub(" ", s)
-    s = _HTML_TAG_RE.sub(" ", s)
-    # 截断残留必须在**完整模式之后**处理（否则会破坏完整的 `](url)` 结构）
-    s = _DANGLING_IMG_RE.sub(" ", s)
-    s = _DANGLING_IMG_TAIL_RE.sub(" ", s)
-    s = _DANGLING_MD_TAIL_RE.sub(" ", s)
-    s = _MEDIA_PATH_RE.sub(" ", s)
-    s = _MD_CHARS_RE.sub(" ", s)
-    s = _SEP_RUN_RE.sub(" ", s)
-    return _WS_RE.sub(" ", s).strip()
-
-
-def _strip_separator_edges(s: str) -> str:
-    """清掉片段首尾残留的孤立分隔符（如开头只剩一个 `- 列表项` 的 `-`）。"""
-    return s.strip().strip("-").strip()
-
-
-def _trim_to_word_boundary(s: str, window: int = 20) -> str:
-    """若片段结尾落在「词中间」，回缩到最近的空白处，避免露出半截词。
-
-    为什么用**词边界**而不是**行边界**：本函数处理的 `s` 已经过清洗、换行已被
-    压成空格，拿不到行信息。而且早先试过在原始文本上按 `rfind("\\n")` 贴行尾，
-    会把命中词之后的内容整段砍掉（实测某条只剩 16 个字）—— 见 `_make_snippet`
-    的说明。词边界回缩只动最后 20 个字符以内，安全得多。
+    **为什么需要整篇**：`_segment` 按空行/句子切片，不知道 markdown 代码块结构
+    → 分片边界会把代码块截断（实测某分片开头就是块内文字、却只含 1 个行首围栏）。
+    只看分片会误判块内外，选出代码块里的词 → 前端「跳过去了但零高亮」。
     """
-    tail = s[-window:]
-    sp = tail.rfind(" ")
-    # 仅在「结尾确实是词中间」时才回缩：若末尾本来就在空白处则不处理
-    if sp > 0 and not s.endswith(" "):
-        return s[: len(s) - window + sp].rstrip()
-    return s
+    out: dict[str, str] = {}
+    for h in hits:
+        did = h.get("doc_id")
+        if not did or did in out:
+            continue
+        doc = store.get(did)
+        if doc:
+            out[did] = doc.get("text") or ""
+    return out
 
 
-def _make_snippet(text: str, idx: int, qlen: int, radius: int = _SNIPPET_RADIUS) -> str:
-    """在命中点附近取一段**贴行边界 + 已清洗**的可读文本。
-
-    步骤（顺序重要）：
-      1. 取一个宽松窗口（命中点前后各 radius*3），避免清洗后剩余内容太短；
-      2. 把窗口**起点**贴到换行处（不从词中间开始），但不得切掉命中词；
-      3. 清洗 markdown 噪声；
-      4. 在清洗后的文本里**重新定位命中词**（清洗会改变字符位置与长度），
-         再以它为中心取 `radius*2+qlen` 的长度。
-
-    第 4 步是必须的：直接用清洗前的偏移去切清洗后的串会错位。
-
-    ⚠️ **不要给窗口终点贴行边界**（一度这么写，是错的）：用 `rfind("\\n")` 找
-    窗口内最后一个换行，会把命中词**之后**的所有内容砍掉 —— 实测某条只剩
-    16 个字符（`…2、磁盘管理 2.1、磁盘`）。终点由第 4 步的定长裁剪 + 省略号处理，
-    不需要额外贴边界。
-    """
-    span = max(radius * 3, 200)
-    start = max(0, idx - span)
-    end = min(len(text), idx + qlen + span)
-    raw = text[start:end]
-    hit = text[idx : idx + qlen].strip()
-
-    # 2. 起点贴行边界（只在不切到命中词的前提下）
-    nl = raw.find("\n")
-    if 0 <= nl < (idx - start):
-        raw = raw[nl + 1 :]
-        start += nl + 1
-
-    cleaned = _clean_snippet_text(raw)
-
-    # 4. 清洗后重新定位。清洗可能改动命中词本身（如命中词含 `#`/`|`）——
-    #    先用原词找，找不到再用「清洗过的命中词」找一次，最后才退化为取开头。
-    pos = cleaned.find(hit) if hit else -1
-    if pos < 0 and hit:
-        pos = cleaned.find(_clean_snippet_text(hit))
-
-    lead = "…" if start > 0 else ""
-    if pos < 0:
-        # 仍找不到（命中词被清洗规则整体抹掉）→ 取开头一段，别丢内容
-        body = cleaned[: radius * 2 + qlen].strip()
-        tail = "…" if len(cleaned) > len(body) else ""
-        return (lead + body + tail).strip()
-
-    body_start = max(0, pos - radius)
-    body_end = min(len(cleaned), body_start + radius * 2 + qlen)
-    body = _strip_separator_edges(cleaned[body_start:body_end])
-    tail = "…" if body_end < len(cleaned) else ""
-    if tail:
-        body = _trim_to_word_boundary(body)
-    return (lead + body + tail).strip()
-
-
-def _lead_snippet(text: str, limit: int = 120) -> str:
-    """正文里没有命中词时的兜底片段：取**清洗后**的正文开头。
-
-    用于「命中词只在标题里」的结果（如搜「部署」命中「01-vCenter环境部署」——
-    标题含「部署」，但正文开头可能没有）。原实现是 `text[:120]` 原样切片，
-    会把 `## 标题`、` ``` ` 围栏等结构直接展示给用户。
-    """
-    cleaned = _clean_snippet_text(text[: limit * 2])
-    body = cleaned[:limit].strip()
-    return (body + "…") if len(cleaned) > len(body) else body
-
+# ---------- 搜索的「分词分流」规则（属于 /search，不属于片段模块）----------
 
 # 检索用词下限：长度 ≥ 该值的词才单独参与匹配（仅用于**中文**分词结果）。
 # 中文单字（如「墙」）单独匹配几乎必然命中无关文档，只添噪声。
@@ -679,7 +548,6 @@ def _search_terms(groups: list[list[str]]) -> list[str]:
     return out
 
 
-# ---------- 异步导入任务 ----------
 
 def _new_task(task_id: str) -> dict:
     return {
@@ -1682,16 +1550,7 @@ def chat_stream(req: ChatRequest, current_user: dict = Depends(get_current_user)
 
     history = req.history or []
     hits = search(req.query, req.top_k, current_user["id"])
-    citations = [
-        {
-            "doc_id": h["doc_id"],
-            "title": h["title"],
-            "source": h["source"],
-            "segment_index": h["segment_index"],
-            "snippet": h["text"][:200],
-        }
-        for h in hits
-    ]
+    citations = _build_citations(hits, _full_texts(hits))
 
     # 读取附件：提取文字（文档/zip/图片 OCR）与图片（vision）
     attach_texts: list[str] = []

@@ -4,7 +4,27 @@ from __future__ import annotations
 from typing import Any
 
 from app.services import llm
+from app.services.snippet import build_citations
 from app.services.store import search
+
+
+def _full_texts(hits: list[dict[str, Any]]) -> dict[str, str]:
+    """{doc_id: 整篇正文} —— 定位词要靠它判断「命中词是否在代码块内」。
+
+    只看分片不够：`_segment` 按空行/句子切分、不知代码块结构，
+    分片边界会截断代码块 → 块内外判断失真（详见 `services/snippet.locate_term`）。
+    """
+    from app.services.store import store
+
+    out: dict[str, str] = {}
+    for h in hits:
+        did = h.get("doc_id")
+        if not did or did in out:
+            continue
+        doc = store.get(did)
+        if doc:
+            out[did] = doc.get("text") or ""
+    return out
 
 
 def _try_generate(
@@ -39,16 +59,10 @@ def answer(
 ) -> dict[str, Any]:
     history = history or []
     hits = search(query, top_k, user_id)
-    citations = [
-        {
-            "doc_id": h["doc_id"],
-            "title": h["title"],
-            "source": h["source"],
-            "segment_index": h["segment_index"],
-            "snippet": h["text"][:200],
-        }
-        for h in hits
-    ]
+    # 引用统一走 `services/snippet.build_citations` —— 与 `/chat/stream` 同一实现。
+    # 早先这里自己拼引用（只有 doc_id/title/snippet），于是新增的定位词 `terms`
+    # 只加到了流式路径上，非流式 `/chat` 的 terms 全为空（真机实测暴露）。
+    citations = build_citations(hits, _full_texts(hits))
 
     # 有命中：RAG 模式，用检索上下文让 LLM 生成
     if hits:
