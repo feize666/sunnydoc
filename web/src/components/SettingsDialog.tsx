@@ -173,12 +173,22 @@ export function SettingsDialog({
   theme,
   onToggleTheme,
   isAdmin,
+  /** 以整页形式渲染（阶段 3 的 L2 设置页）。
+   *  为什么用 variant 而不是另写一个页面组件：本组件有 **968 行**表单逻辑
+   *  （LLM/Embedding/Rerank 三组字段 + 命名预设的增删改 + 连通性测试），
+   *  复制一份必然分叉（本项目已因「同一数据两条产出路径」踩过两次）。
+   *  variant 只影响**外壳**（overlay/panel vs 整页容器），逻辑零分叉。 */
+  variant = "dialog",
+  /** 整页形态下的头部操作（如「返回」）。dialog 形态忽略。 */
+  pageHeader,
 }: {
   open: boolean;
   onClose: () => void;
   theme: "light" | "dark";
   onToggleTheme: () => void;
   isAdmin: boolean;
+  variant?: "dialog" | "page";
+  pageHeader?: (title: string, subtitle?: string) => React.ReactNode;
 }) {
   const [ai, setAi] = useState<AISettings | null>(null);
   const [loading, setLoading] = useState(false);
@@ -269,7 +279,13 @@ export function SettingsDialog({
     return opts;
   }, [customList]);
 
-  const panelRef = useModalFocus<HTMLDivElement>(open, onClose, "系统设置");
+  // 整页形态不是模态：交给 useModalFocus 会抢走 Esc（用户按 Esc 期待的是「返回上一级」，
+// 而这里会直接关掉整个设置页）。只有弹窗形态才入焦点栈。
+  const panelRef = useModalFocus<HTMLDivElement>(
+    open && variant === "dialog",
+    onClose,
+    "系统设置",
+  );
   // 内层嵌套框：各自独立入栈，Esc 时先关闭最上层。
   // 用 ref 惰性转发，避免依赖下方才定义的 closeSaveAsDialog（TDZ）。
   const closeSaveAsRef = useRef<() => void>(() => {});
@@ -534,35 +550,11 @@ export function SettingsDialog({
     );
   };
 
-  return (
-    <div
-      className="dialog-overlay"
-      onMouseDown={(e) => {
-        overlayDownOnSelf.current = e.target === e.currentTarget;
-      }}
-      onClick={(e) => {
-        if (overlayDownOnSelf.current && e.target === e.currentTarget) onClose();
-        overlayDownOnSelf.current = false;
-      }}
-    >
-      <div
-        ref={panelRef}
-        className="dialog-panel flex max-h-[85vh] w-[640px] max-w-[94vw] flex-col"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
-          <div className="text-[15px] font-semibold text-text">系统设置</div>
-          <button
-            onClick={onClose}
-            aria-label="关闭"
-            className="icon-btn text-faint hover:text-text"
-          >
-            <CloseIcon size={15} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          <div className="text-[13px] font-semibold text-muted">外观</div>
+  // ---------- 外壳：弹窗 or 整页（阶段 3）----------
+  // 内容体（表单）完全共用，只换外层容器与头部。
+  const body = (
+    <div className="flex-1 overflow-y-auto px-5 py-4">
+      <div className="text-[13px] font-semibold text-muted">外观</div>
           <div className="mt-2 flex items-center justify-between rounded-lg border border-line bg-surface px-3 py-2.5">
             <div>
               <div className="text-[14px] text-text">主题</div>
@@ -857,112 +849,169 @@ export function SettingsDialog({
             </div>
           </div>
         </div>
+  );
+
+  const nestedExtras = (
+    <>
+    {saveAsDialog && (
+      <div
+        className="dialog-overlay"
+        onMouseDown={(e) => {
+          overlayDownOnSelf.current = e.target === e.currentTarget;
+        }}
+        onClick={(e) => {
+          if (overlayDownOnSelf.current && e.target === e.currentTarget) closeSaveAsDialog();
+          overlayDownOnSelf.current = false;
+        }}
+      >
+        <div
+          ref={saveAsRef}
+          className="dialog-panel w-[420px] max-w-[92vw] p-4"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="text-[14px] font-semibold text-text">
+            把当前配置另存为命名预设
+          </div>
+          <div className="mt-2 text-[12px] text-faint">
+            命名后可在供应商下拉中快速选择。Key 仅在你输入了新值后才会覆盖到预设。
+          </div>
+          <input
+            value={saveAsName}
+            onChange={(e) => setSaveAsName(e.target.value)}
+            placeholder="例如：阿里云正式环境 / 内网 Ollama"
+            className="input mt-3"
+          />
+          {saveAsMsg && (
+            <div className="mt-2 text-[12px] text-danger">{saveAsMsg}</div>
+          )}
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              onClick={closeSaveAsDialog}
+              className="h-8 rounded-md border border-line bg-background px-3 text-[12px] text-text hover:bg-hover"
+            >
+              取消
+            </button>
+            <button
+              onClick={doSaveAs}
+              className="h-8 rounded-md bg-accent-solid px-3 text-[12px] text-white hover:bg-accent-solid-hover"
+            >
+              保存
+            </button>
+          </div>
+        </div>
       </div>
+    )}
 
-      {/* 命名预设对话框 */}
-      {saveAsDialog && (
+    {/* 切换供应商前确认 */}
+    {pendingProviderChange && (
+      <div
+        className="dialog-overlay"
+        onMouseDown={(e) => {
+          overlayDownOnSelf.current = e.target === e.currentTarget;
+        }}
+        onClick={(e) => {
+          if (overlayDownOnSelf.current && e.target === e.currentTarget)
+            setPendingProviderChange(null);
+          overlayDownOnSelf.current = false;
+        }}
+      >
         <div
-          className="dialog-overlay"
-          onMouseDown={(e) => {
-            overlayDownOnSelf.current = e.target === e.currentTarget;
-          }}
-          onClick={(e) => {
-            if (overlayDownOnSelf.current && e.target === e.currentTarget) closeSaveAsDialog();
-            overlayDownOnSelf.current = false;
-          }}
+          ref={providerRef}
+          className="dialog-panel w-[420px] max-w-[92vw] p-4"
+          onMouseDown={(e) => e.stopPropagation()}
         >
-          <div
-            ref={saveAsRef}
-            className="dialog-panel w-[420px] max-w-[92vw] p-4"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="text-[14px] font-semibold text-text">
-              把当前配置另存为命名预设
-            </div>
-            <div className="mt-2 text-[12px] text-faint">
-              命名后可在供应商下拉中快速选择。Key 仅在你输入了新值后才会覆盖到预设。
-            </div>
-            <input
-              value={saveAsName}
-              onChange={(e) => setSaveAsName(e.target.value)}
-              placeholder="例如：阿里云正式环境 / 内网 Ollama"
-              className="input mt-3"
-            />
-            {saveAsMsg && (
-              <div className="mt-2 text-[12px] text-danger">{saveAsMsg}</div>
-            )}
-            <div className="mt-3 flex justify-end gap-2">
-              <button
-                onClick={closeSaveAsDialog}
-                className="h-8 rounded-md border border-line bg-background px-3 text-[12px] text-text hover:bg-hover"
-              >
-                取消
-              </button>
-              <button
-                onClick={doSaveAs}
-                className="h-8 rounded-md bg-accent-solid px-3 text-[12px] text-white hover:bg-accent-solid-hover"
-              >
-                保存
-              </button>
-            </div>
+          <div className="text-[14px] font-semibold text-text">切换供应商会覆盖已编辑内容</div>
+          <div className="mt-2 text-[12px] text-faint">
+            当前填写的 Base URL / 模型可能与所选供应商预设不同，确认要应用预设吗？
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              onClick={() => setPendingProviderChange(null)}
+              className="h-8 rounded-md border border-line bg-background px-3 text-[12px] text-text hover:bg-hover"
+            >
+              取消
+            </button>
+            <button
+              onClick={() => {
+                if (pendingProviderChange) doApplyProvider(pendingProviderChange);
+                setPendingProviderChange(null);
+              }}
+              className="h-8 rounded-md bg-accent-solid px-3 text-[12px] text-white hover:bg-accent-solid-hover"
+            >
+              继续切换
+            </button>
           </div>
         </div>
-      )}
+      </div>
+    )}
 
-      {/* 切换供应商前确认 */}
-      {pendingProviderChange && (
-        <div
-          className="dialog-overlay"
-          onMouseDown={(e) => {
-            overlayDownOnSelf.current = e.target === e.currentTarget;
-          }}
-          onClick={(e) => {
-            if (overlayDownOnSelf.current && e.target === e.currentTarget)
-              setPendingProviderChange(null);
-            overlayDownOnSelf.current = false;
-          }}
-        >
-          <div
-            ref={providerRef}
-            className="dialog-panel w-[420px] max-w-[92vw] p-4"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="text-[14px] font-semibold text-text">切换供应商会覆盖已编辑内容</div>
-            <div className="mt-2 text-[12px] text-faint">
-              当前填写的 Base URL / 模型可能与所选供应商预设不同，确认要应用预设吗？
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={() => setPendingProviderChange(null)}
-                className="h-8 rounded-md border border-line bg-background px-3 text-[12px] text-text hover:bg-hover"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => {
-                  if (pendingProviderChange) doApplyProvider(pendingProviderChange);
-                  setPendingProviderChange(null);
-                }}
-                className="h-8 rounded-md bg-accent-solid px-3 text-[12px] text-white hover:bg-accent-solid-hover"
-              >
-                继续切换
-              </button>
-            </div>
+    {/* 删除命名预设确认 */}
+    {confirmDelete && (
+      <ConfirmDialog
+        open
+        title="删除命名预设？"
+        message={`将永久删除「${confirmDelete.name}」，不影响当前正在使用的供应商。`}
+        confirmText="删除"
+        onConfirm={() => doDeleteCustom(confirmDelete)}
+        onCancel={() => setConfirmDelete(null)}
+      />
+    )}
+    </>
+  );
+
+  if (variant === "page") {
+    // 整页形态：不做模态遮罩、不拦 Esc（Esc 交给外层导航 = 返回上一级）。
+    // 宽度不设上限（页面承载长表单），内容区自行滚动。
+    return (
+      <div className="flex h-full min-h-0 flex-col bg-background">
+        {pageHeader ? (
+          pageHeader(
+            "系统设置",
+            ai
+              ? `对话${ai.llm_configured ? "已配置" : "未配置"} · 向量${ai.embedding_configured ? "已配置" : "未配置"}`
+              : "加载中…",
+          )
+        ) : (
+          <div className="flex h-12 shrink-0 items-center border-b border-line px-4 text-[16px] font-semibold text-text">
+            系统设置
           </div>
-        </div>
-      )}
+        )}
+        {body}
+        {nestedExtras}
+      </div>
+    );
+  }
 
-      {/* 删除命名预设确认 */}
-      {confirmDelete && (
-        <ConfirmDialog
-          open
-          title="删除命名预设？"
-          message={`将永久删除「${confirmDelete.name}」，不影响当前正在使用的供应商。`}
-          confirmText="删除"
-          onConfirm={() => doDeleteCustom(confirmDelete)}
-          onCancel={() => setConfirmDelete(null)}
-        />
-      )}
+  return (
+    <div
+      className="dialog-overlay"
+      onMouseDown={(e) => {
+        overlayDownOnSelf.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (overlayDownOnSelf.current && e.target === e.currentTarget) onClose();
+        overlayDownOnSelf.current = false;
+      }}
+    >
+      <div
+        ref={panelRef}
+        className="dialog-panel flex max-h-[85vh] w-[640px] max-w-[94vw] flex-col"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
+          <div className="text-[15px] font-semibold text-text">系统设置</div>
+          <button
+            onClick={onClose}
+            aria-label="关闭"
+            className="icon-btn text-faint hover:text-text"
+          >
+            <CloseIcon size={15} />
+          </button>
+        </div>
+        {body}
+        {nestedExtras}
+      </div>
     </div>
   );
+
 }

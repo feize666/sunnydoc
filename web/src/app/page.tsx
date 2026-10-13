@@ -27,6 +27,8 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { TagsDialog } from "@/components/TagsDialog";
 import { VersionHistoryDialog } from "@/components/VersionHistoryDialog";
 import { SettingsDialog } from "@/components/SettingsDialog";
+import { PageHeader } from "@/components/PageShell";
+import { useViewStack } from "@/hooks/useViewStack";
 import { CommentPanel } from "@/components/CommentPanel";
 import { NotificationPanel } from "@/components/NotificationPanel";
 import { MoveToKbDialog } from "@/components/MoveToKbDialog";
@@ -187,13 +189,18 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(true);
 
   // 视图路由 + 当前知识库
-  const [view, setView] = useState<"home" | "kb" | "users" | "trash">("home");
+  // `view` 仍是渲染分支的依据（home/kb/users/trash/settings），
+  // 但**层级由 hash 驱动**（阶段 3）：viewStack.path 变化时同步 view，
+  // 从而支持 3~4 级深链与浏览器后退。见 hooks/useViewStack.ts。
+  const [view, setView] = useState<"home" | "kb" | "users" | "trash" | "settings">("home");
+  const viewStack = useViewStack();
+  /** 层级信息：viewStack.path[0] 是顶层段（users/trash/settings），后续段是子级 id。 */
+  const subPath = viewStack.path;
   const [profileOpen, setProfileOpen] = useState(false);
   const [shareKb, setShareKb] = useState<Kb | null>(null);
   const [shareDoc, setShareDoc] = useState<{ id: string; title: string } | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
   const [favoritesOpen, setFavoritesOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
   const [versionOpen, setVersionOpen] = useState(false);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
@@ -274,17 +281,45 @@ export default function Home() {
 
   const handleOpenProfile = useCallback(() => setProfileOpen(true), []);
 
+  /**
+   * 把 hash 层级同步到 `view`（阶段 3：3~4 级可到达导航）。
+   *
+   * 顶层段 → view；后续段由各页面自己消费（如 settings/ai、users/u_123）。
+   * 首页（空路径）也走这里，因此「后退到根」能正确回到 home。
+   */
+  useEffect(() => {
+    const top = subPath[0];
+    if (!top) {
+      setView("home");
+      setActiveKey(null);
+      setOpenKeys([]);
+      return;
+    }
+    if (top === "users" || top === "trash" || top === "settings") {
+      setView(top);
+      setActiveKey(null);
+      setOpenKeys([]);
+      return;
+    }
+    if (top === "kb") {
+      setView("kb");
+      return;
+    }
+    // 未知段（用户手改地址栏）→ 回首页，不让应用卡在空白状态
+    setView("home");
+  }, [subPath]);
+
   const handleOpenUsers = useCallback(() => {
-    setView("users");
-    setActiveKey(null);
-    setOpenKeys([]);
-  }, []);
+    viewStack.go(["users"]);
+  }, [viewStack]);
 
   const handleOpenTrash = useCallback(() => {
-    setView("trash");
-    setActiveKey(null);
-    setOpenKeys([]);
-  }, []);
+    viewStack.go(["trash"]);
+  }, [viewStack]);
+
+  const handleOpenSettings = useCallback(() => {
+    viewStack.go(["settings"]);
+  }, [viewStack]);
 
   // 侧栏切换：小屏开抽屉，大屏折叠
   const handleToggleSidebar = useCallback(() => {
@@ -1246,7 +1281,7 @@ export default function Home() {
             user={user}
             onOpenProfile={handleOpenProfile}
             onOpenUsers={handleOpenUsers}
-            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenSettings={handleOpenSettings}
             onLogout={handleLogout}
           />
 
@@ -1341,9 +1376,17 @@ export default function Home() {
           />
         </>
       ) : view === "users" ? (
-        <UserManagementView currentUserId={user.id} onBack={goHome} />
+        <UserManagementView
+          currentUserId={user.id}
+          onBack={() => viewStack.back()}
+          // L3：`#/users/<id>` → 用户详情页
+          detailUserId={subPath[1] ?? null}
+          onOpenUser={(uid) => viewStack.push(uid)}
+          onCloseDetail={() => viewStack.back()}
+          onBackToList={() => viewStack.upTo(1)}
+        />
       ) : view === "trash" ? (
-        <TrashView onBack={goHome} />
+        <TrashView onBack={() => viewStack.back()} />
       ) : (
         <HomeView
           kbs={kbs}
@@ -1368,7 +1411,7 @@ export default function Home() {
           onOpenProfile={handleOpenProfile}
           onOpenUsers={handleOpenUsers}
           onLogout={handleLogout}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={handleOpenSettings}
         />
         )}
         </ErrorBoundary>
@@ -1486,13 +1529,32 @@ export default function Home() {
         onOpen={openFavorite}
       />
 
-      <SettingsDialog
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        theme={theme}
-        onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
-        isAdmin={user?.role === "admin"}
-      />
+      {/* 设置（阶段 3：提升为可深链的 L2 页面 `#/settings`）
+          为什么直接渲染而不套 `view === "settings" ?` 分支：
+          层级同步已由上面的 useEffect 保证（hash 顶层段 → view），
+          这里只在确实处于设置层时渲染，条件是同一份判断。
+          组件仍支持 `variant="dialog"`（保留能力，供未来「快速设置」浮层复用）。 */}
+      {view === "settings" && (
+        <SettingsDialog
+          open
+          variant="page"
+          onClose={() => viewStack.upTo(0)}
+          theme={theme}
+          onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+          isAdmin={user?.role === "admin"}
+          pageHeader={(title, subtitle) => (
+            <PageHeader
+              title={title}
+              subtitle={subtitle}
+              crumbs={[
+                { label: "首页", onClick: () => viewStack.upTo(0) },
+                { label: "系统设置" },
+              ]}
+              onBack={() => viewStack.back()}
+            />
+          )}
+        />
+      )}
 
       <AiPanel theme={theme} open={aiOpen} onClose={() => setAiOpen(false)} onOpenCitation={handleOpenCitation} kbs={kbs} />
 

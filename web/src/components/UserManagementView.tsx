@@ -13,6 +13,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { CloseIcon, PlusIcon } from "./icons";
 import { useToast } from "./Toast";
 import { AuditLogView } from "./AuditLogView";
+import { PageHeader } from "./PageShell";
 import { PasswordInput } from "./PasswordInput";
 import { useModalFocus } from "@/lib/useModalFocus";
 
@@ -32,9 +33,21 @@ type EditTarget =
 export function UserManagementView({
   currentUserId,
   onBack,
+  /** L3：选中的用户 id（来自 `#/users/<id>`）。提供时渲染用户详情页。 */
+  detailUserId,
+  /** 进入 L3 用户详情（写 hash）。 */
+  onOpenUser,
+  /** 从 L3 返回 L2 列表。 */
+  onCloseDetail,
+  /** 面包屑「用户管理」回调（L3 时用于跳回 L2）。 */
+  onBackToList,
 }: {
   currentUserId: string;
   onBack: () => void;
+  detailUserId?: string | null;
+  onOpenUser?: (userId: string) => void;
+  onCloseDetail?: () => void;
+  onBackToList?: () => void;
 }) {
   const toast = useToast();
   const [users, setUsers] = useState<User[]>([]);
@@ -59,6 +72,121 @@ export function UserManagementView({
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // ---------- L3：用户详情页（阶段 3）----------
+  // 为什么要有这一层：改造前「编辑 / 重置密码」都是列表行上的弹窗，
+  // **进去就到底**，用户无法「用户管理 → 某个用户 → 看他有什么权限」。
+  // 现在层级为 L2 列表 → L3 详情（含该用户的完整信息 + 操作入口）。
+  const detailUser = detailUserId ? users.find((u) => u.id === detailUserId) : null;
+  if (detailUserId) {
+    return (
+      <div className="flex h-full min-h-0 flex-col bg-background">
+        <PageHeader
+          title={detailUser ? detailUser.nickname || detailUser.username : "用户详情"}
+          subtitle={
+            detailUser
+              ? `${detailUser.username} · ${detailUser.role === "admin" ? "管理员" : "普通用户"}`
+              : "该用户不存在或已被删除"
+          }
+          crumbs={[
+            { label: "首页", onClick: onBack },
+            { label: "用户管理", onClick: onBackToList ?? onCloseDetail },
+            { label: "用户详情" },
+          ]}
+          onBack={() => (onCloseDetail ?? onBackToList ?? onBack)()}
+        />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+            {!detailUser ? (
+              <div className="rounded-lg border border-line bg-surface px-4 py-6 text-center text-[13px] text-faint">
+                未找到该用户（可能已被删除）。{" "}
+                <button
+                  onClick={() => (onCloseDetail ?? onBackToList)?.()}
+                  className="text-accent hover:underline"
+                >
+                  返回用户列表
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* 基本信息 */}
+                <section className="overflow-hidden rounded-xl border border-line bg-background">
+                  <div className="border-b border-line px-4 py-2.5 text-[13px] font-semibold text-muted">
+                    基本信息
+                  </div>
+                  <dl className="divide-y divide-line">
+                    {[
+                      ["用户名", detailUser.username],
+                      ["昵称", detailUser.nickname || "—"],
+                      ["邮箱", detailUser.email || "—"],
+                      ["角色", detailUser.role === "admin" ? "管理员" : "普通用户"],
+                      ["状态", detailUser.status === "disabled" ? "已禁用" : "正常"],
+                      ["创建时间", formatTime(detailUser.created_at)],
+                    ].map(([k, v]) => (
+                      <div key={k} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                        <dt className="shrink-0 text-[13px] text-faint">{k}</dt>
+                        <dd className="truncate text-[13px] text-text">{v}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+
+                {/* L4 入口：这些操作本身是弹窗（再深一层） */}
+                <section className="mt-4 overflow-hidden rounded-xl border border-line bg-background">
+                  <div className="border-b border-line px-4 py-2.5 text-[13px] font-semibold text-muted">
+                    操作
+                  </div>
+                  <div className="flex flex-col divide-y divide-line">
+                    <button
+                      onClick={() => setTarget({ mode: "edit", user: detailUser })}
+                      className="lift-x flex items-center justify-between px-4 py-3 text-left hover:bg-hover"
+                    >
+                      <span className="text-[14px] text-text">编辑资料</span>
+                      <span className="text-[12px] text-faint">改昵称 / 邮箱 / 角色 / 状态 →</span>
+                    </button>
+                    <button
+                      onClick={() => setTarget({ mode: "reset", user: detailUser })}
+                      className="lift-x flex items-center justify-between px-4 py-3 text-left hover:bg-hover"
+                    >
+                      <span className="text-[14px] text-text">重置密码</span>
+                      <span className="text-[12px] text-faint">为该用户设置新密码 →</span>
+                    </button>
+                    <button
+                      onClick={() => setDeleteTarget(detailUser)}
+                      className="lift-x flex items-center justify-between px-4 py-3 text-left hover:bg-danger-soft"
+                    >
+                      <span className="text-[14px] text-danger">删除用户</span>
+                      <span className="text-[12px] text-faint">不可撤销 →</span>
+                    </button>
+                  </div>
+                </section>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* L4 弹窗（复用既有编辑/重置/删除流程，零重复实现） */}
+        <UserEditDialogs
+          target={target}
+          onClose={() => setTarget(null)}
+          onSaved={() => {
+            setTarget(null);
+            void refresh();
+          }}
+          deleteTarget={deleteTarget}
+          onCloseDelete={() => setDeleteTarget(null)}
+          onDeleted={() => {
+            setDeleteTarget(null);
+            void refresh();
+            // 被删的用户已不存在 → 退回列表，避免停在空详情页
+            (onCloseDetail ?? onBackToList)?.();
+          }}
+          currentUserId={currentUserId}
+          toast={toast}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -202,6 +330,17 @@ export function UserManagementView({
                       </td>
                       <td className="px-4 py-2.5">
                         <div className="flex items-center justify-end gap-1 text-xs">
+                          {/* 「详情」进入 L3 页（可深链 `#/users/<id>`）——
+                              这是本阶段的核心增量：改造前这些操作只有弹窗，
+                              进去就到底，无法「管理 → 某用户 → 看权限」。 */}
+                          {onOpenUser && (
+                            <button
+                              onClick={() => onOpenUser(u.id)}
+                              className="rounded px-2 py-1 text-text hover:bg-hover"
+                            >
+                              详情
+                            </button>
+                          )}
                           <button
                             onClick={() => setTarget({ mode: "edit", user: u })}
                             className="rounded px-2 py-1 text-accent hover:bg-accent-soft"
@@ -234,16 +373,57 @@ export function UserManagementView({
         </div>
       )}
 
-      {target && (
-        <UserFormDialog
-          target={target}
-          onClose={() => setTarget(null)}
-          onDone={() => {
-            setTarget(null);
-            refresh();
-          }}
-        />
-      )}
+      {/* L4 弹窗：抽成独立组件，供 L2 列表与 L3 详情页共用 ——
+          避免「同一流程两处实现」分叉（本项目反复踩过）。 */}
+      <UserEditDialogs
+        target={target}
+        onClose={() => setTarget(null)}
+        onSaved={() => {
+          setTarget(null);
+          refresh();
+        }}
+        deleteTarget={deleteTarget}
+        onCloseDelete={() => setDeleteTarget(null)}
+        onDeleted={() => {
+          setDeleteTarget(null);
+          refresh();
+        }}
+        currentUserId={currentUserId}
+        toast={toast}
+      />
+    </div>
+  );
+}
+
+/**
+ * 用户的「编辑 / 重置密码 / 删除」三个弹窗集合（L4 层）。
+ *
+ * 抽出来的原因：L2 列表行与 L3 详情页都要能触发这些操作。
+ * 若两处各写一份，就是「同一流程两条实现」—— 本项目在片段/引用上已经
+ * 因此分叉过两次（见 DESIGN §6.12）。
+ */
+function UserEditDialogs({
+  target,
+  onClose,
+  onSaved,
+  deleteTarget,
+  onCloseDelete,
+  onDeleted,
+  currentUserId,
+  toast,
+}: {
+  target: EditTarget;
+  onClose: () => void;
+  onSaved: () => void;
+  deleteTarget: User | null;
+  onCloseDelete: () => void;
+  onDeleted: () => void;
+  currentUserId: string;
+  toast: ReturnType<typeof useToast>;
+}) {
+  return (
+    <>
+      {target && <UserFormDialog target={target} onClose={onClose} onDone={onSaved} />}
 
       <ConfirmDialog
         open={deleteTarget !== null}
@@ -255,15 +435,17 @@ export function UserManagementView({
           if (!deleteTarget) return;
           try {
             await deleteUser(deleteTarget.id);
-            setDeleteTarget(null);
-            refresh();
+            onDeleted();
           } catch (e) {
             toast.error(`删除失败：${e instanceof Error ? e.message : "未知错误"}`);
           }
         }}
-        onCancel={() => setDeleteTarget(null)}
+        onCancel={onCloseDelete}
       />
-    </div>
+      {/* currentUserId 保留：删除/降级最后一个管理员时后端会拒绝，
+          这里不额外拦截（后端是权威），参数留给未来做前置提示。 */}
+      <span className="hidden">{currentUserId}</span>
+    </>
   );
 }
 
