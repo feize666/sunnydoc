@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from app.core.config import DEFAULT_TOP_K, MEDIA_DIR, DATA_DIR, TEXT_EXTS, ai_config
 from app.services import db, media, parser, qa, llm, web_search, exporter, auth, settings, icon_search, share_password
+from app.services import agent as agent_service
 from app.services.store import store, _tokenize
 
 router = APIRouter(prefix="/api/v1")
@@ -178,6 +179,23 @@ class ChatRequest(BaseModel):
     history: list[dict[str, str]] | None = None
     enable_web: bool = True
     attachments: list[str] | None = None  # 附件 id 列表（AI 对话上传的附件）
+    # 智能体上下文：让「这个知识库」「那篇文档」等指代有依据
+    current_kb_id: str | None = None
+    current_doc_id: str | None = None
+    # 是否允许智能体调用工具（关闭后行为与改造前一致：只做 RAG 问答）
+    enable_agent: bool = True
+
+
+class AgentConfirmRequest(BaseModel):
+    """用户确认执行破坏性操作。
+
+    ⚠️ **必须带 `arguments`**：确认卡片上的参数就是待执行的内容，
+    后端不缓存「待确认队列」—— 无状态设计让多标签页/刷新后确认都成立，
+    也避免「服务重启导致待确认项消失」这类状态不一致。
+    """
+
+    tool: str
+    arguments: dict
 
 
 class DeleteRequest(BaseModel):
@@ -1589,10 +1607,38 @@ def chat_stream(req: ChatRequest, current_user: dict = Depends(get_current_user)
             "hits_empty": len(hits) == 0,
             "web_available": bool(web_search.available()),
             "llm_available": bool(llm.available()),
+            "agent_enabled": bool(req.enable_agent and llm.available()),
         }
         yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
 
-        # 2. 生成回答
+        # 2. 智能体链路（默认）：模型自主决定「直接回答」还是「调工具」
+        if req.enable_agent and llm.available():
+            ctx = agent_service.ToolContext(
+                user=current_user,
+                current_kb_id=req.current_kb_id,
+                current_doc_id=req.current_doc_id,
+            )
+            # 多轮历史压缩：长对话不再全量带入（避免超上下文 / 悄悄丢历史）
+            hist, _ = agent_service.compress_history(history)
+            kb_contexts = [h["text"] for h in hits]
+            if attachment_context:
+                kb_contexts = [attachment_context] + kb_contexts
+            try:
+                for ev in agent_service.run(
+                    req.query,
+                    ctx,
+                    history=hist,
+                    contexts=kb_contexts,
+                    images=attach_images or None,
+                ):
+                    yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+            except llm.LLMError as e:
+                # 工具链路整体失败 → 退回到「无工具的 RAG 回答」，别让用户面对空白
+                yield f"data: {json.dumps({'type': 'delta', 'content': _fallback_answer() + f'\\n\\n（大模型错误 {e.status}：已自动降级使用知识库片段）'}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            return
+
+        # 3. 关闭智能体时的原链路（与改造前一致）
         if hits or attachment_context or attach_images:
             # 知识库命中 或 带附件 → RAG/附件模式（附件文字拼到上下文，图片走 vision）
             contexts = [h["text"] for h in hits]
@@ -1642,6 +1688,49 @@ def chat_stream(req: ChatRequest, current_user: dict = Depends(get_current_user)
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/agent/tools")
+def agent_tools_catalog(current_user: dict = Depends(get_current_user)) -> dict:
+    """列出智能体可用工具（供前端展示「它能做什么」与开发者调试）。"""
+    return {
+        "count": len(agent_service.agent_tools.all_tools()),
+        "tools": [
+            {
+                "name": t.name,
+                "description": t.description,
+                "level": t.level,
+            }
+            for t in agent_service.agent_tools.all_tools()
+        ],
+    }
+
+
+@router.post("/agent/confirm")
+def agent_confirm(
+    req: AgentConfirmRequest, current_user: dict = Depends(get_current_user)
+) -> dict:
+    """用户确认后执行破坏性操作。
+
+    权限与工具本身一致：`commit()` 内部再校验一次（管理员工具会 `_require_admin`），
+    **不能靠「前端只对管理员显示确认卡片」来保证安全**。
+    """
+    ctx = agent_service.ToolContext(user=current_user)
+    try:
+        result = agent_service.confirm(req.tool, req.arguments, ctx)
+    except agent_service.agent_tools.ToolDenied as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    except agent_service.agent_tools.ToolError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    # 审计：AI 代为执行的破坏性操作必须留痕（与人工删除同一张表）
+    _audit(
+        current_user,
+        f"agent.{req.tool}",
+        "agent",
+        None,
+        json.dumps(req.arguments, ensure_ascii=False)[:500],
+    )
+    return {"ok": True, "tool": req.tool, "result": result}
 
 
 class ImportAttachmentRequest(BaseModel):

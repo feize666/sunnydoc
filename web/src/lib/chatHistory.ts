@@ -1,4 +1,4 @@
-import type { Citation, WebSource } from "./api";
+import type { Citation, PendingAction, WebSource } from "./api";
 
 export interface MessageAttachment {
   id: string;
@@ -19,6 +19,20 @@ export interface Message {
   suggestWeb?: boolean;
   /** 用户消息携带的附件 */
   attachments?: MessageAttachment[];
+  /** 本轮智能体的工具调用轨迹（用于界面展示「它在做什么」） */
+  toolTrace?: ToolTraceItem[];
+  /** 待用户确认的破坏性操作（确认后清空该条） */
+  pendings?: PendingAction[];
+}
+
+/** 一次工具调用的可展示记录。 */
+export interface ToolTraceItem {
+  name: string;
+  level: "read" | "write" | "destructive";
+  /** 人类可读的动作名（由后端 ui 层或本地映射给出） */
+  label: string;
+  ok?: boolean;
+  error?: string;
 }
 
 export interface ChatSession {
@@ -28,6 +42,14 @@ export interface ChatSession {
   createdAt: number;
   updatedAt: number;
 }
+
+// —— 会话持久化的宽松校验 ——
+//
+// ⚠️ `isMessage` 是**字段白名单**：只校验 role/content。
+// 新增字段（toolTrace/pendings/…）不需要在这里放行 —— 校验只看必需字段，
+// 其余字段随对象一起被 JSON 保留。反过来说：**给 Message 加必填字段时，
+// 必须同步改这里**，否则历史会话会被整体丢弃（用户会突然发现对话记录没了）。
+// 历史上 `attachments` 就没踩到这个坑（它是可选的）。
 
 const SESSIONS_KEY = "sunnydoc_chat_sessions";
 const CURRENT_KEY = "sunnydoc_chat_current";

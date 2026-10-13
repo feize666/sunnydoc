@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -388,6 +389,153 @@ def generate_stream(
         raise
     except (httpx.HTTPError, json.JSONDecodeError) as e:
         raise LLMError(-1, f"流式请求失败: {e}") from e
+
+
+# ---------------------------------------------------------------------------
+# 工具调用（function calling）
+# ---------------------------------------------------------------------------
+
+# 工具调用请求的超时。比普通生成长：模型要思考该调哪个工具，
+# 且工具结果回灌后还要再生成一轮。
+TOOL_TIMEOUT = 90.0
+
+
+@dataclass
+class ToolCall:
+    """一次工具调用请求。`arguments` 保持**原始字符串** —— 由工具层解析并报错，
+    这样「模型给了非法 JSON」可以被当成可反馈的错误（让模型重试），
+    而不是在这里直接抛异常中断整轮对话。"""
+
+    id: str
+    name: str
+    arguments: str
+
+
+@dataclass
+class ToolTurn:
+    """一轮模型输出的结果：要么是文本，要么是要调用的工具。"""
+
+    content: str
+    tool_calls: list[ToolCall]
+    # 原始 assistant message（回灌时必须原样带上，否则部分供应商会报「消息格式错误」）
+    raw_message: dict[str, Any]
+
+
+def stream_turn(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+    temperature: float = 0.3,
+    max_tokens: int = 1200,
+) -> Iterator[dict[str, Any]]:
+    """流式跑一轮，逐段产出事件：
+
+    - ``{"type": "delta", "content": ...}`` —— 文本增量（已可直接推给前端）
+    - ``{"type": "turn", "turn": ToolTurn}`` —— 最后一个事件，携带本轮的工具调用汇总
+
+    **为什么流式却不做「流式工具解析」的取舍**：实测 DashScope 在需要调工具时
+    `content` 为空、`finish_reason=tool_calls`；回答时则只给 `content`。
+    所以「边流边判断」是安全的 —— 直接回答的情形能立即出字，
+    需要动作的情形在结尾拿到完整 `tool_calls` 再执行。
+    若改成非流式先探一轮，所有回答都要先等满一轮生成，简单问答的体感会明显变差。
+    """
+    if not available():
+        raise LLMError(-1, "API Key 未配置")
+    body: dict[str, Any] = {
+        "model": _model_or_err(),
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": True,
+    }
+    if tools:
+        body["tools"] = tools
+        body["tool_choice"] = "auto"
+
+    text_parts: list[str] = []
+    # 工具参数在流式下按 index 分片到达，必须按 index 累积
+    acc: dict[int, dict[str, str]] = {}
+    raw_message: dict[str, Any] = {"role": "assistant", "content": ""}
+
+    try:
+        with httpx.stream(
+            "POST", _url(), headers=_auth_header(), json=body, timeout=TOOL_TIMEOUT
+        ) as resp:
+            if resp.status_code >= 400:
+                detail = ""
+                try:
+                    j = resp.json()
+                    err = j.get("error") or {}
+                    detail = err.get("message") or j.get("message")
+                except Exception:  # noqa: BLE001
+                    detail = resp.read().decode("utf-8", errors="ignore")
+                raise LLMError(resp.status_code, (detail or "")[:400])
+
+            for line in resp.iter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+                s = line[5:].strip()
+                if s == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(s)
+                    choice = (chunk.get("choices") or [{}])[0]
+                    delta = choice.get("delta") or {}
+                except (json.JSONDecodeError, IndexError, AttributeError):
+                    continue
+
+                piece = delta.get("content")
+                if piece:
+                    text_parts.append(piece)
+                    yield {"type": "delta", "content": piece}
+
+                for tc in delta.get("tool_calls") or []:
+                    try:
+                        idx = int(tc.get("index") or 0)
+                    except (TypeError, ValueError):
+                        idx = 0
+                    slot = acc.setdefault(idx, {"id": "", "name": "", "arguments": ""})
+                    if tc.get("id"):
+                        slot["id"] = tc["id"]
+                    fn = tc.get("function") or {}
+                    if fn.get("name"):
+                        slot["name"] = fn["name"]
+                    if fn.get("arguments"):
+                        slot["arguments"] += fn["arguments"]
+    except LLMError:
+        raise
+    except httpx.HTTPError as e:
+        raise LLMError(-1, f"网络异常: {e}") from e
+    except json.JSONDecodeError as e:
+        raise LLMError(-1, f"流式响应解析失败: {e}") from e
+
+    calls = [
+        ToolCall(id=v["id"] or f"call_{i}", name=v["name"], arguments=v["arguments"])
+        for i, v in sorted(acc.items())
+        if v.get("name")
+    ]
+    content = "".join(text_parts).strip()
+    raw_message = {"role": "assistant", "content": "".join(text_parts)}
+    if calls:
+        # 回灌时必须带 tool_calls，否则供应商会拒绝后续的 role="tool" 消息
+        raw_message["tool_calls"] = [
+            {
+                "id": c.id,
+                "type": "function",
+                "function": {"name": c.name, "arguments": c.arguments},
+            }
+            for c in calls
+        ]
+    yield {
+        "type": "turn",
+        "turn": ToolTurn(content=content, tool_calls=calls, raw_message=raw_message),
+    }
+
+
+def chat_final_stream(messages: list[dict[str, Any]]) -> Iterator[str]:
+    """工具执行完后，把结果回灌给模型并**流式**产出最终回答。"""
+    for ev in stream_turn(messages, tools=None, max_tokens=1200):
+        if ev.get("type") == "delta":
+            yield ev["content"]
 
 
 # ---------- 独立测试 / 拉模型 ----------

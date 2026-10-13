@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { TitleBar } from "@/components/TitleBar";
 import { Sidebar } from "@/components/Sidebar";
 import { Editor } from "@/components/Editor";
-import { AiPanel } from "@/components/AiPanel";
+import { AiPanel, type AgentUiAction } from "@/components/AiPanel";
 import { StatusBar } from "@/components/StatusBar";
 import { useToast } from "@/components/Toast";
 import { CommandPalette, type Command } from "@/components/CommandPalette";
@@ -670,6 +670,22 @@ export default function Home() {
       setAiOpen(false);
     },
     [openDoc],
+  );
+
+  // 智能体要求界面动作（阶段 4）：复用现有的 openDoc 与导航栈。
+  // 这是「基于对话操作整个系统」的界面侧 —— 模型说「打开那篇文档」，
+  // 落到用户眼前就是文档真的打开了（而不是只在回答里贴一个 id）。
+  const handleAgentUi = useCallback(
+    (a: AgentUiAction) => {
+      if (a.kind === "open_document") {
+        openDoc(a.docId);
+        setAiOpen(false);
+      } else if (a.kind === "goto_view") {
+        viewStack.go([a.view]);
+        setAiOpen(false);
+      }
+    },
+    [openDoc, viewStack],
   );
 
   // 保存文档：更新本地缓存并刷新列表（让预览与侧栏立即反映新标题/内容）
@@ -1556,7 +1572,18 @@ export default function Home() {
         />
       )}
 
-      <AiPanel theme={theme} open={aiOpen} onClose={() => setAiOpen(false)} onOpenCitation={handleOpenCitation} kbs={kbs} />
+      <AiPanel
+        theme={theme}
+        open={aiOpen}
+        onClose={() => setAiOpen(false)}
+        onOpenCitation={handleOpenCitation}
+        kbs={kbs}
+        currentKbId={currentKbId}
+        currentDocId={activeKey}
+        onAgentUi={handleAgentUi}
+        // 确认执行后刷新左侧数据（新建/删除/移动都会影响树）
+        onAgentDone={refreshList}
+      />
 
       <CommentPanel
         docId={activeKey}

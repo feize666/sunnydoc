@@ -917,8 +917,31 @@ export interface WebSource {
   url: string;
 }
 
+/** 智能体待确认的破坏性操作（后端**尚未执行**，需用户点确认）。 */
+export interface PendingAction {
+  /** 工具名，如 delete_document */
+  tool: string;
+  /** 调用参数，确认时原样回传 */
+  arguments: Record<string, unknown>;
+  /** 人类可读摘要，直接展示给用户 */
+  summary: string;
+  /** 仅前端使用：确认请求进行中（防重复点击）。不参与持久化语义。 */
+  _busy?: boolean;
+}
+
 export interface StreamEvent {
-  type: "citations" | "delta" | "sources" | "done" | "error";
+  type:
+    | "citations"
+    | "delta"
+    | "sources"
+    | "done"
+    | "error"
+    // 智能体工具编排（阶段 4）
+    | "tool_call"
+    | "tool_result"
+    | "pending"
+    | "pending_all"
+    | "ui_action";
   citations?: Citation[];
   content?: string;
   sources?: WebSource[];
@@ -927,6 +950,34 @@ export interface StreamEvent {
   hits_empty?: boolean;
   web_available?: boolean;
   llm_available?: boolean;
+  /** 后端是否启用了智能体（模型支持工具且已配置） */
+  agent_enabled?: boolean;
+  // ---- 工具编排字段 ----
+  id?: string;
+  name?: string;
+  level?: "read" | "write" | "destructive";
+  arguments?: string | Record<string, unknown>;
+  ok?: boolean;
+  pending?: boolean;
+  /** 工具执行失败时的可读原因（tool_result 事件） */
+  error?: string;
+  /** 待确认项（pending / pending_all 事件） */
+  tool?: string;
+  summary?: string;
+  pendings?: PendingAction[];
+  /** 界面指令（ui_action 事件） */
+  ui_action?: string;
+  view?: string;
+  doc_id?: string;
+  title?: string;
+}
+
+/** AI 面板开启智能体时需要的界面上下文（让「这个知识库」有依据）。 */
+export interface AgentUiContext {
+  currentKbId?: string | null;
+  currentDocId?: string | null;
+  /** 关闭后行为与改造前一致（只做 RAG 问答，不调工具） */
+  enableAgent?: boolean;
 }
 
 /**
@@ -934,6 +985,9 @@ export interface StreamEvent {
  * - citations: 携带知识库引用列表
  * - sources: 携带联网搜索来源
  * - delta: 携带增量文本
+ * - tool_call / tool_result: 智能体正在调用工具
+ * - pending: 破坏性操作待用户确认（**尚未执行**）
+ * - ui_action: 让界面打开文档/切换视图
  * - done: 结束
  */
 export async function chatStream(
@@ -944,11 +998,22 @@ export async function chatStream(
   onEvent: (e: StreamEvent) => void,
   attachments?: string[],
   signal?: AbortSignal,
+  ui?: AgentUiContext,
 ): Promise<void> {
   const res = await fetch(`${BASE}/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify({ query, top_k: topK, history, enable_web: enableWeb, attachments: attachments ?? [] }),
+    body: JSON.stringify({
+      query,
+      top_k: topK,
+      history,
+      enable_web: enableWeb,
+      attachments: attachments ?? [],
+      // 智能体上下文：让「这个知识库」「那篇文档」等指代有依据
+      current_kb_id: ui?.currentKbId ?? null,
+      current_doc_id: ui?.currentDocId ?? null,
+      enable_agent: ui?.enableAgent ?? true,
+    }),
     signal,
   });
 
@@ -982,6 +1047,42 @@ export async function chatStream(
       }
     }
   }
+}
+
+// —— 智能体（阶段 4）——
+
+export interface AgentToolInfo {
+  name: string;
+  description: string;
+  level: "read" | "write" | "destructive";
+}
+
+/** 列出智能体可用工具（用于「它能做什么」展示与调试）。 */
+export async function fetchAgentTools(): Promise<AgentToolInfo[]> {
+  const data = await request<{ tools: AgentToolInfo[] }>("/agent/tools");
+  return Array.isArray(data?.tools) ? data.tools : [];
+}
+
+/**
+ * 用户确认后执行破坏性操作。
+ *
+ * 🔴 **参数必须原样回传后端下发的 `arguments`**。
+ * 后端不缓存「待确认队列」（无状态设计，多标签页/刷新后确认都成立），
+ * 所以这次请求携带的参数就是最终执行的内容 —— 前端不要自作主张改写。
+ */
+export async function agentConfirm(
+  tool: string,
+  args: Record<string, unknown>,
+): Promise<{ ok: boolean; result?: Record<string, unknown> }> {
+  return request<{ ok: boolean; result?: Record<string, unknown> }>("/agent/confirm", {
+    method: "POST",
+    // ⚠️ 必须显式设 Content-Type。`request()` 只加 Authorization 头、
+    // **不设 Content-Type 也不序列化 body** —— 少了这一行，FastAPI 会把
+    // 请求体当成字符串，pydantic 校验失败返回 422
+    // （报错形如 Input should be a valid dictionary... input: "{\"tool\":...}"）。
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tool, arguments: args }),
+  });
 }
 
 // —— 认证 / 用户 ——

@@ -26,7 +26,7 @@ import { useToast } from "./Toast";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useResizable } from "@/hooks/useResizable";
 import { copyText } from "@/lib/clipboard";
-import { chatStream, uploadChatAttachment, importChatAttachment, type Citation, type ChatMessage, type WebSource, type ChatAttachment, type Kb } from "@/lib/api";
+import { chatStream, agentConfirm, uploadChatAttachment, importChatAttachment, type Citation, type ChatMessage, type WebSource, type ChatAttachment, type Kb, type PendingAction } from "@/lib/api";
 import {
   createSession,
   deriveTitle,
@@ -38,7 +38,67 @@ import {
   type ChatSession,
   type Message,
   type MessageAttachment,
+  type ToolTraceItem,
 } from "@/lib/chatHistory";
+
+/**
+ * 智能体要求界面执行的动作（阶段 3 的 viewStack 由上层承接）。
+ *
+ * `view` 用联合类型（而非 string）：后端 `goto_view` 工具只允许这 5 个值，
+ * 收窄成联合类型能让上层 `go([view])` 直接编译通过，
+ * 也避免「后端加了新视图但前端没接」时静默走到空路径。
+ */
+export type AgentUiAction =
+  | { kind: "open_document"; docId: string }
+  | { kind: "goto_view"; view: "home" | "kb" | "settings" | "users" | "trash" };
+
+const KNOWN_VIEWS = ["home", "kb", "settings", "users", "trash"] as const;
+
+/** 类型守卫：把后端下发的 view 字符串收窄成联合类型。 */
+function isKnownView(v: unknown): v is AgentUiAction extends { view: infer V } ? V : never {
+  return typeof v === "string" && (KNOWN_VIEWS as readonly string[]).includes(v);
+}
+
+/**
+ * 工具名 → 中文动作标签。
+ *
+ * ⚠️ **只用于展示**。不要在别处用工具名做判断分支（如「这个名字就要确认」）——
+ * 分级判定以后端返回的 `level` 为准。这里写死中文名只是因为
+ * 「正在调用 create_document…」对用户毫无意义。
+ */
+function toolLabel(name: string): string {
+  const m: Record<string, string> = {
+    search_documents: "搜索文档",
+    get_document: "读取文档",
+    list_documents: "列出文档",
+    list_knowledge_bases: "列出知识库",
+    list_folders: "列出文件夹",
+    list_tags: "列出标签",
+    get_document_versions: "查看历史版本",
+    list_trash: "查看回收站",
+    system_overview: "查看系统概览",
+    create_document: "新建文档",
+    update_document: "修改文档",
+    move_document: "移动文档",
+    set_document_tags: "设置标签",
+    set_document_pinned: "置顶文档",
+    create_folder: "新建文件夹",
+    rename_folder: "重命名文件夹",
+    create_knowledge_base: "新建知识库",
+    list_users: "查看用户列表",
+    update_user: "修改用户",
+    get_ai_settings: "读取 AI 配置",
+    delete_document: "删除文档",
+    delete_folder: "删除文件夹",
+    delete_knowledge_base: "删除知识库",
+    purge_trash_item: "彻底删除",
+    delete_user: "删除用户",
+    restore_trash_item: "恢复内容",
+    open_document: "打开文档",
+    goto_view: "切换视图",
+  };
+  return m[name] ?? name;
+}
 
 const initialMessages: Message[] = [];
 
@@ -125,6 +185,10 @@ export function AiPanel({
   onClose,
   onOpenCitation,
   kbs,
+  currentKbId,
+  currentDocId,
+  onAgentUi,
+  onAgentDone,
 }: {
   theme: "light" | "dark";
   open: boolean;
@@ -138,6 +202,13 @@ export function AiPanel({
    */
   onOpenCitation?: (docId: string, citation: Citation) => void;
   kbs?: Kb[];
+  /** 当前所在知识库 / 文档：作为智能体的上下文，让「这个知识库」有依据 */
+  currentKbId?: string | null;
+  currentDocId?: string | null;
+  /** 智能体要求界面动作（打开文档 / 切换视图）时回调上层执行 */
+  onAgentUi?: (action: AgentUiAction) => void;
+  /** 智能体确认执行了破坏性操作后回调（让上层刷新文档树/列表） */
+  onAgentDone?: () => void;
 }) {
   const toast = useToast();
   const [messages, setMessages] = useState<Message[]>(initialMessages);
@@ -427,26 +498,76 @@ export function AiPanel({
     // 本次请求是否命中本地知识库；命中为空且未开联网时，前端智能提示「是否联网搜索」
     let ignoreDelta = false;
     try {
-      await chatStream(q, 5, history, webEnabled, (e) => {
-        if (e.type === "citations") {
-          const hitsEmpty = e.hits_empty === true;
-          const webAvailable = e.web_available === true;
-          updateAi((msg) => ({ ...msg, citations: e.citations ?? [] }));
-          // 本地未命中 + 未开联网 + 联网搜索可用 → 提示用户是否联网
-          if (hitsEmpty && !webEnabled && webAvailable) {
-            ignoreDelta = true;
-            updateAi((msg) => ({ ...msg, suggestWeb: true, content: "" }));
+      await chatStream(
+        q,
+        5,
+        history,
+        webEnabled,
+        (e) => {
+          if (e.type === "citations") {
+            const hitsEmpty = e.hits_empty === true;
+            const webAvailable = e.web_available === true;
+            updateAi((msg) => ({ ...msg, citations: e.citations ?? [] }));
+            // 本地未命中 + 未开联网 + 联网搜索可用 → 提示用户是否联网
+            // 智能体开启时不做这个拦截：模型可以直接调用工具，或自行说明
+            if (hitsEmpty && !webEnabled && webAvailable && !e.agent_enabled) {
+              ignoreDelta = true;
+              updateAi((msg) => ({ ...msg, suggestWeb: true, content: "" }));
+            }
+          } else if (e.type === "sources") {
+            updateAi((msg) => ({ ...msg, webSources: e.sources ?? [] }));
+          } else if (e.type === "delta") {
+            if (!ignoreDelta) {
+              updateAi((msg) => ({ ...msg, content: msg.content + (e.content ?? "") }));
+            }
+          } else if (e.type === "tool_call") {
+            // 展示「它在做什么」——没有这个，用户面对的是几秒静默
+            const item: ToolTraceItem = {
+              name: e.name ?? "",
+              level: e.level ?? "read",
+              label: toolLabel(e.name ?? ""),
+            };
+            updateAi((msg) => ({
+              ...msg,
+              toolTrace: [...(msg.toolTrace ?? []), item],
+            }));
+          } else if (e.type === "tool_result") {
+            updateAi((msg) => {
+              const trace = [...(msg.toolTrace ?? [])];
+              // 回填最后一次同名调用的结果
+              for (let i = trace.length - 1; i >= 0; i--) {
+                if (trace[i].name === e.name && trace[i].ok === undefined) {
+                  trace[i] = { ...trace[i], ok: e.ok, error: e.error };
+                  break;
+                }
+              }
+              return { ...msg, toolTrace: trace };
+            });
+          } else if (e.type === "pending" && e.tool) {
+            const pa: PendingAction = {
+              tool: e.tool,
+              arguments: (e.arguments as Record<string, unknown>) ?? {},
+              summary: e.summary ?? toolLabel(e.tool),
+            };
+            updateAi((msg) => ({ ...msg, pendings: [...(msg.pendings ?? []), pa] }));
+          } else if (e.type === "ui_action") {
+            // 界面指令交给上层执行（打开文档 / 切换视图）。
+            // 用白名单收窄：后端理论上只发这 5 个值，但前端不该依赖「理论上」——
+            // 收到未知 view 时忽略比走到空路径更好（空路径 = 回首页，会让用户困惑）。
+            if (e.ui_action === "open_document" && e.doc_id) {
+              onAgentUi?.({ kind: "open_document", docId: e.doc_id });
+            } else if (e.ui_action === "goto_view" && isKnownView(e.view)) {
+              onAgentUi?.({ kind: "goto_view", view: e.view });
+            }
+          } else if (e.type === "error") {
+            gotError = { status: e.status ?? 0, detail: e.detail ?? "" };
           }
-        } else if (e.type === "sources") {
-          updateAi((msg) => ({ ...msg, webSources: e.sources ?? [] }));
-        } else if (e.type === "delta") {
-          if (!ignoreDelta) {
-            updateAi((msg) => ({ ...msg, content: msg.content + (e.content ?? "") }));
-          }
-        } else if (e.type === "error") {
-          gotError = { status: e.status ?? 0, detail: e.detail ?? "" };
-        }
-      }, sendIds, controller.signal);
+        },
+        sendIds,
+        controller.signal,
+        // 智能体上下文：让「这个知识库」等指代有依据
+        { currentKbId, currentDocId },
+      );
     } catch (e) {
       if (e instanceof Error && e.name === "AbortError") {
         // 用户主动暂停：保留已生成内容；为空时给个提示
@@ -791,6 +912,42 @@ export function AiPanel({
                 )}
               </div>
             )}
+            {/* 智能体的工具轨迹：让用户看到「它在做什么」。
+                没有它，调工具的那几秒对用户是纯静默（既无文字也无反馈）。
+
+                `data-tool-trace` 是**给验证脚本的稳定锚点**：
+                早先脚本靠类名（`div.mb-1.flex.flex-wrap > span`）定位，
+                在真实页面上时有时无地命中，导致「后端明明调了工具、
+                断言却读到空数组」。类名会随样式调整而变，data 属性不会。 */}
+            {msg.role === "ai" && (msg.toolTrace?.length ?? 0) > 0 && (
+              <div data-tool-trace="1" className="mb-1 flex flex-wrap gap-1">
+                {msg.toolTrace!.map((t, k) => (
+                  <span
+                    key={k}
+                    data-tool-label={t.label}
+                    className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[12px] ${
+                      t.ok === false
+                        ? "border-danger/40 bg-danger-soft text-danger"
+                        : "border-line bg-surface-2 text-muted"
+                    }`}
+                    title={t.error || t.name}
+                  >
+                    {t.ok === undefined ? (
+                      <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border border-current border-t-transparent" />
+                    ) : t.ok ? (
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M20 6L9 17l-5-5" />
+                      </svg>
+                    ) : (
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                      </svg>
+                    )}
+                    {t.label}
+                  </span>
+                ))}
+              </div>
+            )}
             <div
               className={
                 msg.role === "user"
@@ -865,6 +1022,113 @@ export function AiPanel({
                   ))}
                 </div>
               )}
+              {/* 待确认的破坏性操作。
+                  🔴 这些操作**尚未执行** —— 后端只在确认后才落库。
+                  因此按钮文案必须是「确认执行」而非「已执行」，且要有「取消」。 */}
+              {Array.isArray(msg.pendings) &&
+                msg.pendings.length > 0 &&
+                msg.pendings.map((pa, j) => (
+                  <div
+                    key={j}
+                    data-pending-card="1"
+                    className="mt-1.5 rounded-lg border border-danger/40 bg-danger-soft px-3 py-2.5"
+                  >
+                    <div className="flex items-start gap-1.5">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0 text-danger">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                        <path d="M12 9v4M12 17h.01" />
+                      </svg>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[13px] font-medium text-danger">需要你确认</div>
+                        <div className="mt-0.5 text-[13px] text-text">{pa.summary}</div>
+                        <div className="mt-0.5 text-[12px] text-muted">
+                          此操作尚未执行，点击下方按钮后才会生效。
+                        </div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={pa._busy}
+                            onClick={async () => {
+                              // 标记 busy（防重复点击）
+                              setMessages((all) =>
+                                all.map((mm, k) =>
+                                  k === i
+                                    ? {
+                                        ...mm,
+                                        pendings: (mm.pendings ?? []).map((x, kk) =>
+                                          kk === j ? { ...x, _busy: true } : x,
+                                        ),
+                                      }
+                                    : mm,
+                                ),
+                              );
+                              try {
+                                await agentConfirm(pa.tool, pa.arguments);
+                                toast.success(`已执行：${pa.summary}`);
+                                // 成功后才移除卡片 —— 失败时保留，用户可重试
+                                setMessages((all) =>
+                                  all.map((mm, k) =>
+                                    k === i
+                                      ? {
+                                          ...mm,
+                                          pendings: (mm.pendings ?? []).filter(
+                                            (_, kk) => kk !== j,
+                                          ),
+                                        }
+                                      : mm,
+                                  ),
+                                );
+                                // 让上层刷新数据（删文档后左侧树要更新）
+                                onAgentDone?.();
+                              } catch (err) {
+                                toast.error(
+                                  `执行失败：${err instanceof Error ? err.message : "未知错误"}`,
+                                );
+                                setMessages((all) =>
+                                  all.map((mm, k) =>
+                                    k === i
+                                      ? {
+                                          ...mm,
+                                          pendings: (mm.pendings ?? []).map((x, kk) =>
+                                            kk === j ? { ...x, _busy: false } : x,
+                                          ),
+                                        }
+                                      : mm,
+                                  ),
+                                );
+                              }
+                            }}
+                            className="rounded-lg bg-danger-solid px-3 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                          >
+                            {pa._busy ? "执行中…" : "确认执行"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={pa._busy}
+                            onClick={() => {
+                              setMessages((all) =>
+                                all.map((mm, k) =>
+                                  k === i
+                                    ? {
+                                        ...mm,
+                                        pendings: (mm.pendings ?? []).filter(
+                                          (_, kk) => kk !== j,
+                                        ),
+                                      }
+                                    : mm,
+                                ),
+                              );
+                              toast.success("已取消，未做任何改动");
+                            }}
+                            className="rounded-lg border border-line px-3 py-1.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text disabled:opacity-50"
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               {Array.isArray(msg.webSources) && msg.webSources.length > 0 && (
                 <div className="mt-1.5 space-y-0.5 border-t border-line pt-1.5 text-[12px]">
                   <div className="mb-0.5 text-[11px] text-faint">联网搜索来源</div>
