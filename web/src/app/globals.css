@@ -1863,3 +1863,82 @@ mark.search-hit {
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+/* ==========================================================================
+   触屏适配（阶段 2）—— 仅在「粗指针 / 无悬停」的设备生效
+   --------------------------------------------------------------------------
+   为什么用 `@media (hover: none) and (pointer: coarse)` 而不是 `max-width`：
+   触控目标大小是**输入方式**问题，不是屏幕宽度问题 ——
+   带鼠标的窄窗口不需要放大，平板配鼠标也不需要。
+   用宽度断点会把「手机上被放大」和「桌面上被放大」混为一谈。
+
+   依据：iOS HIG 与 Material 均建议最小可点区域 44×44（约 9mm）。
+   桌面规格 32px（§5.12 尺寸阶梯）在触屏上太小，实测顶部栏 7 个按钮
+   全是 32×32 —— 拇指点击极易误触相邻项。
+
+   ⚠️ 只放大**可点区域**，不放大图标本身：
+   用 `min-width/min-height` + 保持 svg 尺寸，避免图标视觉变大破坏版面。
+   ========================================================================== */
+@media (hover: none) and (pointer: coarse) {
+  /* 图标按钮：32 → 44（含 .icon-btn 与工具按钮的紧凑档） */
+  .icon-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  /* 行内文字操作（28px 档）：同样受 44 约束 */
+  .btn-ghost {
+    min-height: 40px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  /* 工具栏按钮紧凑档（32px）：触屏下也要够大 */
+  .tool-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* .btn-sm（32px 档）与顶栏/首页头部的紧凑按钮：触屏下抬到 44。
+     实测首页头部「搜索 35×36 / 新建 38×32 / 用户头像 71×40」均偏小。
+     ⚠️ 宽度也要给下限：纯图标按钮（如首页「新建知识库」窄屏只剩 ＋ 图标）
+     高度够了但只有 38px 宽，拇指同样点不准。 */
+  .btn-sm {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  /* 确认/取消这类对话框按钮（36px 档） */
+  .btn {
+    min-height: 44px;
+  }
+  /* 首页头部的搜索入口（自绘 button，非 .btn 系列） */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* 行内小图标操作（24px 档，如卡片上的「共享/编辑/删除」）——
+     **扩命中区，不放大视觉**：这类按钮嵌在卡片标题行里，撑到 44px
+     会把标题挤压变形。用透明 ::after 把可点范围扩到 44×44，
+     视觉尺寸不变（`h-6 w-6` 仍是 24px），但拇指能稳定点中。
+
+     🔴 **必须先给它 `position: relative`**（这一步踩过）：
+     `.reveal-on-hover` 默认是 `position: static`，而 `absolute` 的 ::after
+     会去定位**最近的已定位祖先** —— 实测 ::after 跑到了 `left:170.5px/top:86.5px`
+     （容器的绝对坐标），**命中区完全没落在按钮上**，等于没扩。
+     只在触屏媒体查询里加 relative，桌面布局不受影响。 */
+  .reveal-on-hover {
+    position: relative;
+  }
+  .reveal-on-hover::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    /* 44 —— iOS HIG 的最小值。原先写 40，审计脚本按 44 判定仍报「过小」。 */
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* 触屏上禁用「依赖 hover 才可见」的浮层提示没有意义，但保留无妨：
+   Tooltip 组件自身会处理。此处只保证按钮本身可达。 */

@@ -1491,3 +1491,55 @@ viewport（pan/zoom）、自身尺寸、以及泳道父节点偏移影响——�
 `web/scripts/verify_hover_motion.cjs` —— 读 `getComputedStyle().transform` 与
 `getBoundingClientRect()` 的**实测值**（不是查 className 里有没有 "lift"），
 并用 `reducedMotion: "reduce"` 另开页面验证降级。
+
+## 6.14 移动端 / 触屏适配（阶段 2）
+
+### 🔴 触屏适配用「输入方式」判定，不用屏幕宽度
+
+```css
+@media (hover: none) and (pointer: coarse) { ... }
+```
+
+**为什么不用 `max-width`**：触控目标大小是**输入方式**问题，不是屏幕宽度问题 ——
+带鼠标的窄窗口不需要放大，平板配鼠标也不需要。
+用宽度断点会把「手机上被放大」和「桌面上被放大」混为一谈。
+（桌面 32px 阶梯见 §5.12，触屏抬到 44，用 `min-width/min-height` 而非改尺寸，
+避免图标视觉变大破坏版面。）
+
+### 三处实测缺陷（动手前的基线）
+
+在 375 / 393 / 412 三档手机视口实测：
+
+| 视图 | 横向溢出元素 | 触控目标 <44px |
+|---|---|---|
+| 首页 | **15**（头部总宽 **564px**，右侧全被推出屏幕 213px） | 7 |
+| 知识库 | 5 | 7 |
+| 文档阅读 | 5 | 7 |
+
+### 修法
+
+| 位置 | 问题 | 处理 |
+|---|---|---|
+| 首页头部 | 搜索 200px + 新建 109 + 主题 44 + 用户 187 | 搜索/新建文案 `hidden md:inline`；用户区 `hidden sm:flex` |
+| `.icon-btn` | 32px 太小 | 触屏下 `min 44` |
+| 行内图标（共享/编辑/删除） | 24px 视觉尺寸 | **扩命中区**：透明 `::after` 44×44 |
+| AI 按钮 | 窄屏只剩图标 43px 宽 | `min-w-11` |
+
+### 🔴 两个陷阱
+
+1. **`::after` 扩命中区前必须先给它 `position: relative`**。
+   `.reveal-on-hover` 默认是 `static`，而 `absolute` 的 `::after` 会去定位
+   **最近的已定位祖先** —— 实测跑到 `left:170.5px/top:86.5px`（容器坐标），
+   **命中区完全没落在按钮上**，等于没扩。
+2. **验收脚本必须把 `::after` 的尺寸算进命中区**，否则会把「已扩展」的行内图标
+   **误报**为过小（`getBoundingClientRect()` 量的是 border-box）。
+
+### 验收方式
+
+`web/scripts/verify_mobile_adaptive.cjs`：
+- A. 三档手机视口 × 三视图：横向溢出 **0**、触控目标 **全部 ≥44**
+- B. **PC 回归护栏**：桌面 `.icon-btn` 仍 32px、`.reveal-on-hover::after` 不启用、
+  搜索入口仍 ≥200px —— 防止「为移动端改坏桌面」
+
+另：`scripts/audit_mobile.cjs` 是**体检工具**（只输出问题清单、不判定成败），
+改版式前先跑它拿基线。

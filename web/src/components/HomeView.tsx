@@ -218,10 +218,15 @@ export function HomeView({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        {/* 右侧操作组：**必须加 min-w-0 + flex-nowrap 保护**
+            实测 375px 视口下这组总宽 564px（搜索 200 + 新建 109 + 主题 44 + 用户 187），
+            原样渲染会把整个头部推出屏幕 213px，右侧内容完全不可达。
+            窄屏策略：搜索收起为图标按钮、新建只留图标、用户区隐藏文字。 */}
+        <div className="flex min-w-0 shrink items-center gap-2">
           <button
             onClick={onOpenPalette}
-            className="group flex min-w-[200px] items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-3 py-1.5 text-xs text-faint transition-colors hover:border-accent/40 hover:bg-background hover:text-muted"
+            className="touch-target group flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2.5 text-xs text-faint transition-colors hover:border-accent/40 hover:bg-background hover:text-muted md:min-w-[200px] md:px-3"
+            aria-label="搜索或执行命令"
           >
             <svg
               width="13"
@@ -234,19 +239,19 @@ export function HomeView({
               <circle cx="11" cy="11" r="7" />
               <path d="M21 21l-4-4" />
             </svg>
-            <span className="flex-1 text-left">搜索或执行命令</span>
-            <kbd className="rounded border border-line bg-background px-1 font-mono text-[10px]">
+            <span className="hidden flex-1 text-left md:inline">搜索或执行命令</span>
+            <kbd className="hidden rounded border border-line bg-background px-1 font-mono text-[10px] md:inline">
               ⌘K
             </kbd>
           </button>
 
           <button
             onClick={onCreateKb}
-            className="btn btn-accent btn-sm text-white"
+            className="btn btn-accent btn-sm shrink-0 text-white"
             title="新建知识库"
           >
             <PlusIcon size={14} />
-            新建知识库
+            <span className="hidden sm:inline">新建知识库</span>
           </button>
 
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />

@@ -40,7 +40,7 @@ export function UserMenu({
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className={`flex items-center rounded-full border border-line bg-surface transition-colors hover:border-accent/40 hover:bg-hover ${
+        className={`touch-target flex items-center rounded-full border border-line bg-surface transition-colors hover:border-accent/40 hover:bg-hover ${
           compact ? "h-8 gap-1.5 pl-0.5 pr-2" : "h-10 gap-2.5 pl-1 pr-2.5"
         }`}
         title={name}
@@ -53,7 +53,10 @@ export function UserMenu({
           {user.avatar?.trim() || name.slice(0, 1)}
         </span>
         {!compact ? (
-          <span className="flex flex-col items-start leading-tight">
+          /* 窄屏收起为「只剩头像」：实测这段双行用户区（昵称+管理员徽标+@用户名）
+             宽 165px，在 375 视口下头部总宽溢出（right=419）。
+             用户信息在个人信息弹窗里完整可见，顶栏不必重复占位。 */
+          <span className="hidden flex-col items-start leading-tight sm:flex">
             <span className="flex items-center gap-1.5">
               <span className="max-w-[110px] truncate text-[13px] font-semibold text-text">
                 {name}
@@ -67,7 +70,7 @@ export function UserMenu({
             <span className="text-[11px] text-faint">@{user.username}</span>
           </span>
         ) : (
-          <span className="max-w-[90px] truncate text-xs font-medium text-text">{name}</span>
+          <span className="max-w-[90px] truncate text-xs font-medium text-text max-sm:hidden sm:inline-block">{name}</span>
         )}
         <svg
           width="13"
