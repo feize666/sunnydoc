@@ -37,10 +37,42 @@ LOG_DIR="$LOCAL_DIR/.workbuddy/logs"
 
 is_up() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 
+# 真机探活：端口监听 ≠ 服务可用。
+# 历史上出现过「lsof 显示在监听、进程也在，但页面白屏/接口 500」的情况
+# （改代码未重启后端、`.next` 被 `npm run build` 覆盖等）。
+# 因此 status 在端口之外**再要一个 HTTP 200**，两者都过才算「运行中」。
+# ⚠️ 必须带 --noproxy '*'：本机有 HTTP_PROXY，不加会走代理并返回**伪造的 200/502**。
+http_ok() {
+  # WAIT_ATTEMPTS=1 时只探一次（status 用）；start/restart 可多试几次等它起来
+  local url="$1" attempts="${2:-1}" code=""
+  local i
+  for i in $(seq 1 "$attempts"); do
+    code=$(curl -s --noproxy '*' -o /dev/null -w '%{http_code}' --max-time 5 "$url" 2>/dev/null || true)
+    [ "$code" = "200" ] && return 0
+    [ "$i" -lt "$attempts" ] && sleep 2
+  done
+  return 1
+}
+
 status() {
   echo "--- sunnydoc 本地服务 ---"
-  if is_up $API_PORT; then echo "后端 :$API_PORT  ✅ 运行中"; else echo "后端 :$API_PORT  ⛔ 未运行"; fi
-  if is_up $WEB_PORT; then echo "前端 :$WEB_PORT  ✅ 运行中"; else echo "前端 :$WEB_PORT  ⛔ 未运行"; fi
+  for spec in "后端:$API_PORT:http://127.0.0.1:$API_PORT/api/v1/health" \
+              "前端:$WEB_PORT:http://localhost:$WEB_PORT/"; do
+    local name="${spec%%:*}"
+    local rest="${spec#*:}"
+    local port="${rest%%:*}"
+    local url="${rest#*:}"
+    if ! is_up "$port"; then
+      echo "$name :$port  ⛔ 未运行"
+    elif http_ok "$url" 1; then
+      echo "$name :$port  ✅ 运行中"
+    else
+      # 端口在、但探活失败 —— 这比「未运行」更值得警惕：进程活着却不可用
+      echo "$name :$port  ⚠️  端口在监听但探活失败（$url 未返回 200）"
+    fi
+  done
+  echo "  提示：前端构建（npm run build）会重写 web/.next，"
+  echo "        与 dev server 共用该目录 —— 构建后若页面异常，跑 ./dev.sh restart 即可。"
 }
 
 start() {
