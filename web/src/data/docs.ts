@@ -33,6 +33,10 @@ export interface TreeNode {
   folder_id?: string | null;
   pinned?: boolean;
   sort_order?: number | null;
+  /** 文档标签（文件节点专用；用于行内徽标与侧栏标签筛选） */
+  tags?: string[];
+  /** AI 摘要（文件节点专用；行内 tooltip 展示，不占版面） */
+  summary?: string | null;
 }
 
 /**

@@ -7,6 +7,7 @@ search/_segment/_tokenize/_cosine、模块级 store 单例）。内部按 db.ava
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 import uuid
@@ -17,6 +18,8 @@ import jieba
 
 from app.core.config import DATA_DIR
 from app.services import db, embedding, rerank
+
+logger = logging.getLogger(__name__)
 
 STORE_FILE = DATA_DIR / "store.json"
 
@@ -236,6 +239,17 @@ class DocStore:
                 if fresh:
                     for pos, i in enumerate(needed):
                         vectors[i] = fresh[pos]
+                else:
+                    # 降级必须可观测（2026-10-14 补）：embed() 失败时若静默写无向量
+                    # 分片，AI 问答对该文档只剩关键词检索而无人知晓 —— 实测曾 460 个
+                    # 分片（2 篇文档）如此躺了数周。修复入口：
+                    # POST /admin/repair-embeddings 或 scripts/repair_missing_vectors.py。
+                    logger.warning(
+                        "[向量] embedding 失败：%d/%d 个分片将无向量入库；"
+                        "可稍后用 POST /admin/repair-embeddings 补算",
+                        len(needed),
+                        len(chunks),
+                    )
         return [
             {"text": c, "vector": vectors[i] if vectors else None}
             for i, c in enumerate(chunks)
@@ -917,6 +931,54 @@ class DocStore:
             for t in d.get("tags") or []:
                 all_tags.add(t)
         return sorted(all_tags)
+
+    # ---------- 向量健康 ----------
+
+    def repair_missing_vectors(self, limit: int = 2000) -> dict[str, Any]:
+        """补算缺向量的分片。返回 {supported, scanned, repaired, remaining, failed, docs}。
+
+        只处理 db 后端（JSON 降级没有独立的 chunks 表，向量随 store.json 全量重写，
+        不存在「缺向量」概念）。编排逻辑只此一份 —— admin 端点与
+        scripts/repair_missing_vectors.py 都复用它，避免第三次分叉。
+        """
+        if self._backend != "db":
+            return {
+                "supported": False,
+                "scanned": 0,
+                "repaired": 0,
+                "remaining": 0,
+                "failed": 0,
+                "docs": [],
+            }
+        missing = db.missing_vector_chunks(limit)
+        repaired = 0
+        failed = 0
+        docs_touched: set[str] = set()
+        batch_size = 10  # 阿里云百炼 embedding 单批上限
+        for i in range(0, len(missing), batch_size):
+            batch = missing[i : i + batch_size]
+            fresh = embedding.embed([c["text"] for c in batch])
+            if not fresh or len(fresh) != len(batch):
+                # 条数对不上或整体失败：不猜、不部分写，整批计失败
+                failed += len(batch)
+                logger.warning(
+                    "[向量] 补算失败：一批 %d 个分片（文档 %s）",
+                    len(batch),
+                    ",".join(sorted({c["doc_id"][:8] for c in batch})),
+                )
+                continue
+            repaired += db.set_chunk_vectors(
+                [(c["doc_id"], c["segment_index"], v) for c, v in zip(batch, fresh)]
+            )
+            docs_touched.update(c["doc_id"] for c in batch)
+        return {
+            "supported": True,
+            "scanned": len(missing),
+            "repaired": repaired,
+            "remaining": db.count_missing_vectors(),
+            "failed": failed,
+            "docs": sorted(docs_touched),
+        }
 
     # ---------- 版本历史 ----------
 

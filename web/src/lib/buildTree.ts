@@ -124,6 +124,8 @@ export function buildTree(
       folder_id: d.folder_id,
       pinned: !!d.pinned,
       sort_order: d.sort_order,
+      tags: d.tags ?? [],
+      summary: d.summary ?? null,
     };
     const parent = d.folder_id ? folderNodes.get(d.folder_id) : undefined;
     if (parent) {

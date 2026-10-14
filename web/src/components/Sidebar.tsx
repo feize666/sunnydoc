@@ -6,8 +6,9 @@ import { Tooltip } from "./Tooltip";
 import { PlusIcon, SearchIcon, CloseIcon, FileIcon } from "./icons";
 import { EmptyState } from "./EmptyState";
 import { useResizable } from "@/hooks/useResizable";
+import { parseTagQuery } from "@/lib/tagQuery";
 import type { TreeNode, SortBy } from "@/data/docs";
-import type { Folder, SearchResult } from "@/lib/api";
+import type { Folder, SearchResult, DocMeta } from "@/lib/api";
 import { NewNodeMenu, PORTAL_MENU_ATTR, type NodeType } from "./NewNodeMenu";
 
 function escapeHtml(s: string): string {
@@ -140,6 +141,13 @@ export function Sidebar({
   onSearchTypeChange,
   searchTag,
   onSearchTagChange,
+  /** 侧栏「标签」浏览区的标签及计数（page.tsx 从已加载 metas 现算，零额外请求）。 */
+  tagList,
+  /** 当前选中标签下的文档（同样现算，不新增请求）。 */
+  tagDocs,
+  onEditTags,
+  onGenerateSummary,
+  onTagSelect,
   searchSort,
   onSearchSortChange,
   searchResults,
@@ -187,6 +195,11 @@ export function Sidebar({
   onSearchTypeChange: (t: string) => void;
   searchTag: string;
   onSearchTagChange: (t: string) => void;
+  tagList?: { name: string; count: number }[];
+  tagDocs?: DocMeta[];
+  onEditTags?: (docId: string) => void;
+  onGenerateSummary?: (docId: string) => void;
+  onTagSelect?: (tag: string) => void;
   searchSort: string;
   onSearchSortChange: (s: string) => void;
   searchResults: SearchResult[];
@@ -214,6 +227,31 @@ export function Sidebar({
    */
   const hlKw = searchTerms.length > 0 ? searchTerms.join(" ") : searchQuery.trim();
 
+  /**
+   * `tag:xxx` 查询语法（解析与 page.tsx 的搜索 effect 共用 lib/tagQuery.ts，
+   * 两边分叉会出现「侧栏显示搜索页、effect 却什么也没搜」）。
+   *
+   * - `effectiveQuery`：剥离标签 token 后的查询词 —— **视图分支用它**
+   *   （只剩 "tag:foo" 时不应显示「无匹配结果」的搜索页，而是标签浏览视图）；
+   * - `activeTag`：查询语法里的 token 优先于已选中的 chip（用户正在改标签名时
+   *   视图要立刻跟上，不等 effect 同步）。
+   */
+  const { q: effectiveQuery, tag: tagFromQuery } = parseTagQuery(searchQuery);
+  const activeTag = tagFromQuery || searchTag;
+
+  /**
+   * 显式设置标签筛选。查询框里未消费的 tag: token 会被剥离，但**保留其余查询词**
+   * （粘贴「tag:foo 季度」后点其它标签 chip，不能把「季度」一起弄丢）；
+   * 光敲「tag:foo」没敲完时 effectiveQuery 为 ""，即整个清掉。
+   * 不剥离的话，留着 token 会让下一次 effect 运行把筛选又改回 token 里的标签
+   * —— 表现为「点哪个 chip 都被弹回去」。
+   */
+  const setTagFilter = (t: string) => {
+    if (tagFromQuery) onSearchChange(effectiveQuery);
+    onSearchTagChange(t);
+  };
+  const clearTagFilter = () => setTagFilter("");
+
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
@@ -221,6 +259,7 @@ export function Sidebar({
   const [selIndex, setSelIndex] = useState(0);
   const [focused, setFocused] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
+  const [tagsCollapsed, setTagsCollapsed] = useState(false);
 
   useEffect(() => {
     try {
@@ -599,8 +638,60 @@ export function Sidebar({
         </div>
       </div>
 
+      {/* 标签浏览区：数据由 page.tsx 从已加载 metas 现算，零额外请求。
+          点击 chip = 按该标签筛选（再点一次取消）；仅在存在标签时渲染，
+          避免无标签用户看到一块空白区。 */}
+      {tagList && tagList.length > 0 && (
+        <div className="border-b border-line px-3 py-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] text-faint">标签</span>
+            <button
+              onClick={() => setTagsCollapsed((v) => !v)}
+              className="grid h-5 w-5 place-items-center rounded text-faint transition-colors hover:bg-hover hover:text-text"
+              title={tagsCollapsed ? "展开标签" : "收起标签"}
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={`transition-transform ${tagsCollapsed ? "" : "rotate-180"}`}
+              >
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+          </div>
+          {!tagsCollapsed && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1">
+              {tagList.map((t) => (
+                <button
+                  key={t.name}
+                  onClick={() =>
+                    activeTag === t.name ? clearTagFilter() : setTagFilter(t.name)
+                  }
+                  className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] transition-colors ${
+                    activeTag === t.name
+                      ? "bg-accent-solid text-white"
+                      : "bg-surface-2 text-muted hover:bg-accent-soft hover:text-accent"
+                  }`}
+                >
+                  <span>#{t.name}</span>
+                  <span className={activeTag === t.name ? "text-white/70" : "text-faint"}>
+                    {t.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto px-1.5 py-2">
-        {searchQuery.trim() !== "" ? (
+        {effectiveQuery !== "" ? (
           <div className="flex flex-col gap-0.5">
             <div className="flex flex-wrap items-center gap-1 px-1 py-1">
               {TYPE_FILTERS.map((t) => (
@@ -633,12 +724,12 @@ export function Sidebar({
               >
                 时间
               </button>
-              {searchTag && (
+              {activeTag && (
                 <button
-                  onClick={() => onSearchTagChange("")}
+                  onClick={clearTagFilter}
                   className="flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[12px] text-accent"
                 >
-                  #{searchTag}
+                  #{activeTag}
                   <span className="text-faint">×</span>
                 </button>
               )}
@@ -693,6 +784,11 @@ export function Sidebar({
                       __html: highlightKw(r.snippet, hlKw),
                     }}
                   />
+                  {r.summary && (
+                    <span className="line-clamp-1 text-[12px] text-muted">
+                      {r.summary}
+                    </span>
+                  )}
                   {(r.match_count ?? 0) > 0 && (
                     <span className="text-[11px] text-faint/80">
                       命中 {r.match_count} 处
@@ -705,7 +801,66 @@ export function Sidebar({
                           key={t}
                           onClick={(e) => {
                             e.stopPropagation();
-                            onSearchTagChange(t);
+                            setTagFilter(t);
+                          }}
+                          className="rounded bg-surface-2 px-1.5 py-px text-[11px] text-muted hover:bg-accent-soft hover:text-accent"
+                        >
+                          #{t}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : activeTag ? (
+          /* 标签浏览视图：无关键词时按标签列出文档。
+             数据来自 page.tsx 现算（tagDocs），不新增请求；
+             点文档直接打开，点文档上的其它标签 chip 可横向切换筛选。 */
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center justify-between px-2 py-1">
+              <span className="text-[12px] text-faint">
+                标签 <span className="text-accent">#{activeTag}</span> ·{" "}
+                {tagDocs?.length ?? 0} 篇
+              </span>
+              <button
+                onClick={clearTagFilter}
+                className="flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[12px] text-accent"
+              >
+                清除筛选
+                <span className="text-faint">×</span>
+              </button>
+            </div>
+            {(tagDocs?.length ?? 0) === 0 && (
+              <div className="px-2 py-6 text-center text-[13px] text-faint">
+                该标签下暂无文档
+              </div>
+            )}
+            {(tagDocs ?? []).map((d) => (
+              <button
+                key={d.id}
+                onClick={() => onOpenSearchResult(d.id)}
+                className="lift-x flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-hover"
+              >
+                <span className="mt-0.5 shrink-0 text-faint">
+                  <TypeIcon type={d.type} />
+                </span>
+                <span className="flex min-w-0 flex-col gap-1">
+                  <span className="truncate text-[16px] text-text">{d.title}</span>
+                  {d.summary && (
+                    <span className="line-clamp-1 text-[12px] text-muted">
+                      {d.summary}
+                    </span>
+                  )}
+                  {(d.tags?.length ?? 0) > 0 && (
+                    <span className="flex flex-wrap items-center gap-1">
+                      {d.tags!.map((t) => (
+                        <span
+                          key={t}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTagFilter(t);
                           }}
                           className="rounded bg-surface-2 px-1.5 py-px text-[11px] text-muted hover:bg-accent-soft hover:text-accent"
                         >
@@ -755,6 +910,9 @@ export function Sidebar({
               onMoveToKb={readOnly ? undefined : onMoveToKb}
               onImportToFolder={readOnly ? undefined : onImportToFolder}
               onDeleteSelected={readOnly ? undefined : onDeleteSelected}
+              onEditTags={readOnly ? undefined : onEditTags}
+              onGenerateSummary={readOnly ? undefined : onGenerateSummary}
+              onTagSelect={onTagSelect ? (t) => setTagFilter(t) : undefined}
             />
           </>
         )}

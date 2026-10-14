@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { CloseIcon, CheckIcon } from "./icons";
 import { Tooltip } from "./Tooltip";
 import { useModalFocus } from "@/lib/useModalFocus";
@@ -16,8 +16,11 @@ import {
   listCustomProviders,
   upsertCustomProvider,
   deleteCustomProvider,
+  getEmbeddingHealth,
+  repairEmbeddings,
   type AISettings,
   type CustomProvider,
+  type EmbeddingHealth,
 } from "@/lib/api";
 
 // 主流供应商预设（base_url 为 OpenAI 兼容端点）
@@ -229,6 +232,27 @@ export function SettingsDialog({
   const [pendingProviderChange, setPendingProviderChange] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<CustomProvider | null>(null);
 
+  // 向量健康（admin）：缺向量分片 = 语义检索盲区，可在此一键补算
+  const [vecHealth, setVecHealth] = useState<EmbeddingHealth | null>(null);
+  const [vecLoading, setVecLoading] = useState(false);
+  const [vecRepairing, setVecRepairing] = useState(false);
+  const [vecRepairMsg, setVecRepairMsg] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
+  const [vecError, setVecError] = useState<string | null>(null);
+
+  const loadVectorHealth = useCallback(() => {
+    setVecLoading(true);
+    setVecError(null);
+    getEmbeddingHealth()
+      .then(setVecHealth)
+      .catch((e) =>
+        setVecError(e instanceof Error ? e.message : "检测失败"),
+      )
+      .finally(() => setVecLoading(false));
+  }, []);
+
   // 遮罩关闭：只在「按下与抬起都在遮罩本身」时才关闭，
   // 避免拖选文字/下拉内容时 mouseup 落在遮罩上误触发关闭。
   const overlayDownOnSelf = useRef(false);
@@ -259,6 +283,36 @@ export function SettingsDialog({
       .catch((e) => setError(e instanceof Error ? e.message : "加载配置失败"))
       .finally(() => setLoading(false));
   }, [open]);
+
+  // 向量健康检测（admin）：独立 effect，与 AI 配置的加载态互不干扰
+  useEffect(() => {
+    if (!open || !isAdmin) return;
+    loadVectorHealth();
+  }, [open, isAdmin, loadVectorHealth]);
+
+  // 补算缺向量分片（admin，同步长任务：每批 10 个分片一次 API 调用）。
+  // 后端只写 vector IS NULL 的行 —— 重复执行不会覆盖已有向量。
+  const runRepairEmbeddings = () => {
+    setVecRepairing(true);
+    setVecRepairMsg(null);
+    repairEmbeddings()
+      .then((r) => {
+        setVecRepairMsg({
+          ok: true,
+          text: `已修复 ${r.repaired} 个分片（扫描 ${r.scanned}，剩余 ${r.remaining}${
+            r.failed ? `，失败 ${r.failed}` : ""
+          }）`,
+        });
+        loadVectorHealth();
+      })
+      .catch((e) =>
+        setVecRepairMsg({
+          ok: false,
+          text: e instanceof Error ? e.message : "修复失败",
+        }),
+      )
+      .finally(() => setVecRepairing(false));
+  };
 
   // 注意：所有 useState/useMemo/useEffect 等 Hook 必须在早退之前调用，
   // 否则会引起 Hook 顺序变化导致 React 卸载整个应用。
@@ -835,6 +889,76 @@ export function SettingsDialog({
               </div>
             )}
           </div>
+
+          {/* 向量健康（admin）：缺向量分片是语义检索的盲区 —— 接口 200、
+              无报错，但就是搜不到，所以在这里做成可观测 + 可一键修复。 */}
+          {isAdmin && (
+            <div className="mt-5 border-t border-line pt-4">
+              <div className="text-[13px] font-semibold text-muted">向量健康</div>
+              <div className="mt-2 rounded-lg border border-line bg-surface px-3 py-2.5">
+                {vecLoading ? (
+                  <div className="py-1 text-[13px] text-faint">检测中…</div>
+                ) : vecHealth ? (
+                  <>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div
+                          className={`text-[14px] ${
+                            vecHealth.supported && vecHealth.missing > 0
+                              ? "text-danger"
+                              : "text-text"
+                          }`}
+                        >
+                          {vecHealth.supported
+                            ? vecHealth.missing === 0
+                              ? "全部分片已向量化"
+                              : `${vecHealth.missing} 个分片缺少向量`
+                            : "当前存储不统计缺向量"}
+                        </div>
+                        <div className="mt-0.5 text-[12px] text-faint">
+                          向量服务{vecHealth.embedding_available ? "可用" : "未配置"} ·
+                          存储 {vecHealth.backend === "db" ? "PostgreSQL" : "JSON"}
+                          {vecHealth.supported && vecHealth.missing > 0
+                            ? " · 缺向量的分片无法被语义检索与 AI 问答命中"
+                            : ""}
+                          {!vecHealth.supported
+                            ? " · JSON 模式无法修复，请配置 PostgreSQL"
+                            : ""}
+                          {vecHealth.supported &&
+                          vecHealth.missing > 0 &&
+                          !vecHealth.embedding_available
+                            ? " · 需先在上方配置 Embedding 才能补算"
+                            : ""}
+                        </div>
+                      </div>
+                      {vecHealth.supported &&
+                        vecHealth.missing > 0 &&
+                        vecHealth.embedding_available && (
+                          <button
+                            onClick={runRepairEmbeddings}
+                            disabled={vecRepairing}
+                            className="h-8 shrink-0 rounded-md bg-accent-solid px-3 text-[12px] text-white hover:bg-accent-solid-hover disabled:opacity-50"
+                          >
+                            {vecRepairing ? "修复中…" : `修复 ${vecHealth.missing} 个`}
+                          </button>
+                        )}
+                    </div>
+                    {vecRepairMsg && (
+                      <div
+                        className={`mt-1.5 text-[12px] ${
+                          vecRepairMsg.ok ? "text-accent" : "text-danger"
+                        }`}
+                      >
+                        {vecRepairMsg.text}
+                      </div>
+                    )}
+                  </>
+                ) : vecError ? (
+                  <div className="text-[12px] text-danger">{vecError}</div>
+                ) : null}
+              </div>
+            </div>
+          )}
 
           <div className="mt-4 text-[13px] font-semibold text-muted">关于</div>
           <div className="mt-2 rounded-lg border border-line bg-surface px-3 py-3">

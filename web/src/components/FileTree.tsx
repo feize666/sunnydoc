@@ -52,11 +52,29 @@ function ExportIcon({ size = 13 }: { size?: number }) {
   );
 }
 
-function KbIcon({ size = 14 }: { size?: number }) {
+function KbIcon({ size = 14, className }: { size?: number; className?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
       <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </svg>
+  );
+}
+
+function TagIcon({ size = 13 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+      <circle cx="7" cy="7" r="1.5" />
+    </svg>
+  );
+}
+
+function SparkleIcon({ size = 13 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3l1.9 5.8L19.7 10l-5.8 1.9L12 17.7l-1.9-5.8L4.3 10l5.8-1.2L12 3z" />
+      <path d="M19 15l.9 2.6L22.5 18.5l-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 15z" />
     </svg>
   );
 }
@@ -174,6 +192,9 @@ function FileTreeNode({
   onPinFolder,
   onExportDoc,
   onImportToFolder,
+  onEditTags,
+  onGenerateSummary,
+  onTagSelect,
   onReorder,
   selectionMode = false,
   selected,
@@ -198,6 +219,12 @@ function FileTreeNode({
   onPinFolder?: (folderId: string, nextPinned: boolean) => void;
   onExportDoc?: (docId: string) => void;
   onImportToFolder?: (folderId: string, folderName: string) => void;
+  /** 编辑文档标签（打开 TagsDialog） */
+  onEditTags?: (docId: string) => void;
+  /** 生成/重新生成 AI 摘要 */
+  onGenerateSummary?: (docId: string) => void;
+  /** 点击行内标签徽标：按该标签筛选侧栏 */
+  onTagSelect?: (tag: string) => void;
   onReorder?: (
     draggedKey: string,
     draggedKind: "folder" | "file",
@@ -423,6 +450,9 @@ function FileTreeNode({
                 onPinFolder={onPinFolder}
                 onExportDoc={onExportDoc}
                 onImportToFolder={onImportToFolder}
+                onEditTags={onEditTags}
+                onGenerateSummary={onGenerateSummary}
+                onTagSelect={onTagSelect}
                 onReorder={onReorder}
                 selectionMode={selectionMode}
                 selected={selected}
@@ -455,6 +485,9 @@ function FileTreeNode({
   if (onDuplicateDoc && node.key) {
     docItems.push({ label: "复制", icon: <CopyIcon size={14} />, onClick: () => onDuplicateDoc(node.key!) });
   }
+  if (onEditTags && node.key) {
+    docItems.push({ label: "标签…", icon: <TagIcon size={13} />, onClick: () => onEditTags(node.key!) });
+  }
   if (onPinDoc && node.key) {
     docItems.push({
       label: node.pinned ? "取消置顶" : "置顶",
@@ -464,6 +497,13 @@ function FileTreeNode({
   }
   if (onExportDoc && node.key) {
     docItems.push({ label: "导出", icon: <ExportIcon size={13} />, onClick: () => onExportDoc(node.key!) });
+  }
+  if (onGenerateSummary && node.key) {
+    docItems.push({
+      label: node.summary ? "重新生成摘要" : "生成 AI 摘要",
+      icon: <SparkleIcon size={13} />,
+      onClick: () => onGenerateSummary(node.key!),
+    });
   }
   if (onRequestDeleteDoc && node.key) {
     docItems.push({ label: "删除", icon: <TrashIcon size={14} />, danger: true, onClick: () => onRequestDeleteDoc(node) });
@@ -488,6 +528,7 @@ function FileTreeNode({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      title={node.summary ? `摘要：${node.summary}` : undefined}
       className={`group relative flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-left text-[16px] transition-colors ${
         active && !selectionMode ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"
       } ${dropClass} ${isSelected ? "bg-accent-soft" : ""}`}
@@ -514,6 +555,35 @@ function FileTreeNode({
       )}
       <FileIcon size={16} className={`shrink-0 ${active && !selectionMode ? "text-accent" : "text-faint"}`} />
       <span className="min-w-0 flex-1 truncate">{node.name}</span>
+
+      {/* 行内标签徽标：最多 2 个 + 溢出计数。点击按该标签筛选侧栏。
+          中文标签同样守 11px 字号下限（UI 规格纪律）。 */}
+      {(node.tags?.length ?? 0) > 0 && (
+        <span className="flex shrink-0 items-center gap-1">
+          {node.tags!.slice(0, 2).map((t) => (
+            <span
+              key={t}
+              title={onTagSelect ? `按标签「${t}」筛选` : t}
+              onClick={
+                onTagSelect
+                  ? (e) => {
+                      e.stopPropagation();
+                      onTagSelect(t);
+                    }
+                  : undefined
+              }
+              className={`rounded bg-surface-2 px-1.5 py-px text-[11px] text-muted ${
+                onTagSelect ? "cursor-pointer hover:bg-accent-soft hover:text-accent" : ""
+              }`}
+            >
+              {t}
+            </span>
+          ))}
+          {node.tags!.length > 2 && (
+            <span className="text-[11px] text-faint">+{node.tags!.length - 2}</span>
+          )}
+        </span>
+      )}
 
       {node.pinned && <PinIcon size={12} filled className="shrink-0 text-accent" />}
 
@@ -559,6 +629,9 @@ export function FileTree({
   onPinFolder,
   onExportDoc,
   onImportToFolder,
+  onEditTags,
+  onGenerateSummary,
+  onTagSelect,
   onDeleteSelected,
 }: {
   data: TreeNode[];
@@ -579,6 +652,12 @@ export function FileTree({
   onPinFolder?: (folderId: string, nextPinned: boolean) => void;
   onExportDoc?: (docId: string) => void;
   onImportToFolder?: (folderId: string, folderName: string) => void;
+  /** 编辑文档标签（打开 TagsDialog） */
+  onEditTags?: (docId: string) => void;
+  /** 生成/重新生成 AI 摘要 */
+  onGenerateSummary?: (docId: string) => void;
+  /** 点击行内标签徽标：按该标签筛选侧栏 */
+  onTagSelect?: (tag: string) => void;
   /** 批量删除选中项；返回实际删除数量（用于决定提示文案）。 */
   onDeleteSelected?: (docIds: string[], folderIds: string[]) => Promise<number>;
 }) {
@@ -743,6 +822,9 @@ export function FileTree({
             onPinFolder={onPinFolder}
             onExportDoc={onExportDoc}
             onImportToFolder={onImportToFolder}
+            onEditTags={onEditTags}
+            onGenerateSummary={onGenerateSummary}
+            onTagSelect={onTagSelect}
             onReorder={canReorder && !selectionMode ? handleReorder : undefined}
             selectionMode={selectionMode}
             selected={selectedKeys}

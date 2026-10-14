@@ -889,6 +889,59 @@ def list_all_tags(user_id: str | None = None) -> list[str]:
     return sorted(all_tags)
 
 
+# ---------- 向量健康：缺向量分片的治理（2026-10-14） ----------
+#
+# 背景：`store._build_chunks` 在 embedding 失败时会静默写入无向量分片，
+# 实测曾导致 2 篇文档 460 个分片长期没有向量 —— AI 问答对这 2 篇只剩
+# 关键词检索，语义召回完全缺席，且**没有任何地方能发现**。
+# 治理分两层：① 这里提供原子操作；② store.repair_missing_vectors 编排，
+# 由 admin 端点或 scripts/repair_missing_vectors.py 驱动。
+
+def count_missing_vectors() -> int:
+    """缺向量（vector IS NULL）的分片数 —— AI 语义检索的盲区大小。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM chunks WHERE vector IS NULL")
+        return int(cur.fetchone()[0])
+
+
+def missing_vector_chunks(limit: int = 2000) -> list[dict[str, Any]]:
+    """列出缺向量的分片，按文档聚合（同篇连续，便于归属与复核）。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT doc_id, segment_index, text FROM chunks"
+            " WHERE vector IS NULL ORDER BY doc_id, segment_index LIMIT %s",
+            (limit,),
+        )
+        return [
+            {"doc_id": r[0], "segment_index": int(r[1]), "text": r[2]}
+            for r in cur.fetchall()
+        ]
+
+
+def set_chunk_vectors(rows: list[tuple[str, int, list[float]]]) -> int:
+    """按 (doc_id, segment_index) 补写向量，**只写 vector IS NULL 的行**。
+
+    重复执行不会覆盖已有向量 —— 方向安全（与 repair_vector_mismatch.py
+    同一纪律）。返回实际写入行数。
+    """
+    if not rows:
+        return 0
+    conn = _connect()
+    n = 0
+    with conn.transaction():
+        with conn.cursor() as cur:
+            for doc_id, seg, vec in rows:
+                cur.execute(
+                    "UPDATE chunks SET vector = %s"
+                    " WHERE doc_id = %s AND segment_index = %s AND vector IS NULL",
+                    (_vec_to_str(vec), doc_id, seg),
+                )
+                n += cur.rowcount
+    return n
+
+
 def search_backlinks(
     title: str, exclude_doc_id: str, user_id: str | None = None, kb_ids: set[str] | None = None
 ) -> list[dict[str, Any]]:

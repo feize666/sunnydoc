@@ -1155,6 +1155,9 @@ def search_documents(
                 "source": d.get("source"),
                 "type": d.get("type", "doc"),
                 "tags": d.get("tags") or [],
+                # 摘要随搜索结果下发（2026-10-14）：列表/结果行可直接展示，
+                # 不必再逐篇拉详情。没有摘要时为 None，前端不渲染该行。
+                "summary": d.get("summary"),
                 "created_at": d.get("created_at"),
             }
         )
@@ -2316,6 +2319,46 @@ def get_stats(current_user: dict = Depends(get_current_user)):
         "docs_by_kb": docs_by_kb,
         "top_tags": top_tags,
     }
+
+
+# ---------- 向量健康（admin） ----------
+
+@router.get("/admin/embedding-health")
+def embedding_health(admin: dict = Depends(require_admin)):
+    """缺向量分片数（AI 语义检索盲区）+ embedding 可用性 + 存储后端。"""
+    from app.services import embedding
+
+    health: dict[str, Any] = {
+        "embedding_available": embedding.available(),
+        "backend": store._backend,
+    }
+    if store._backend == "db":
+        health["supported"] = True
+        health["missing"] = db.count_missing_vectors()
+    else:
+        health["supported"] = False
+        health["missing"] = 0
+    return health
+
+
+@router.post("/admin/repair-embeddings")
+def repair_embeddings(admin: dict = Depends(require_admin)):
+    """补算缺向量的分片（admin）。
+
+    只写 `vector IS NULL` 的行，重复执行不会覆盖已有向量（方向安全）。
+    大批量时是同步长任务（每批 10 个分片一次 API 调用），默认上限 2000。
+    """
+    result = store.repair_missing_vectors()
+    if not result.get("supported"):
+        raise HTTPException(status_code=400, detail="当前存储后端不支持向量修复（仅 PostgreSQL）")
+    _audit(
+        admin,
+        "embedding_repair",
+        "system",
+        None,
+        f"补算向量：扫描 {result['scanned']}，修复 {result['repaired']}，剩余 {result['remaining']}",
+    )
+    return result
 
 
 # ---------- 操作审计日志 ----------

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { TitleBar } from "@/components/TitleBar";
 import { Sidebar } from "@/components/Sidebar";
 import { Editor } from "@/components/Editor";
@@ -36,6 +36,7 @@ import type { NodeType } from "@/components/NewNodeMenu";
 import type { Doc, TreeNode, SortBy } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
 import { buildTree } from "@/lib/buildTree";
+import { parseTagQuery } from "@/lib/tagQuery";
 import { ImportIcon, FolderIcon, RefreshIcon, SearchIcon, SunIcon, MoonIcon, SettingsIcon } from "@/components/icons";
 import {
   listDocuments,
@@ -202,6 +203,9 @@ export default function Home() {
   const [aiOpen, setAiOpen] = useState(false);
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
+  /** 标签对话框的目标文档：从文件树菜单打开时是非当前文档，
+   *  从编辑器顶栏打开时为 null（回退到 activeKey）。 */
+  const [tagsDocId, setTagsDocId] = useState<string | null>(null);
   const [versionOpen, setVersionOpen] = useState(false);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -613,9 +617,34 @@ export default function Home() {
     return () => window.removeEventListener("sunnydoc:open-doc", onOpen);
   }, [openDoc]);
 
+  /**
+   * 搜索框输入：消费 `tag:xxx` 语法（见 lib/tagQuery.ts）。
+   *
+   * 只在「token 后跟空白」（用户已打完标签名、刚敲了空格）时提取——
+   * 边打边清会把正在输入的内容吃掉（敲到 "tag:f" 框就空了，再也打不出 "foo"）。
+   * 没打完时 token 留在框里，由搜索 effect 与侧栏 activeTag 兜底。
+   */
+  const handleSearchInput = useCallback((q: string) => {
+    const { q: bare, tag } = parseTagQuery(q);
+    if (tag && /\s$/.test(q)) {
+      setSearchTag(tag);
+      setSearchQuery(bare);
+    } else {
+      setSearchQuery(q);
+    }
+  }, []);
+
   // 全文搜索（防抖 300ms，支持类型/标签过滤 + 排序）
+  //
+  // `tag:xxx` 语法在此落地：剥离标签 token 后用剩下的词检索。
+  // 两段式同步（先 setSearchTag、effect 因依赖变化重跑再搜）不会循环：
+  // 第二跑时 tagFromQuery === searchTag，不再 set。
   useEffect(() => {
-    const q = searchQuery.trim();
+    const { q, tag: tagFromQuery } = parseTagQuery(searchQuery);
+    if (tagFromQuery && tagFromQuery !== searchTag) {
+      setSearchTag(tagFromQuery);
+      return;
+    }
     if (!q) {
       setSearchResults([]);
       setSearching(false);
@@ -1156,6 +1185,25 @@ export default function Home() {
   // 构建多级文件树
   const tree: TreeNode[] = buildTree(metas, folders, sortBy);
 
+  // 标签浏览数据：从已加载的 metas 现算，不新增任何请求。
+  // （后端 GET /tags 只被标签对话框的自动补全用；侧栏要的是「标签 + 计数」，
+  //   现算比多一次请求更稳，也不会与 metas 出现时间差。）
+  const tagList = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const m of metas) {
+      for (const t of m.tags ?? []) counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }, [metas]);
+
+  // 当前选中标签下的文档（侧栏「标签浏览视图」用；空标签 = 空列表）
+  const tagDocs = useMemo(
+    () => (searchTag ? metas.filter((m) => (m.tags ?? []).includes(searchTag)) : []),
+    [metas, searchTag],
+  );
+
   const activeDoc = activeKey ? docs[activeKey] ?? null : null;
   const wordCount = activeDoc ? countWords(activeDoc.body) : 0;
   const currentKb = kbs.find((k) => k.id === currentKbId) ?? null;
@@ -1252,11 +1300,19 @@ export default function Home() {
     listError,
     kbName: currentKb?.name,
     searchQuery,
-    onSearchChange: setSearchQuery,
+    onSearchChange: handleSearchInput,
     searchType,
     onSearchTypeChange: setSearchType,
     searchTag,
     onSearchTagChange: setSearchTag,
+    tagList,
+    tagDocs,
+    onEditTags: (docId: string) => {
+      setTagsDocId(docId);
+      setTagsOpen(true);
+    },
+    onGenerateSummary: handleGenerateSummary,
+    onTagSelect: setSearchTag,
     searchSort,
     onSearchSortChange: setSearchSort,
     searchResults,
@@ -1523,9 +1579,14 @@ export default function Home() {
 
       <TagsDialog
         open={tagsOpen}
-        docId={activeKey}
-        initialTags={activeMeta?.tags ?? []}
-        onClose={() => setTagsOpen(false)}
+        docId={tagsDocId ?? activeKey}
+        initialTags={
+          metas.find((m) => m.id === (tagsDocId ?? activeKey))?.tags ?? []
+        }
+        onClose={() => {
+          setTagsOpen(false);
+          setTagsDocId(null);
+        }}
         onSaved={() => refreshList()}
       />
 

@@ -148,10 +148,13 @@ function _describeDetail(detail: unknown, status: number): string {
   return `请求失败（${status}）`;
 }
 
-export async function listDocuments(kbId?: string | null): Promise<DocMeta[]> {
-  const qs = kbId ? `?kb_id=${encodeURIComponent(kbId)}` : "";
+export async function listDocuments(kbId?: string | null, tag?: string | null): Promise<DocMeta[]> {
+  const params = new URLSearchParams();
+  if (kbId) params.set("kb_id", kbId);
+  if (tag) params.set("tag", tag);
+  const qs = params.toString();
   const data = await request<{ total: number; documents: DocMeta[] }>(
-    `/documents${qs}`,
+    `/documents${qs ? `?${qs}` : ""}`,
   );
   return Array.isArray(data?.documents) ? data.documents : [];
 }
@@ -167,6 +170,8 @@ export interface SearchResult {
   source?: string;
   type?: string;
   tags?: string[];
+  /** AI 摘要（2026-10-14 起随搜索下发；未生成时为 null） */
+  summary?: string | null;
   created_at?: number;
 }
 
@@ -614,6 +619,34 @@ export async function generateSummary(docId: string): Promise<string> {
     method: "POST",
   });
   return data.summary;
+}
+
+/** 向量健康（admin）：缺向量分片数 = AI 语义检索的盲区。 */
+export interface EmbeddingHealth {
+  embedding_available: boolean;
+  backend: string;
+  supported: boolean;
+  missing: number;
+}
+
+export async function getEmbeddingHealth(): Promise<EmbeddingHealth> {
+  return request<EmbeddingHealth>("/admin/embedding-health");
+}
+
+/** 补算缺向量分片（admin）。只写 vector IS NULL 的行，重复执行安全。 */
+export interface RepairEmbeddingsResult {
+  supported: boolean;
+  scanned: number;
+  repaired: number;
+  remaining: number;
+  failed: number;
+  docs: string[];
+}
+
+export async function repairEmbeddings(): Promise<RepairEmbeddingsResult> {
+  return request<RepairEmbeddingsResult>("/admin/repair-embeddings", {
+    method: "POST",
+  });
 }
 
 export type AIAssistAction =
