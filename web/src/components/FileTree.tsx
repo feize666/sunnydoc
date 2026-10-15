@@ -564,6 +564,8 @@ function FileTreeNode({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      data-tree-key={node.key ?? node.name}
+      data-tree-kind="doc"
       title={node.summary ? `摘要：${node.summary}` : undefined}
       className={`group relative flex w-full cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-left text-[16px] transition-colors ${
         active && !selectionMode ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"

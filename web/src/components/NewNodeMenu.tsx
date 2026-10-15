@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
 /**
@@ -46,10 +46,14 @@ interface TypeDef {
 
 const TYPES: TypeDef[] = [
   { type: "doc", label: "文档", desc: "富文本笔记", color: "#3b82f6", available: true, icon: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z|M14 2v6h6" },
-  { type: "table", label: "表格", desc: "行列数据", color: "#22c55e", available: true, icon: "M3 3h18v18H3z|M3 9h18|M3 15h18|M9 3v18|M15 3v18" },
+  // 表格 vs 数据表必须一眼分清（P1-2 / 缺陷 D3）：
+  //   表格 = 文档里嵌一张表，纯行列 + 简单公式（=SUM(A1:B2)）
+  //   数据表 = 独立的结构化数据管理，有列类型（数字/日期/单选）与筛选
+  // 文案必须写出「能力差异」而不是「行列数据 / 结构化数据」这种同义反复。
+  { type: "table", label: "表格", desc: "文档内嵌表 · 支持公式", color: "#22c55e", available: true, icon: "M3 3h18v18H3z|M3 9h18|M3 15h18|M9 3v18|M15 3v18" },
   { type: "folder", label: "目录", desc: "分类整理", color: "#f97316", available: true, icon: "M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" },
   { type: "board", label: "画板", desc: "自由绘制", color: "#a855f7", available: true, icon: "M3 3h18v18H3z|M7 16l4-4 3 2 4-5" },
-  { type: "datasheet", label: "数据表", desc: "结构化数据", color: "#0ea5e9", available: true, icon: "M4 5h16v14H4z|M4 9h16|M9 9v10" },
+  { type: "datasheet", label: "数据表", desc: "列类型 + 筛选", color: "#0ea5e9", available: true, icon: "M4 5h16v14H4z|M4 9h16|M9 9v10" },
   { type: "mindmap", label: "思维导图", desc: "梳理思路", color: "#ec4899", available: true, icon: "M12 4v16M12 8H5M12 14h7" },
   { type: "flowchart", label: "流程图", desc: "流程可视化", color: "#6366f1", available: true, icon: "M12 2l6 8-6 8-6-8z|M12 6v4M12 14v4" },
   { type: "slides", label: "幻灯片", desc: "演示文稿", color: "#ef4444", available: false, icon: "M3 5h18v12H3z|M3 9h18|M9 9v8" },
@@ -94,6 +98,21 @@ export function NewNodeMenu({
     }
   }, [anchorRef, align]);
 
+  // ESC 关闭。菜单 portal 到 body，只绑了遮罩 onClick —— 纯键盘用户按 ESC 关不掉，
+  // 且残留的遮罩（fixed inset-0）会吞掉后续所有点击。
+  // 全站其它浮层（TagsDialog / CommandPalette / 编辑器浮层）都支持 ESC，这里补齐一致性。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    // 捕获阶段：抢在编辑器/画布的 ESC 处理之前关掉菜单
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+
   if (typeof document === "undefined") return null;
 
   const menu = (
@@ -136,7 +155,10 @@ export function NewNodeMenu({
                   </span>
                 )}
               </span>
-              <span className="mt-0.5 block text-[11px] text-faint">{t.desc}</span>
+              {/* desc 限一行：2 列网格里若某张卡片换行，整行高度参差、扫读节奏被打断。
+                「表格 vs 数据表」的差异靠措辞承载（内嵌表/公式 vs 列类型/筛选），
+                不靠堆字数 —— 因此这里禁溢出而不是放开换行。 */}
+              <span className="mt-0.5 block truncate text-[11px] text-faint">{t.desc}</span>
             </span>
           </button>
         ))}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { PORTAL_MENU_ATTR } from "./NewNodeMenu";
 
@@ -43,6 +43,19 @@ export function TreeNodeMenu({
       setPos(null);
     }
   }, [anchorRef, items.length]);
+
+  // ESC 关闭（与 NewNodeMenu 同理）：portal 菜单只绑了遮罩 onClick，
+  // 纯键盘无法关闭；残留遮罩会吞掉后续点击。全站浮层统一支持 ESC。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
 
   if (typeof document === "undefined") return null;
 

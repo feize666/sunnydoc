@@ -393,6 +393,9 @@ export function HomeView({
                   <button
                     key={kb.id}
                     onClick={() => onOpenKb(kb.id)}
+                    data-testid="kb-card"
+                    data-kb-id={kb.id}
+                    data-kb-name={kb.name}
                     className="lift group relative flex flex-col gap-2.5 overflow-hidden rounded-xl border border-line bg-background p-4 text-left shadow-sm hover:border-accent/40 hover:shadow-glow"
                   >
                     {/* hover 时顶部浮现渐变装饰条 */}
