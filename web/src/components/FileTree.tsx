@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import type { TreeNode } from "@/data/docs";
 import type { Folder } from "@/lib/api";
 import {
@@ -192,6 +192,16 @@ function FileTreeNode({
   onPinFolder,
   onExportDoc,
   onImportToFolder,
+  /**
+   * 批量展开/折叠：
+   *  - undefined: 每个节点用自身默认（depth===0 默认展开，其他默认折叠）
+   *  - true:       全部展开（用户点过「全部展开」）
+   *  - false:      全部折叠（用户点过「全部折叠」）
+   * 配合 batchedAt：每次切换 batchedAll 都会带新 timestamp，让 useState 重新 init。
+   * 用户单独点开/收某个节点时，临时脱离批量控制（用 useRef 标记「用户已手动操作过」）。
+   */
+  batchedAll,
+  batchedAt,
   onEditTags,
   onGenerateSummary,
   onTagSelect,
@@ -237,8 +247,14 @@ function FileTreeNode({
   onToggleSelect?: (key: string, kind: SelectionKind, node: TreeNode) => void;
   siblings?: TreeNode[];
   depth?: number;
+  batchedAll?: boolean;
+  batchedAt?: number;
 }) {
-  const [open, setOpen] = useState(depth === 0);
+  // 默认折叠所有节点（与侧栏截图一致：所有节点都是「>」折叠状态）。
+  // 仅在「用户对当前知识库点过一次展开」后才展开根节点 —— 这个状态由 batchedAll
+  // 与 batchedAt 协调（见下）。
+  const [userToggled, setUserToggled] = useState(false);
+  const [open, setOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -246,6 +262,17 @@ function FileTreeNode({
   const dropPosRef = useRef<DropPos | null>(null);
   const addBtnRef = useRef<HTMLButtonElement | null>(null);
   const menuBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  // 外部"批量"控制：把 useState 拉到外面用一个 derived 状态来对齐。
+  // 关键设计：每次 batchedAt 变化，batchedAll 才会"生效"一次。
+  //   - batchedAll=undefined：按节点自身 userToggled 自治
+  //   - batchedAll=true/false 且 userToggled=false：用 batchedAll 覆盖
+  //   - batchedAll=true/false 且 userToggled=true：用户偏好优先（不再跟随批量）
+  useEffect(() => {
+    if (batchedAll === undefined) return;
+    if (!userToggled) setOpen(batchedAll);
+    // 这里不重置 userToggled —— 一旦用户动过某节点，就永久脱离批量控制。
+  }, [batchedAll, batchedAt, userToggled]);
 
   const canDrag = !!onReorder;
   const isFolder = node.type === "folder";
@@ -369,6 +396,9 @@ function FileTreeNode({
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
+          data-tree-key={node.key ?? node.name}
+          data-tree-kind="folder"
+          data-open={open ? "1" : "0"}
           className={`tree-row group relative flex w-full items-center gap-1 rounded-md py-1 text-left text-[16px] transition-colors ${
             dropPos === "inside" ? "bg-accent-soft ring-1 ring-inset ring-accent" : "text-text hover:bg-hover"
           } ${dropClass} ${isSelected ? "bg-accent-soft" : ""}`}
@@ -394,7 +424,11 @@ function FileTreeNode({
               if (!node.key) return;
               // 未进入多选时保持原行为（展开/收起）；已有多选时点行即切换选中。
               if (selectionMode && onToggleSelect) onToggleSelect(node.key, "folder", node);
-              else setOpen((v) => !v);
+              else {
+                // 标记「用户已手动操作」：脱离后续批量覆盖，保留用户偏好。
+                setUserToggled(true);
+                setOpen((v) => !v);
+              }
             }}
             className="flex min-w-0 flex-1 items-center gap-1.5"
             style={{ paddingLeft: SELECT_GUTTER }}
@@ -459,6 +493,8 @@ function FileTreeNode({
                 onToggleSelect={onToggleSelect}
                 siblings={node.children}
                 depth={depth + 1}
+                batchedAll={batchedAll}
+                batchedAt={batchedAt}
               />
             ))}
           </div>
@@ -633,6 +669,8 @@ export function FileTree({
   onGenerateSummary,
   onTagSelect,
   onDeleteSelected,
+  batchedAll,
+  batchedAt,
 }: {
   data: TreeNode[];
   activeKey: string | null;
@@ -660,6 +698,14 @@ export function FileTree({
   onTagSelect?: (tag: string) => void;
   /** 批量删除选中项；返回实际删除数量（用于决定提示文案）。 */
   onDeleteSelected?: (docIds: string[], folderIds: string[]) => Promise<number>;
+  /**
+   * 批量展开/折叠控制（侧栏「全部展开 / 全部折叠」按钮用）：
+   *  - undefined: 不强制
+   *  - true / false: 强制应用一次；用户对单节点手动操作后会被忽略
+   *  - batchedAt: 触发新应用的 timestamp（不传则用 useEffect 的旧 closure）
+   */
+  batchedAll?: boolean;
+  batchedAt?: number;
 }) {
   const [pendingDeleteDoc, setPendingDeleteDoc] = useState<TreeNode | null>(null);
   const [pendingDeleteFolder, setPendingDeleteFolder] = useState<TreeNode | null>(null);
@@ -830,6 +876,8 @@ export function FileTree({
             selected={selectedKeys}
             onToggleSelect={toggleSelect}
             siblings={data}
+            batchedAll={batchedAll}
+            batchedAt={batchedAt}
           />
         ))}
       </nav>

@@ -212,6 +212,13 @@ export default function Home() {
   const [tagsDocId, setTagsDocId] = useState<string | null>(null);
   const [versionOpen, setVersionOpen] = useState(false);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
+  // 文档树批量展开/折叠：null=未控制（用户自由态，每个节点按自身默认）；
+  // true=全部展开；false=全部折叠。每次切换 +1 timestamp 让 FileTree useEffect 重跑。
+  // 默认折叠所有节点（截图所示：所有节点都是「>」折叠状态，一行不展开）。
+  // 注：此处不用 localStorage 持久化——「折叠/展开」是临时的视线状态，不该污染
+  // 知识库的结构；切 KB / 切标签 / 拖动重排等都需要重置。
+  const [batchedAll, setBatchedAll] = useState<boolean | null>(null);
+  const [batchedAt, setBatchedAt] = useState(0);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [annotateQuote, setAnnotateQuote] = useState<string | null>(null);
   /** 划词批注的锚点（随引用文本一起产生，用于正文回定位） */
@@ -1037,6 +1044,25 @@ export default function Home() {
     refreshStats();
   }, [refreshKbs, refreshRecent, refreshFavorites, refreshStats]);
 
+  /**
+   * 文档树「全部展开 / 全部折叠」。
+   *
+   * 三态循环：null（未控制，默认折叠）→ true（全部展开）→ false（全部折叠）→ …
+   * 但按钮语义更简单：**点一下就在「展开」与「折叠」间切换**。
+   * batchedAt 每次都 +1，因为 true→false 时 batchedAll 变化已足够触发 effect，
+   * 但 false→true 再 false 时 React 会做浅比较；用 timestamp 保证每次都真正应用。
+   */
+  const handleToggleBatchedAll = useCallback(() => {
+    setBatchedAll((v) => (v === true ? false : true));
+    setBatchedAt((t) => t + 1);
+  }, []);
+
+  // 切换知识库 / 回到首页时重置批量态 —— 避免上一个 KB 的展开偏好「串味」到下一个。
+  useEffect(() => {
+    setBatchedAll(null);
+    setBatchedAt((t) => t + 1);
+  }, [currentKbId]);
+
   // 从最近浏览打开文档
   const openRecent = useCallback(
     (docId: string, kbId: string | null) => {
@@ -1380,6 +1406,10 @@ export default function Home() {
     onSortChange: setSortBy,
     readOnly,
     onOpenTrash: handleOpenTrash,
+    // 文档树批量展开/折叠（用户要求：默认折叠，支持一键展开/折叠）
+    batchedAll,
+    batchedAt,
+    onToggleBatchedAll: handleToggleBatchedAll,
   };
 
   return (

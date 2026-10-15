@@ -133,6 +133,14 @@ export function Sidebar({
   onPinFolder,
   onExportDoc,
   onImportToFolder,
+  /**
+   * 文档树批量展开/折叠的状态。null 表示未控制（用户自由态）。
+   * Sidebar 把这个状态透传给 FileTree —— FileTree 内部用 useEffect 把批量值
+   * 应用到每个节点，但「用户单独点过某节点」会让该节点脱离批量控制。
+   */
+  batchedAll,
+  batchedAt,
+  onToggleBatchedAll,
   listError,
   kbName,
   searchQuery,
@@ -186,6 +194,15 @@ export function Sidebar({
   onPinFolder?: (folderId: string, nextPinned: boolean) => void;
   onExportDoc?: (docId: string) => void;
   onImportToFolder?: (folderId: string, folderName: string) => void;
+  /** 批量展开/折叠：null=未控制；true=展开全部；false=折叠全部 */
+  batchedAll?: boolean | null;
+  /** 切换批量展开/折叠：参数是「下一个目标态」 */
+  onToggleBatchedAll?: () => void;
+  /**
+   * 每次切批量态时 +1（让 FileTree 内部 useEffect 重新触发；batchedAll=true/false
+   * 看起来一样但用 timestamp 区分「用户期望再应用一次」）。
+   */
+  batchedAt?: number;
   listError?: string | null;
   kbName?: string;
   onOpenTrash?: () => void;
@@ -414,6 +431,51 @@ export function Sidebar({
                     strokeLinejoin="round"
                   >
                     <path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
+                  </svg>
+                </button>
+              </Tooltip>
+            )}
+            {/* 「全部展开 / 全部折叠」切换：
+                - 当前未控制（batchedAll=null）：按钮文案「全部展开」
+                - 当前批量展开（batchedAll=true）：按钮高亮 + 切到「全部折叠」
+                - 当前批量折叠（batchedAll=false）：按钮高亮 + 切到「全部展开」
+                三角双箭头图标在「未控制」与「折叠」下指右（点 → 展开）；
+                在「展开」下指下（点 → 折叠）。 */}
+            {onToggleBatchedAll && (
+              <Tooltip
+                content={
+                  batchedAll === true
+                    ? "全部折叠（按住以恢复默认）"
+                    : batchedAll === false
+                      ? "全部展开"
+                      : "全部展开"
+                }
+              >
+                <button
+                  onClick={onToggleBatchedAll}
+                  data-testid="toggle-batched-all"
+                  aria-pressed={batchedAll === true}
+                  className={`grid h-6 w-6 place-items-center rounded-md transition-colors hover:bg-hover ${
+                    batchedAll === true
+                      ? "text-accent"
+                      : "text-faint hover:text-text"
+                  }`}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    // batchedAll=true 时旋转 90°（指针向下 → 表示已展开，提示点击会折叠）
+                    style={{ transform: batchedAll === true ? "rotate(90deg)" : undefined }}
+                  >
+                    {/* 双三角：外"<<"  内">>*/}
+                    <path d="M7 8l-4 4 4 4" />
+                    <path d="M17 8l4 4-4 4" />
                   </svg>
                 </button>
               </Tooltip>
@@ -913,6 +975,8 @@ export function Sidebar({
               onEditTags={readOnly ? undefined : onEditTags}
               onGenerateSummary={readOnly ? undefined : onGenerateSummary}
               onTagSelect={onTagSelect ? (t) => setTagFilter(t) : undefined}
+              batchedAll={batchedAll === null || batchedAll === undefined ? undefined : batchedAll}
+              batchedAt={batchedAt}
             />
           </>
         )}
