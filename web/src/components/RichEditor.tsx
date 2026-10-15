@@ -13,6 +13,7 @@ import { Markdown } from "tiptap-markdown";
 import { uploadImage, uploadAttachment, aiAssist, createDocument, type AIAssistAction } from "@/lib/api";
 import { mediaUrl } from "@/lib/markdown";
 import { DocumentEmbedView, EmbedPicker, NEW_DOC_TEMPLATE, type EmbeddableType } from "./DocumentEmbed";
+import SlashCommand from "./SlashCommand";
 import { Tooltip } from "./Tooltip";
 import { useToast } from "./Toast";
 import {
@@ -516,6 +517,9 @@ export function RichEditor({
         placeholder: placeholder ?? "开始输入内容…",
       }),
       DocumentEmbed,
+      // 输入 `/` 唤起的块命令菜单（P2-1）。命令动作全部复用上面的现成链式命令，
+      // 不另立一套插入逻辑；IME 守卫见 SlashCommand.tsx 顶部注释。
+      SlashCommand,
     ],
     content: value,
     immediatelyRender: false,

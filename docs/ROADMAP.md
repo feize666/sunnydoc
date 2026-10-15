@@ -1188,3 +1188,69 @@ AI 配置与系统设置 / 导航与界面控制）。
 3. **`send()` 在 loading 时会静默丢弃新提问**（`if (!q || loading) return;`）。
    脚本在上一轮还没结束时 fill+Enter → 提问根本没发出去 → B/C/E 全红。
    → 每轮前显式 `waitIdle()`（判据用「正在生成回答…」标记）。
+
+### 8.11 已执行：slash 块命令菜单（P2-1）（2026-10-15）
+
+**背景**：路线图 P2-1（输入 `/` 唤起块菜单）全空 —— grep 无 `Suggestion` 扩展、
+无 `/` 触发。本项按计划实现，命令覆盖 12 项：标题 1–4、正文、无序/有序/任务列表、
+引用、代码块、分割线、表格。
+
+**依赖**：新增 `@tiptap/suggestion`。⚠️ 必须装**精确版 `3.31.3`**
+（`--save-exact`）：写 `^3.31.3` 会解析到 3.32.0，而它要求 `@tiptap/pm@3.32.0`，
+与项目锁定的 3.31.3 冲突 → `npm error ERESOLVE`。
+**这不是用 `--force` 硬装的场景**（那会破坏依赖树），精确版本即可。
+
+**实现**：`web/src/components/SlashCommand.tsx`（新增）
+- `SLASH_ITEMS` 的命令动作**全部复用工具栏的现成链式命令**
+  （`toggleBulletList` / `setNode("heading")` / `insertContent`…），
+  不另写一套「插入块」逻辑 —— 工具栏改了行为这里自然跟随。
+- 过滤支持**中文标签包含**与**拼音/英文别名前缀**（`biaoge` → 表格）。
+- 菜单行复用全站 `.menu-item`（13px，**实测 31.5px** 与 DESIGN 规格一致），
+  选中态用 `--accent-soft`（与 `.tool-btn-on` 同源）。
+
+#### 🔴 核心风险：IME（中文输入法）——`@tiptap/suggestion` 自己不兜
+
+读源码确认（`node_modules/@tiptap/suggestion/dist/index.js`）：
+- `handleKeyDown`（:125-144）**没有任何 composing 守卫** —— 只要插件 active，
+  就把 keydown 交给回调。**组字时按 Enter 是「上屏候选词」**，
+  若被当成「确认命令」，会插入一个用户根本没选的块 —— 灾难级缺陷。
+- `state.apply`（:215）在 `editor.view.composing` 为 true 时**仍会**
+  执行 `findSuggestionMatch` 并可置 `active = true`。
+
+故显式加三道守卫（全部在 `SlashCommand.tsx`）：
+1. `allow()` 里 `if (editor.view.composing) return false` —— 组字期间不激活；
+2. `onKeyDown`（渲染层 + render 层各一道）
+   `if (event.isComposing || event.keyCode === 229) return false`；
+3. 组字中的 query 是拼音串，会命中别名而弹出误导菜单 —— 由第 1 条一并挡住。
+
+#### 真机验证（`web/scripts/verify_slash.cjs`，14 项）
+
+| 项 | 结果 |
+|---|---|
+| `/` 弹菜单 / 空 query 列 12 项 | ✅ |
+| 中文「标题」→ 4 个标题项 | ✅ |
+| 拼音「biaoge」→ 表格 | ✅ |
+| 回车执行 → 正文出现 **3 行**表格（与工具栏 3×3 一致） | ✅ |
+| 执行后菜单关闭 / ↓ 键移动高亮（索引真变 0→1） | ✅ |
+| **IME 组字期间不弹菜单** | ✅ |
+| **URL 里的 `/` 不触发**（不劫持普通文本） | ✅ |
+| 菜单行高 31.5px / 临时文档已删（零夹具） | ✅ |
+
+**对抗性验证（关键）**：摘除 IME 守卫后重跑 → **恰好且只有 IME 那 1 项失败**
+（`{"during":true,"afterEnd":true}`），其余 13 项照旧通过。
+→ 证明两件事：① IME 断言**不是恒真的**（能精确失败）；
+② 守卫是真正生效的那道防线。恢复后重新 14/14 全绿。
+
+**首屏体积**：`RichEditor` 本身是懒加载（`LazyEditors.tsx:62` 的
+`lazy(() => import("./RichEditor"))`），故 slash 代码随它进按需 chunk。
+实测 `slash-menu-anchor` 落在 `2zob4vz_crkif.js`（375KB），
+而该 chunk **不在首页 HTML 的引用列表里**（命中 0）→ **首屏体积零影响**。
+首页 HTML 直接引用 8 个 chunk / 839.2KB。
+（判据用「实现独有运行时串」而非组件名 —— 见 §8.8。）
+
+**构建**：`tsc --noEmit` 退出 0；`npm run build` `✓ Compiled successfully`。
+
+> ⚠️ **验证前必读**：首页是 `HomeView`（仪表盘），**没有搜索框也没有编辑器**
+> （实测 `inputs: []`、`hasProseMirror: false`）。必须先点进一个知识库，
+> 侧栏搜索框与文档树才出现。首次写脚本时我直接找搜索框 → 30s 超时，
+> 一度以为是页面坏了。**「找不到元素」先怀疑导航流程，再怀疑代码。**

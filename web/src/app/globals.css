@@ -1942,3 +1942,58 @@ mark.search-hit {
 
 /* 触屏上禁用「依赖 hover 才可见」的浮层提示没有意义，但保留无妨：
    Tooltip 组件自身会处理。此处只保证按钮本身可达。 */
+
+/* ==========================================================================
+   Slash 块命令菜单（输入 `/` 唤起，P2-1）
+   定位锚点由 JS 写 left/top（见 SlashCommand.tsx 的 position()），
+   挂在 body 下 —— 编辑器工具条是 overflow 容器，inside 会被裁掉。
+   行样式复用 .menu-item（13px / 31.5px 行高），此处只加布局与状态。
+   ========================================================================== */
+.slash-menu-anchor {
+  position: fixed;
+  z-index: 60;
+}
+
+.slash-menu {
+  width: 280px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--background);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+/* 命令行：图标 + 标签 + 右侧说明。沿用 .menu-item 的 padding/字号，
+   只在内部用 flex 把说明推到右侧。 */
+.slash-item {
+  gap: 9px;
+}
+.slash-item .slash-icon {
+  color: var(--muted);
+}
+.slash-item .slash-label {
+  color: var(--text);
+}
+.slash-item .slash-desc {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+/* 选中行：用 --accent-soft 底（与 .tool-btn-on 同源）。
+   注意不能只靠 hover —— 键盘上下选择时鼠标不动，必须有独立的选中态。 */
+.slash-item.is-active,
+.slash-item.is-active:hover {
+  background-color: var(--accent-soft);
+}
+.slash-item.is-active .slash-icon {
+  color: var(--accent);
+}
+
+.slash-empty {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--faint);
+}
