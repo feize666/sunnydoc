@@ -761,6 +761,13 @@ export interface CommentUser {
   avatar?: string | null;
 }
 
+/** 划词批注锚点：上下文快照 + 第几次出现（不存绝对偏移，正文可编辑） */
+export interface CommentAnchor {
+  prefix: string;
+  suffix: string;
+  index: number;
+}
+
 export interface DocComment {
   id: string;
   doc_id: string;
@@ -769,6 +776,8 @@ export interface DocComment {
   created_at: number;
   parent_id?: string | null;
   mentions?: string[];
+  /** 仅划词批注有；为 null 表示普通评论 */
+  anchor?: CommentAnchor | null;
   user: CommentUser;
   reply_to?: CommentUser | null;
 }
@@ -781,8 +790,14 @@ export async function listComments(docId: string): Promise<DocComment[]> {
 export async function addComment(
   docId: string,
   content: string,
-  options?: { quote?: string; parentId?: string; mentions?: string[] },
+  options?: {
+    quote?: string;
+    parentId?: string;
+    mentions?: string[];
+    anchor?: CommentAnchor | null;
+  },
 ): Promise<DocComment> {
+  const anchor = options?.anchor;
   return request(`/documents/${docId}/comments`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -791,6 +806,10 @@ export async function addComment(
       quote: options?.quote?.trim() || undefined,
       parent_id: options?.parentId || undefined,
       mentions: options?.mentions?.length ? options.mentions : undefined,
+      // 锚点只在「确实划了词」时带上，纯评论不写
+      anchor_prefix: anchor ? anchor.prefix : undefined,
+      anchor_suffix: anchor ? anchor.suffix : undefined,
+      anchor_index: anchor ? anchor.index : undefined,
     }),
   });
 }

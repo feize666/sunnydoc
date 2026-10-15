@@ -306,6 +306,10 @@ class CreateCommentRequest(BaseModel):
     quote: str | None = None
     parent_id: str | None = None
     mentions: list[str] | None = None
+    # 划词批注锚点：引用文本 + 前后上下文快照 + 第几次出现（用于消歧）
+    anchor_prefix: str | None = None
+    anchor_suffix: str | None = None
+    anchor_index: int | None = None
 
 
 class AIAssistRequest(BaseModel):
@@ -2841,6 +2845,7 @@ def list_document_comments(doc_id: str, current_user: dict = Depends(get_current
                 "created_at": c["created_at"],
                 "parent_id": c.get("parent_id"),
                 "mentions": c.get("mentions") or [],
+                "anchor": c.get("anchor") or None,
                 "user": _user_info(c.get("user_id")),
                 "reply_to": _user_info(parent.get("user_id")) if parent else None,
             }
@@ -2868,7 +2873,15 @@ def add_document_comment(
     if parent_id and store.get_comment(parent_id) is None:
         parent_id = None
 
-    c = store.add_comment(doc_id, current_user["id"], content, quote, parent_id, mentions)
+    # 锚点：只有「引用文本非空」时才落锚点（纯评论不需要）
+    anchor: dict[str, Any] | None = None
+    if quote:
+        anchor = {
+            "prefix": (req.anchor_prefix or "")[:64],
+            "suffix": (req.anchor_suffix or "")[:64],
+            "index": max(0, int(req.anchor_index or 0)),
+        }
+    c = store.add_comment(doc_id, current_user["id"], content, quote, parent_id, mentions, anchor)
 
     actor_name = current_user.get("nickname") or current_user.get("username")
     kb_id = doc.get("kb_id")
@@ -2897,6 +2910,7 @@ def add_document_comment(
         "created_at": c["created_at"],
         "parent_id": c.get("parent_id"),
         "mentions": c.get("mentions") or [],
+        "anchor": c.get("anchor") or None,
         "user": {
             "id": current_user["id"],
             "nickname": actor_name,

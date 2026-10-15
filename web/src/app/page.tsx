@@ -76,6 +76,7 @@ import {
   generateSummary,
   listBacklinks,
   lookupDocumentByTitle,
+  listComments,
   type DocMeta,
   type Folder,
   type Kb,
@@ -85,7 +86,10 @@ import {
   type User,
   type Stats,
   type Backlink,
+  type DocComment,
+  type CommentAnchor,
 } from "@/lib/api";
+import type { AnchorTarget } from "@/lib/commentAnchor";
 
 function formatTime(ts: number): string {
   const d = new Date(ts * 1000);
@@ -210,6 +214,17 @@ export default function Home() {
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [annotateQuote, setAnnotateQuote] = useState<string | null>(null);
+  /** 划词批注的锚点（随引用文本一起产生，用于正文回定位） */
+  const [annotateAnchor, setAnnotateAnchor] = useState<CommentAnchor | null>(null);
+  /** 当前文档评论：正文锚点高亮的数据源（面板未打开也要有） */
+  const [docComments, setDocComments] = useState<DocComment[]>([]);
+  const [commentsVersion, setCommentsVersion] = useState(0);
+  /** 正文中定位失败的评论 id —— 面板上降级显示「未锚定」 */
+  const [orphanIds, setOrphanIds] = useState<string[]>([]);
+  /** 需要闪烁定位的评论 id（点评论 → 定位正文，由 Editor 闪烁） */
+  const [focusCommentId, setFocusCommentId] = useState<string | null>(null);
+  /** 面板里需要高亮的评论 id（点正文标记 → 定位评论） */
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [moveToKbTarget, setMoveToKbTarget] = useState<{ id: string; title: string } | null>(null);
@@ -1068,6 +1083,30 @@ export default function Home() {
     };
   }, [activeKey]);
 
+  /**
+   * 加载当前文档的评论 —— 正文锚点高亮的数据源。
+   *
+   * 为什么不由 CommentPanel 提供：面板只在打开时才加载，而批注高亮应该
+   * 「打开文档就看得见」，否则用户根本不知道哪段被批注过。
+   */
+  useEffect(() => {
+    if (!activeKey) {
+      setDocComments([]);
+      return;
+    }
+    let cancelled = false;
+    listComments(activeKey)
+      .then((cs) => {
+        if (!cancelled) setDocComments(cs);
+      })
+      .catch(() => {
+        if (!cancelled) setDocComments([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeKey, commentsVersion]);
+
   // 编辑知识库
   const handleEditKb = useCallback((kb: Kb) => {
     setEditingKb(kb);
@@ -1202,6 +1241,24 @@ export default function Home() {
   const tagDocs = useMemo(
     () => (searchTag ? metas.filter((m) => (m.tags ?? []).includes(searchTag)) : []),
     [metas, searchTag],
+  );
+
+  /**
+   * 需要在正文里打标的批注。
+   *
+   * 必须 useMemo：Editor 的重放 effect 把它列入依赖，若每次渲染都产生新数组，
+   * effect 会被反复触发（配合 MutationObserver 就是持续重排 DOM）。
+   */
+  const commentAnchors = useMemo<AnchorTarget[]>(
+    () =>
+      docComments
+        .filter((c) => c.quote && c.anchor)
+        .map((c) => ({
+          commentId: c.id,
+          quote: c.quote ?? "",
+          anchor: c.anchor ?? null,
+        })),
+    [docComments],
   );
 
   const activeDoc = activeKey ? docs[activeKey] ?? null : null;
@@ -1405,12 +1462,26 @@ export default function Home() {
               }
               onAnnotate={
                 activeKey
-                  ? (q) => {
-                      setAnnotateQuote(q);
+                  ? (payload) => {
+                      setAnnotateQuote(payload.quote);
+                      setAnnotateAnchor({
+                        prefix: payload.prefix,
+                        suffix: payload.suffix,
+                        index: payload.index,
+                      });
                       setCommentsOpen(true);
                     }
                   : undefined
               }
+              commentAnchors={commentAnchors}
+              // 点正文标记 → 打开面板并高亮那一条评论（方向：正文 → 评论）
+              onAnchorClick={(id) => {
+                setCommentsOpen(true);
+                setActiveCommentId(id);
+              }}
+              onOrphansChange={setOrphanIds}
+              focusAnchorId={focusCommentId}
+              onAnchorFocused={() => setFocusCommentId(null)}
               onOpenWikilink={handleOpenWikilink}
               backlinks={activeKey ? backlinks : []}
               currentUserId={user?.id}
@@ -1652,12 +1723,21 @@ export default function Home() {
         onClose={() => {
           setCommentsOpen(false);
           setAnnotateQuote(null);
+          setAnnotateAnchor(null);
+          setActiveCommentId(null);
         }}
         currentUserId={user.id}
         isAdmin={user.role === "admin"}
         readOnly={readOnly}
         initialQuote={annotateQuote}
+        initialAnchor={annotateAnchor}
         onConsumedQuote={() => setAnnotateQuote(null)}
+        // 评论增删 → 重拉列表 → 正文高亮跟着重放
+        onChanged={() => setCommentsVersion((v) => v + 1)}
+        // 点引用块 → 定位正文锚点
+        onLocate={setFocusCommentId}
+        orphanIds={orphanIds}
+        highlightId={activeCommentId}
       />
 
       <NotificationPanel

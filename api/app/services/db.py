@@ -275,6 +275,12 @@ def init() -> None:
         # 评论回复（嵌套一层）+ 提及的用户 id 列表（JSON 字符串）
         cur.execute("ALTER TABLE comments ADD COLUMN IF NOT EXISTS parent_id varchar")
         cur.execute("ALTER TABLE comments ADD COLUMN IF NOT EXISTS mentions text")
+        # 划词批注锚点（P2-4）：引用文本的上下文快照 + 第几次出现。
+        # 不存绝对字符偏移 —— 文档正文会被编辑，偏移必然失效；
+        # 存「引用文本 + 前后文 + 序号」才能做到「改文后仍可回退定位」。
+        cur.execute("ALTER TABLE comments ADD COLUMN IF NOT EXISTS anchor_prefix text")
+        cur.execute("ALTER TABLE comments ADD COLUMN IF NOT EXISTS anchor_suffix text")
+        cur.execute("ALTER TABLE comments ADD COLUMN IF NOT EXISTS anchor_index integer")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_comments_doc ON comments (doc_id)")
         # 通知（被 @ 提及 / 评论被回复 / 知识库共享）
         cur.execute(
@@ -2029,7 +2035,11 @@ def set_setting(key: str, value: str) -> None:
 # ---------- 文档评论/批注 ----------
 
 def _comment_from_row(row: Any) -> dict[str, Any]:
-    mentions_raw = row[6] if len(row) > 6 else None
+    # 列序与 _COMMENT_COLS 严格对应：6=parent_id，7=mentions。
+    # 曾经把 mentions 取成 row[6]（parent_id）——解析失败被 except 吞掉，
+    # 表现是「db 后端 @ 提及恒为空」，静默失效，只有真机点才看得出来。
+    parent_id = row[6] if len(row) > 6 else None
+    mentions_raw = row[7] if len(row) > 7 else None
     try:
         mentions = json.loads(mentions_raw) if mentions_raw else []
     except Exception:  # noqa: BLE001
@@ -2041,12 +2051,31 @@ def _comment_from_row(row: Any) -> dict[str, Any]:
         "content": row[3],
         "quote": row[4],
         "created_at": row[5],
-        "parent_id": row[6] if len(row) > 6 else None,
+        "parent_id": parent_id,
         "mentions": mentions,
+        "anchor": _anchor_from_row(row),
     }
 
 
-_COMMENT_COLS = "id, doc_id, user_id, content, quote, created_at, parent_id, mentions"
+def _anchor_from_row(row: Any) -> dict[str, Any] | None:
+    """取锚点三元组；三者皆空/0 视为无锚点（普通评论），返回 None。"""
+    if len(row) <= 8:
+        return None
+    prefix = row[8] or ""
+    suffix = row[9] or ""
+    try:
+        index = int(row[10] or 0)
+    except Exception:  # noqa: BLE001
+        index = 0
+    if not prefix and not suffix and index == 0:
+        return None
+    return {"prefix": prefix, "suffix": suffix, "index": index}
+
+
+_COMMENT_COLS = (
+    "id, doc_id, user_id, content, quote, created_at, parent_id, mentions,"
+    " anchor_prefix, anchor_suffix, anchor_index"
+)
 
 
 def add_comment(
@@ -2056,17 +2085,25 @@ def add_comment(
     quote: str | None = None,
     parent_id: str | None = None,
     mentions: list[str] | None = None,
+    anchor: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """新增评论/批注。mentions 为被 @ 提及的用户 id 列表。"""
+    """新增评论/批注。mentions 为被 @ 提及的用户 id 列表；anchor 为划词锚点。"""
     comment_id = uuid.uuid4().hex
     created_at = time.time()
     mentions_json = json.dumps(mentions or [], ensure_ascii=False)
+    a_prefix = (anchor or {}).get("prefix") or None
+    a_suffix = (anchor or {}).get("suffix") or None
+    a_index = (anchor or {}).get("index") or 0
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO comments (id, doc_id, user_id, content, quote, created_at, parent_id, mentions)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-            (comment_id, doc_id, user_id, content, quote, created_at, parent_id, mentions_json),
+            "INSERT INTO comments (id, doc_id, user_id, content, quote, created_at, parent_id, mentions,"
+            " anchor_prefix, anchor_suffix, anchor_index)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                comment_id, doc_id, user_id, content, quote, created_at, parent_id, mentions_json,
+                a_prefix, a_suffix, a_index,
+            ),
         )
     conn.commit()
     return {
@@ -2078,6 +2115,7 @@ def add_comment(
         "created_at": created_at,
         "parent_id": parent_id,
         "mentions": mentions or [],
+        "anchor": anchor or None,
     }
 
 

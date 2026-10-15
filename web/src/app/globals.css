@@ -1997,3 +1997,46 @@ mark.search-hit {
   font-size: 13px;
   color: var(--faint);
 }
+
+/* —— 划词批注锚点（P2-4）——
+   全部走 design token：明暗两套主题各自定义了 --accent / --accent-soft，
+   这里不写死任何色值，暗色模式自动跟随（与 mark.search-hit 的裸色值写法不同）。 */
+.md-body mark.comment-anchor {
+  background: var(--accent-soft);
+  color: inherit;
+  border-bottom: 1.5px solid var(--accent);
+  border-radius: 2px;
+  padding: 0 1px;
+  cursor: pointer;
+}
+
+.md-body mark.comment-anchor:hover {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+/* 定位闪烁：点评论 → 正文。用 backwards 而非 both（全站入场动画约定） */
+@keyframes comment-anchor-flash {
+  from {
+    background: color-mix(in srgb, var(--accent) 48%, transparent);
+  }
+  to {
+    background: var(--accent-soft);
+  }
+}
+
+.md-body mark.comment-anchor.comment-anchor-flash {
+  animation: comment-anchor-flash 1.2s ease-out backwards;
+}
+
+@keyframes comment-item-flash {
+  from {
+    background: var(--accent-soft);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+.comment-item-flash {
+  animation: comment-item-flash 1.2s ease-out backwards;
+}

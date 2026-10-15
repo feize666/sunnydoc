@@ -1498,9 +1498,10 @@ class DocStore:
         quote: str | None = None,
         parent_id: str | None = None,
         mentions: list[str] | None = None,
+        anchor: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if self._backend == "db":
-            return db.add_comment(doc_id, user_id, content, quote, parent_id, mentions)
+            return db.add_comment(doc_id, user_id, content, quote, parent_id, mentions, anchor)
         comment = {
             "id": uuid.uuid4().hex,
             "doc_id": doc_id,
@@ -1510,6 +1511,7 @@ class DocStore:
             "created_at": time.time(),
             "parent_id": parent_id,
             "mentions": mentions or [],
+            "anchor": anchor or None,
         }
         self._comments.append(comment)
         self._save()

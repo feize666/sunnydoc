@@ -24,8 +24,23 @@ import {
 } from "./LazyEditors";
 import { CopyIcon, CheckIcon, EditIcon, HistoryIcon, ShareIcon } from "./icons";
 import { EmptyState } from "./EmptyState";
+import {
+  applyAnchors,
+  unwrapAnchors,
+  flashAnchor,
+  captureAnchor,
+  type AnchorTarget,
+} from "@/lib/commentAnchor";
 
 type Mode = "preview" | "edit";
+
+/** 划词批注上抛的载荷：引用文本 + 定位所需的上下文快照 */
+export interface AnnotatePayload {
+  quote: string;
+  prefix: string;
+  suffix: string;
+  index: number;
+}
 
 function parseTableData(value: string): string[][] {
   try {
@@ -180,6 +195,11 @@ export function Editor({
   onOpenComments,
   onAnnotate,
   commentCount,
+  commentAnchors,
+  onAnchorClick,
+  onOrphansChange,
+  focusAnchorId,
+  onAnchorFocused,
   onOpenWikilink,
   backlinks,
   currentUserId,
@@ -206,8 +226,18 @@ export function Editor({
   onGenerateSummary?: () => void;
   onOpenHistory?: () => void;
   onOpenComments?: () => void;
-  onAnnotate?: (quote: string) => void;
+  /** 划词批注：上抛「引用文本 + 锚点」，而不是只有文本（否则正文无法高亮定位） */
+  onAnnotate?: (payload: AnnotatePayload) => void;
   commentCount?: number;
+  /** 需要在正文里打标的批注（由外部按当前文档加载后传入） */
+  commentAnchors?: AnchorTarget[];
+  /** 点击正文高亮标记 → 打开对应评论 */
+  onAnchorClick?: (commentId: string) => void;
+  /** 上报本次定位失败的评论 id（UI 降级为「未锚定」） */
+  onOrphansChange?: (ids: string[]) => void;
+  /** 需要闪烁定位的评论 id（点评论 → 定位正文）；定位完会回调 onAnchorFocused */
+  focusAnchorId?: string | null;
+  onAnchorFocused?: () => void;
   onOpenWikilink?: (title: string) => void;
   backlinks?: Backlink[];
   currentUserId?: string;
@@ -222,6 +252,9 @@ export function Editor({
    */
   onConflict?: (err: RevisionConflictError) => void;
 }) {
+  // 正文锚点高亮（P2-4）：见文件末尾的 anchors effect
+  const anchorsRef = useRef<AnchorTarget[]>([]);
+  anchorsRef.current = commentAnchors ?? [];
   const toast = useToast();
   const [mode, setMode] = useState<Mode>("preview");
   const modeRef = useRef<Mode>("preview");
@@ -264,8 +297,13 @@ export function Editor({
   const progressiveRef = useRef<ProgressiveRenderHandle | null>(null);
   const { width: tocWidth, onMouseDown: onTocResize } = useResizable(224, 180, 400, "toc_width", -1);
 
-  // 划词批注：记录选中文字及浮动按钮位置
-  const [annotate, setAnnotate] = useState<{ x: number; y: number; text: string } | null>(null);
+  // 划词批注：记录选中文字及浮动按钮位置（anchor 为定位所需的上下文快照）
+  const [annotate, setAnnotate] = useState<{
+    x: number;
+    y: number;
+    text: string;
+    anchor: AnnotatePayload | null;
+  } | null>(null);
 
   // 划词 AI 辅助面板
   const [aiAssist, setAiAssist] = useState<{ x: number; y: number; text: string } | null>(null);
@@ -285,7 +323,21 @@ export function Editor({
       setAnnotate(null);
       return;
     }
-    setAnnotate({ x: rect.left + rect.width / 2, y: rect.top, text });
+    // 锚点必须用与定位侧同一套 DOM 文本索引来算，否则上下文快照对不上
+    const anchor = container.contains(range.commonAncestorContainer)
+      ? captureAnchor(container, range)
+      : null;
+    setAnnotate({ x: rect.left + rect.width / 2, y: rect.top, text, anchor });
+  };
+
+  /** 点正文高亮标记 → 打开对应评论（markdown 与 html 两条渲染路径共用） */
+  const handleAnchorClick = (e: React.MouseEvent<HTMLElement>) => {
+    const mark = (e.target as HTMLElement).closest<HTMLElement>("mark.comment-anchor");
+    const id = mark?.dataset.commentId;
+    if (id) {
+      e.preventDefault();
+      onAnchorClick?.(id);
+    }
   };
 
   // 点击正文外区域时关闭划词批注浮标
@@ -506,6 +558,114 @@ export function Editor({
     }, 150);
     return () => clearTimeout(timer);
   }, [highlight, mode, previewHtml]);
+
+  /**
+   * 划词批注锚点高亮（P2-4）。
+   *
+   * 为什么必须配 MutationObserver：预览是**渐进渲染**的（renderProgressively
+   * 逐批追加 HTML），只在 effect 里打一次标，后面的段落还没进 DOM，
+   * 那些批注就永远锚不上。观察容器 + 防抖重放，才能覆盖渐进渲染、主题切换、
+   * 评论增删、HTML 文档另一条渲染分支。
+   *
+   * 为什么要有「指纹」短路：applyAnchors 自身就在改 DOM（先 unwrap 再 wrap），
+   * 若不加判断，observe → apply → 变更 → observe → … 会自激成死循环。
+   * 指纹取「已打标的 id 集合 + 正文长度」，两者都没变就什么都不做。
+   */
+  const anchorTimerRef = useRef<number | null>(null);
+  const lastAnchorSigRef = useRef<{ ids: string; len: number; tkey: string } | null>(null);
+  const lastOrphanRef = useRef<string>("");
+
+  const applyAnchorMarks = useCallback(() => {
+    const container = contentRef.current;
+    if (!container || modeRef.current !== "preview") return;
+    const targets = anchorsRef.current;
+    const currentIds = Array.from(
+      container.querySelectorAll<HTMLElement>("mark.comment-anchor"),
+    )
+      .map((m) => m.dataset.commentId ?? "")
+      .sort()
+      .join(",");
+    const len = (container.textContent ?? "").length;
+    // 目标集合也必须进指纹：否则「从 0 条批注变成 1 条」时 DOM 毫无变化，
+    // 会被误判成"不需要重放"，新批注永远打不上标记（实测到的第一个缺陷）。
+    const tkey = targets
+      .map((t) => `${t.commentId}:${t.quote.length}`)
+      .sort()
+      .join(",");
+    const sig = lastAnchorSigRef.current;
+    if (sig && sig.ids === currentIds && sig.len === len && sig.tkey === tkey) return;
+
+    const notify = (orphan: string[]) => {
+      const key = orphan.slice().sort().join(",");
+      if (key === lastOrphanRef.current) return;
+      lastOrphanRef.current = key;
+      onOrphansChange?.(orphan);
+    };
+
+    if (targets.length === 0) {
+      if (currentIds === "") {
+        lastAnchorSigRef.current = { ids: "", len, tkey };
+        return;
+      }
+      unwrapAnchors(container);
+      lastAnchorSigRef.current = { ids: "", len: (container.textContent ?? "").length, tkey };
+      notify([]);
+      return;
+    }
+
+    const res = applyAnchors(container, targets);
+    lastAnchorSigRef.current = {
+      ids: res.resolved.slice().sort().join(","),
+      len: (container.textContent ?? "").length,
+      tkey,
+    };
+    notify(res.orphan);
+  }, [onOrphansChange]);
+
+  useEffect(() => {
+    if (mode !== "preview") return;
+    const container = contentRef.current;
+    if (!container) return;
+    applyAnchorMarks();
+    const schedule = () => {
+      if (anchorTimerRef.current !== null) window.clearTimeout(anchorTimerRef.current);
+      anchorTimerRef.current = window.setTimeout(() => {
+        anchorTimerRef.current = null;
+        applyAnchorMarks();
+      }, 120);
+    };
+    const mo = new MutationObserver(schedule);
+    mo.observe(container, { childList: true, subtree: true, characterData: true });
+    return () => {
+      mo.disconnect();
+      if (anchorTimerRef.current !== null) {
+        window.clearTimeout(anchorTimerRef.current);
+        anchorTimerRef.current = null;
+      }
+    };
+  }, [mode, previewHtml, htmlPreview, doc?.key, commentAnchors, applyAnchorMarks]);
+
+  // 点评论 → 定位正文：滚动到对应标记并闪烁
+  useEffect(() => {
+    if (!focusAnchorId || mode !== "preview") return;
+    const container = contentRef.current;
+    if (!container) return;
+    const timer = window.setTimeout(() => {
+      let ok = flashAnchor(container, focusAnchorId);
+      if (!ok) {
+        // 渐进渲染：目标段落可能还没渲染出来 —— 逐批推进直到探到
+        progressiveRef.current?.ensureVisible(() => {
+          applyAnchorMarks();
+          return container.querySelector<HTMLElement>(
+            `mark.comment-anchor[data-comment-id="${focusAnchorId}"]`,
+          );
+        });
+        ok = flashAnchor(container, focusAnchorId);
+      }
+      onAnchorFocused?.();
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [focusAnchorId, mode, applyAnchorMarks, onAnchorFocused]);
 
   // 切换文档时重置为预览模式（表格/画板/数据表/流程图/思维导图默认进编辑态）
   useEffect(() => {
@@ -1167,6 +1327,7 @@ export function Editor({
                 <div
                   ref={contentRef}
                   className="md-body mt-6"
+                  onClick={handleAnchorClick}
                   onMouseUp={handleTextSelect}
                   dangerouslySetInnerHTML={{ __html: htmlPreview }}
                 />
@@ -1175,6 +1336,7 @@ export function Editor({
                   ref={contentRef}
                   className="md-body mt-6"
                   onClick={(e) => {
+                    handleAnchorClick(e);
                     handleCodeBlockCopy(e);
                     const target = e.target as HTMLElement;
                     const anchor = target.closest(".md-anchor") as HTMLElement | null;
@@ -1358,7 +1520,14 @@ export function Editor({
             <button
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
-                onAnnotate(annotate.text);
+                onAnnotate(
+                  annotate.anchor ?? {
+                    quote: annotate.text,
+                    prefix: "",
+                    suffix: "",
+                    index: 0,
+                  },
+                );
                 setAnnotate(null);
                 window.getSelection()?.removeAllRanges();
               }}

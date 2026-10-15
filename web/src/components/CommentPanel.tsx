@@ -9,6 +9,7 @@ import {
   subscribeSSE,
   type DocComment,
   type UserBrief,
+  type CommentAnchor,
 } from "@/lib/api";
 import { CommentIcon } from "./icons";
 import { EmptyState } from "./EmptyState";
@@ -40,7 +41,12 @@ export function CommentPanel({
   isAdmin,
   readOnly,
   initialQuote,
+  initialAnchor,
   onConsumedQuote,
+  onChanged,
+  onLocate,
+  orphanIds,
+  highlightId,
 }: {
   docId: string | null;
   open: boolean;
@@ -49,13 +55,23 @@ export function CommentPanel({
   isAdmin: boolean;
   readOnly?: boolean;
   initialQuote?: string | null;
+  initialAnchor?: CommentAnchor | null;
   onConsumedQuote?: () => void;
+  /** 评论增删后通知外部（外部据此刷新正文高亮） */
+  onChanged?: () => void;
+  /** 点击引用块 → 定位到正文锚点 */
+  onLocate?: (commentId: string) => void;
+  /** 正文中定位失败的评论 id：展示「未锚定」而非假装锚上了 */
+  orphanIds?: string[];
+  /** 需要滚动到并高亮的评论 id（点正文标记时用） */
+  highlightId?: string | null;
 }) {
   const [comments, setComments] = useState<DocComment[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [quote, setQuote] = useState<string | null>(null);
+  const [anchor, setAnchor] = useState<CommentAnchor | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -100,13 +116,47 @@ export function CommentPanel({
   useEffect(() => {
     if (open && initialQuote) {
       setQuote(initialQuote);
+      setAnchor(initialAnchor ?? null);
       onConsumedQuote?.();
     }
+    // initialAnchor 随 initialQuote 一起到达，不必单独触发
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialQuote, onConsumedQuote]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [comments.length, open]);
+
+  // 点正文高亮 → 滚动到对应评论并闪一下（方向：正文 → 评论）。
+  //
+  // 评论列表是异步加载的（listComments），「面板打开 + highlightId 已设」时
+  // li 节点可能还没渲染。改为「轮询等到出现」再触发，超时即放弃。
+  useEffect(() => {
+    if (!open || !highlightId) return;
+    const wanted = highlightId.replace(/["\\]/g, (c) => `\\${c}`);
+    let stopped = false;
+    let timer = 0;
+    const t0 = performance.now();
+    const tryFind = () => {
+      if (stopped) return;
+      const el = listRef.current?.querySelector<HTMLElement>(
+        `[data-comment-id="${wanted}"]`,
+      );
+      if (el) {
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+        el.classList.add("comment-item-flash");
+        timer = window.setTimeout(() => el.classList.remove("comment-item-flash"), 1200);
+        return;
+      }
+      if (performance.now() - t0 > 5000) return; // 5s 后评论没加载完就放弃
+      requestAnimationFrame(tryFind);
+    };
+    requestAnimationFrame(tryFind);
+    return () => {
+      stopped = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [open, highlightId, comments.length]);
 
   // 检测 @ 提及
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -160,13 +210,17 @@ export function CommentPanel({
         quote: quote ?? undefined,
         parentId: replyTo?.id,
         mentions: Object.keys(mentions),
+        // 只有划词批注才带锚点；回复子评论不继承父级锚点
+        anchor: quote && !replyTo ? anchor : null,
       });
       setComments((prev) => [...prev, c]);
       setInput("");
       setQuote(null);
+      setAnchor(null);
       setReplyTo(null);
       setMentions({});
       setMentionOpen(false);
+      onChanged?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : "发布评论失败");
     } finally {
@@ -181,6 +235,7 @@ export function CommentPanel({
     try {
       await deleteComment(id);
       setComments((prev) => prev.filter((c) => c.id !== id));
+      onChanged?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : "删除评论失败");
     } finally {
@@ -229,11 +284,26 @@ export function CommentPanel({
               const canDelete = isMine || isAdmin;
               const isReply = !!c.parent_id;
               return (
-                <li key={c.id} className={`group ${isReply ? "ml-7" : ""}`}>
+                <li
+                  key={c.id}
+                  data-comment-id={c.id}
+                  className={`group ${isReply ? "ml-7" : ""} rounded-md`}
+                >
                   {c.quote && (
-                    <div className="mb-1.5 rounded-md border-l-2 border-accent/50 bg-accent-soft px-2.5 py-1.5 text-[12px] leading-relaxed text-muted">
+                    <button
+                      type="button"
+                      data-comment-ref={c.id}
+                      onClick={() => onLocate?.(c.id)}
+                      title="定位到正文"
+                      className="mb-1.5 block w-full rounded-md border-l-2 border-accent/50 bg-accent-soft px-2.5 py-1.5 text-left text-[12px] leading-relaxed text-muted transition-colors hover:brightness-95"
+                    >
                       {c.quote}
-                    </div>
+                      {orphanIds?.includes(c.id) && (
+                        <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-faint">
+                          未锚定
+                        </span>
+                      )}
+                    </button>
                   )}
                   <div className="flex items-start gap-2">
                     <Avatar name={c.user.nickname} avatar={c.user.avatar} />

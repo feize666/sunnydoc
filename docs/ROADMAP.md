@@ -1254,3 +1254,58 @@ AI 配置与系统设置 / 导航与界面控制）。
 > （实测 `inputs: []`、`hasProseMirror: false`）。必须先点进一个知识库，
 > 侧栏搜索框与文档树才出现。首次写脚本时我直接找搜索框 → 30s 超时，
 > 一度以为是页面坏了。**「找不到元素」先怀疑导航流程，再怀疑代码。**
+
+### 8.18 已执行：划词批注锚定与高亮（P2-4，2026-10-15）
+
+**背景**：路线图 P2-4 标注的真实缺陷 —— `comments.quote` 列早在 P0 之前就存在，
+CommentPanel 也展示了引用文本，但**正文从未与评论建立过锚点关系**：
+改一行字、批注就成了「孤儿」，用户得自己去找对应位置。
+
+**核心设计取舍：不存绝对字符偏移**
+
+正文随时可编辑，绝对偏移必然失效。改为「引用文本 + 前后 32 字上下文快照 +
+第几次出现」三元组，改文后能回退定位（前提是前后文没被一并删掉）。
+彻底定位不到时降级为「未锚定」而非静默丢失 —— 「有评论没标」是 bug，
+「有评论没找到位置」是真话。
+
+**实现**：
+- 后端（`api/app/services/db.py`）：ALTER TABLE 幂等追加
+  `anchor_prefix / anchor_suffix / anchor_index` 三列；
+  `CreateCommentRequest` / `store.add_comment` 透传 `anchor` 字典。
+- 顺带修一个静默失效的 bug：`_comment_from_row` 旧代码把 `row[6]`（parent_id）
+  当 `mentions` 解析，except 把失败吞掉 → **db 后端 @ 提及恒为空**。
+  永远没人发现，因为前端 mentions UI 与 quote UI 是独立两套。
+  这次让 mentions 与 anchor 走同一条解析路径，**两条 bug 一起修**。
+- 前端（`web/src/lib/commentAnchor.ts`）：
+  - `buildTextIndex` 是写入侧（`captureAnchor`）与定位侧（`applyAnchors`）
+    共用的「DOM 文本索引」。**这是刻意的统一**：若两边各写各的，
+    上下文快照永远对不上 → 锚定率凭空掉一截。
+  - 跨块（p/li/h1~6/...）插入 "\n" 分隔，避免相邻两段被拼成连续串。
+  - `applyAnchors` 升序包裹 + 索引就地推进，单节点上多个锚点互不踩踏。
+  - 渲染层用 MutationObserver + 防抖（120ms）重放，**应对**渐进渲染
+    (`renderProgressively` 逐批追加 HTML)：不在 effect 里只打一次，
+    否则后面批次的段落永远锚不上。
+  - 指纹短路要带「目标集合」进位：从 0 条批注变 1 条时 DOM 毫无变化，
+    会被误判为「不需要重放」——首次实测就踩到。
+
+**真机验证**（`web/scripts/verify_anchor.cjs`，21/21 全绿）：
+- 划词 → 浮动条 → 批注按钮 → 面板引用块 → 发布 → 正文 1 个 mark
+- 刷新重开 → 高亮仍在（持久化 + 重新定位）
+- 点正文标记 → 面板打开 + 评论项闪烁
+- 点评论引用块 → 正文标记闪烁
+- 引用文本被改写但前后缀保留 → 仍能锚定（上下文回退）
+- 前后缀全删 → 正文 0 标记 + 面板显示「未锚定」
+- 普通评论（无引用）不产生正文标记
+- 临时文档 + 评论零残留
+
+**对抗性验证**：摘掉 `applyAnchors` 执行（让 effect 返回空 resolved），
+精确失败 5 项（全是「应该出现高亮」相关），其余 16 项照旧通过 →
+证明断言**不是恒真的**。
+
+**两条非产品坑（脚手架级）**：
+- Next dev 浮层 `<nextjs-portal>` 在 dev 模式下**吃掉所有指针事件**，
+  即使 `force: true` 也躲不开（命中 dev 浮层本体）。症状是「按钮点了没反应」。
+  → 用 `addStyleTag` 把它 display:none，**所有 dev 真机脚本都该加这一行**。
+- 「点正文标记 → 面板打开 + 闪烁评论」是 open / highlightId / listComments
+  异步加载三条链的交汇点。rAF 一帧不够：open 刚翻 true 时评论 li 还没挂上。
+  → 轮询到 `li[data-comment-id]` 出现（5s 超时），再触发滚动与闪烁。
