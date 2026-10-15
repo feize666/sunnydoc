@@ -931,6 +931,20 @@ export async function searchUsers(q: string): Promise<UserBrief[]> {
   return Array.isArray(data?.users) ? data.users : [];
 }
 
+/** 按标题前缀/子串查文档（P2-2 [[ 唤起用）。 */
+export interface DocPick {
+  id: string;
+  title: string;
+  kb_id?: string | null;
+  folder_id?: string | null;
+}
+export async function searchDocumentsByTitle(q: string, limit = 20): Promise<DocPick[]> {
+  const data = await request<DocPick[]>(
+    `/documents/search-by-title?q=${encodeURIComponent(q)}&limit=${limit}`,
+  );
+  return Array.isArray(data) ? data : [];
+}
+
 // —— 最近浏览 ——
 
 export async function recordRecent(docId: string): Promise<void> {

@@ -1050,6 +1050,47 @@ class DocStore:
                 }
         return None
 
+    def search_documents_by_title(
+        self, query: str, user_id: str | None = None, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """按标题**前缀/子串**查文档（用户可见范围内），排除已软删除。
+
+        - 两条分支都实现：db 走 LIKE 索引扫描；JSON 走内存全扫（与 lookup_by_title 对齐）。
+        - 空 query 返回最近 N 篇。
+        - 前缀命中排前，子串命中垫后；同名取 updated_at 最近的。
+        """
+        limit = max(1, min(int(limit or 20), 60))
+        if self._backend == "db":
+            kb_ids = self._accessible_kb_ids(user_id) if user_id is not None else None
+            return db.search_documents_by_title(
+                query, user_id, limit=limit, kb_ids=kb_ids
+            )
+        # JSON 分支：内存全扫
+        q = (query or "").strip().lower()
+        prefix: list[dict[str, Any]] = []
+        contain: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for d in self.all(user_id=user_id, with_chunks=False):
+            if d.get("deleted_at"):
+                continue
+            if d["id"] in seen:
+                continue
+            seen.add(d["id"])
+            title = d.get("title") or ""
+            rec = {
+                "id": d["id"],
+                "title": title,
+                "kb_id": d.get("kb_id"),
+                "folder_id": d.get("folder_id"),
+            }
+            if not q:
+                prefix.append(rec)
+            elif title.lower().startswith(q):
+                prefix.append(rec)
+            elif q in title.lower():
+                contain.append(rec)
+        return (prefix + contain)[:limit]
+
     # ---------- 文件夹 ----------
 
     def list_folders(

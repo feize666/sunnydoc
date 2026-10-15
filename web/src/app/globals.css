@@ -2040,3 +2040,21 @@ mark.search-hit {
 .comment-item-flash {
   animation: comment-item-flash 1.2s ease-out backwards;
 }
+
+/* @ 提及（与 .wikilink 同源，但不带虚线下划线 —— 视觉上"人名"是轻的，
+   "引用"是重的，二者区分开）。渲染由 markdown.ts 的 mention 规则产出
+   <a class="mention" data-user-name="…">。 */
+.md-body a.mention,
+.md-body a[data-user-name] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 4px;
+  padding: 0 4px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.md-body a.mention:hover,
+.md-body a[data-user-name]:hover {
+  background: var(--accent);
+  color: #fff;
+}

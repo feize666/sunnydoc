@@ -1237,6 +1237,33 @@ def create_document(req: CreateDocumentRequest, current_user: dict = Depends(get
     return {"id": doc["id"], "title": doc["title"], "kb_id": doc.get("kb_id")}
 
 
+# ---------- 文档按标题模糊查（编辑器内 [[ 唤起用） ----------
+class _DocSearchItem(BaseModel):
+    id: str
+    title: str
+    kb_id: str | None = None
+    folder_id: str | None = None
+
+
+@router.get("/documents/search-by-title", response_model=list[_DocSearchItem])
+def search_documents_by_title(
+    q: str = "",
+    limit: int = 20,
+    current_user: dict = Depends(get_current_user),
+):
+    """按标题**前缀/子串**查文档（编辑器内 [[wikilink]] 唤起用）。
+
+    - 空 q → 按更新时间倒序返回最近 20 篇。
+    - 非空 q → 不区分大小写，前缀优先（同名文档先到先得），其次子串命中。
+    - 排除已软删除（deleted_at IS NOT NULL）。
+    - **不**走 RAG 检索（与 /search 解耦 —— 这是「已知标题的关键字」而非「全文模糊」）。
+
+    ⚠️ 必须在 /documents/{doc_id} 之前注册 —— Starlette 按声明顺序匹配路由，
+    静态段不会自动优先于动态段（实测踩到的坑，不查文档就以为是按字典序）。
+    """
+    return store.search_documents_by_title(q, limit=limit, user_id=current_user["id"])
+
+
 @router.get("/documents/{doc_id}")
 def get_document(doc_id: str, current_user: dict = Depends(get_current_user)):
     doc = store.get(doc_id, current_user["id"])
@@ -2218,17 +2245,20 @@ def remove_share(
 
 @router.get("/users/search")
 def search_users(q: str = "", current_user: dict = Depends(get_current_user)):
-    """按用户名/昵称搜索用户（供共享对话框选择协作者，仅返回基本信息）。"""
+    """按用户名/昵称搜索用户（共享对话框 + 编辑器 @ 唤起）。
+
+    空 q 返回全员（最多 50）—— 供编辑器 @ 唤起的「打开即列人」使用；
+    非空 q 时做**子串**匹配：昵称/username 任一含子串即命中。
+    返回的 users 字段里增加 `mention` 字段（@xxx 提示用的字符串）。
+    """
     query = (q or "").strip().lower()
     users = store.list_users()
     matched = [
         u
         for u in users
-        if query
-        and (
-            query in (u.get("username") or "").lower()
-            or query in (u.get("nickname") or "").lower()
-        )
+        if not query
+        or query in (u.get("username") or "").lower()
+        or query in (u.get("nickname") or "").lower()
     ]
     return {
         "users": [
@@ -2236,10 +2266,12 @@ def search_users(q: str = "", current_user: dict = Depends(get_current_user)):
                 "id": u["id"],
                 "username": u["username"],
                 "nickname": u.get("nickname") or u["username"],
+                "mention": "@" + (u.get("nickname") or u["username"]),
             }
-            for u in matched[:20]
+            for u in matched[:50]
         ]
     }
+
 
 
 # ---------- 最近浏览 ----------

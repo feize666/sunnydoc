@@ -14,6 +14,7 @@ import { uploadImage, uploadAttachment, aiAssist, createDocument, type AIAssistA
 import { mediaUrl } from "@/lib/markdown";
 import { DocumentEmbedView, EmbedPicker, NEW_DOC_TEMPLATE, type EmbeddableType } from "./DocumentEmbed";
 import SlashCommand from "./SlashCommand";
+import { MentionCommand, WikilinkCommand, unescapeWikilinkBrackets } from "./MentionCommand";
 import { Tooltip } from "./Tooltip";
 import { useToast } from "./Toast";
 import {
@@ -520,6 +521,11 @@ export function RichEditor({
       // 输入 `/` 唤起的块命令菜单（P2-1）。命令动作全部复用上面的现成链式命令，
       // 不另立一套插入逻辑；IME 守卫见 SlashCommand.tsx 顶部注释。
       SlashCommand,
+      // 输入 @ / [[ 唤起的提及 / 文档引用（P2-2）。
+      // ⚠️ `[[` 的转义冲突在保存出口用 unescapeWikilinkBrackets 还原，
+      //    不要在这里加 Mark（试过，无效，详见 MentionCommand.tsx 顶部说明）。
+      MentionCommand,
+      WikilinkCommand,
     ],
     content: value,
     immediatelyRender: false,
@@ -659,7 +665,10 @@ export function RichEditor({
     onUpdate: ({ editor }) => {
       const markdown = (editor.storage as { markdown?: { getMarkdown(): string } })
         .markdown?.getMarkdown();
-      if (markdown != null) onChange(markdown);
+      // 还原 `[[` 的转义：prosemirror-markdown 把 `[[标题]]` 序列化成
+      // `\[\[标题\]\]`（`[` 在其硬编码 esc 表里），直接落库会导致预览
+      // 渲染不出 .wikilink。此处只还原成对的 `[[`/`]]`（详见 MentionCommand.tsx）。
+      if (markdown != null) onChange(unescapeWikilinkBrackets(markdown));
     },
   });
 

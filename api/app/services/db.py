@@ -1010,6 +1010,74 @@ def lookup_document_by_title(
         return {"id": row[0], "title": row[1], "kb_id": row[2], "folder_id": row[3]}
 
 
+def search_documents_by_title(
+    query: str,
+    user_id: str | None = None,
+    limit: int = 20,
+    kb_ids: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """按标题**前缀/子串**查文档（用户可见范围内），排除已软删除。
+
+    设计取舍：
+    - 不走 RAG 检索（与 /search 解耦）—— 「已知标题的关键字」是另一种意图。
+    - 标题 ILIKE 模糊；空 query 退化为「最近 N 篇」（按 updated_at DESC），
+      供编辑器内 [[ 唤起刚打开时列几个候选用。
+    - 前缀匹配排在子串前面（同名字文档先到先得），便于按 typing 节奏精确定位。
+    """
+    conn = _connect()
+    with conn.cursor() as cur:
+        conds = ["deleted_at IS NULL"]
+        params: list[Any] = []
+        if kb_ids is not None:
+            if kb_ids:
+                placeholders = ",".join(["%s"] * len(kb_ids))
+                conds.append(f"(kb_id IN ({placeholders}) OR (user_id = %s AND kb_id IS NULL))")
+                params += list(kb_ids) + [user_id]
+            else:
+                conds.append("user_id = %s AND kb_id IS NULL")
+                params.append(user_id)
+        elif user_id is not None:
+            conds.append("user_id = %s")
+            params.append(user_id)
+
+        q = (query or "").strip()
+        if q:
+            # 前缀优先（按 updated_at DESC 同名先到先得），再用子串去重
+            sql = (
+                "SELECT id, title, kb_id, folder_id FROM documents WHERE "
+                + " AND ".join(conds + ["title ILIKE %s"])
+                + " ORDER BY pinned DESC, sort_order ASC NULLS LAST, updated_at DESC LIMIT %s"
+            )
+            # ILIKE 兼容中英文子串匹配（中文本身就是子串包含）
+            cur.execute(sql, params + [f"%{q}%", max(1, min(limit * 2, 60))])
+            rows = cur.fetchall()
+            # 客户端优先级：前缀命中排前，再去重
+            prefix: list[dict[str, Any]] = []
+            contain: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for r in rows:
+                rec = {"id": r[0], "title": r[1], "kb_id": r[2], "folder_id": r[3]}
+                if rec["id"] in seen:
+                    continue
+                seen.add(rec["id"])
+                if rec["title"].lower().startswith(q.lower()):
+                    prefix.append(rec)
+                else:
+                    contain.append(rec)
+            return (prefix + contain)[:limit]
+        else:
+            sql = (
+                "SELECT id, title, kb_id, folder_id FROM documents WHERE "
+                + " AND ".join(conds)
+                + " ORDER BY pinned DESC, sort_order ASC NULLS LAST, updated_at DESC LIMIT %s"
+            )
+            cur.execute(sql, params + [max(1, min(limit, 50))])
+            return [
+                {"id": r[0], "title": r[1], "kb_id": r[2], "folder_id": r[3]}
+                for r in cur.fetchall()
+            ]
+
+
 def create_folder(folder: dict[str, Any]) -> dict[str, Any]:
     """写入文件夹记录。
 

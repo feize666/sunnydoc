@@ -32,6 +32,7 @@ for (const instance of [md, mdSafe]) {
   instance.use(taskLists);
   instance.use(yuqueCompat);
   instance.use(wikilink);
+  instance.use(mention);
 }
 
 // 标题锚点「#」链接：hover 标题时浮现，点击复制锚点 URL（分享/定位到章节）
@@ -178,6 +179,56 @@ function wikilink(md: MarkdownItInstance) {
   };
 }
 
+// —— @ 提及 ——
+// 把 markdown 正文里的 `@昵称` 渲染为 `<a class="mention" data-user-name="…">@昵称</a>`。
+// 触发规则：@ 之前必须是空白/行首/中文标点（与编辑器内的 @ 唤起守卫一致 —— 避免邮箱误触）。
+// 限制：昵称最大 24 字（覆盖真实姓名/拼音首字母+中文）。这是纯文本写法，
+// 不需要 TipTap 节点 —— 与 wikilink 走同一条「写时是字面文本，读时由 markdown 解析」的路线，
+// 序列化器（getMarkdown）能正常往返，存的就是 "@Hook测试" 这种字面。
+function mention(md: MarkdownItInstance) {
+  function tokenize(state: any, silent: boolean): boolean {
+    const src = state.src;
+    const start = state.pos;
+    if (src.charCodeAt(start) !== 0x40 /* @ */) return false;
+    // 前驱必须是空白/行首/中文标点（与 @ 唤起的 allow 规则一致）
+    if (start > 0) {
+      const prev = src.charCodeAt(start - 1);
+      const isSpace = prev === 0x20 || prev === 0x09 || prev === 0x0a || prev === 0x0d;
+      const isCjk = prev >= 0x3000 && prev <= 0x303f; // CJK 标点
+      if (!isSpace && !isCjk) return false;
+    }
+    // 匹配：@ 后跟 1~24 个字符（字母数字下划线中文）
+    let end = start + 1;
+    while (end < state.posMax) {
+      const c = src.charCodeAt(end);
+      const isAlnum =
+        (c >= 0x30 && c <= 0x39) || // 0-9
+        (c >= 0x41 && c <= 0x5a) || // A-Z
+        (c >= 0x61 && c <= 0x7a) || // a-z
+        c === 0x5f; // _
+      const isCjkChar =
+        (c >= 0x4e00 && c <= 0x9fff) || // CJK 统一汉字
+        (c >= 0x3400 && c <= 0x4dbf); // CJK 扩展 A
+      if (!isAlnum && !isCjkChar) break;
+      end++;
+    }
+    const label = src.slice(start + 1, end);
+    if (!label) return false;
+    if (silent) return true;
+    const token = state.push("mention", "a", 0);
+    token.content = label;
+    state.pos = end;
+    return true;
+  }
+  md.inline.ruler.before("link", "mention", tokenize);
+  md.renderer.rules.mention = (tokens: any, idx: number) => {
+    const label = md.utils.escapeHtml(tokens[idx].content);
+    // id 暂用占位 —— 真实身份在客户端做一次「昵称 → id」映射（异步）。
+    // 一期只渲染样式与可点击区域，跨文档点击行为按 data-user-name 走「@昵称 + 回退搜索」。
+    return `<a class="mention" data-user-name="${label}">@${label}</a>`;
+  };
+}
+
 const PURIFY_CONFIG: Config = {
   // 默认白名单已涵盖 markdown 输出（p/h1~h6/strong/em/code/pre/blockquote/
   // a/table/ul/ol/li/hr/span 等），并自动剔除 script/iframe、on* 事件属性
@@ -197,8 +248,8 @@ const PURIFY_CONFIG: Config = {
   ],
   // 搜索命中高亮用 <mark>，语雀折叠块用 <details>/<summary>，加入白名单
   ADD_TAGS: ["mark", "details", "summary"],
-  // 双向链接 <span data-wikilink>：data-wikilink 属性需放行
-  ADD_ATTR: ["data-wikilink"],
+  // 双向链接 <span data-wikilink> / @ 提及 <a data-user-name class="mention">：数据属性需放行
+  ADD_ATTR: ["data-wikilink", "data-user-name", "data-doc-id"],
 };
 
 function escapeHtml(s: string): string {

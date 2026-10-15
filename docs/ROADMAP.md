@@ -1309,3 +1309,88 @@ CommentPanel 也展示了引用文本，但**正文从未与评论建立过锚�
 - 「点正文标记 → 面板打开 + 闪烁评论」是 open / highlightId / listComments
   异步加载三条链的交汇点。rAF 一帧不够：open 刚翻 true 时评论 li 还没挂上。
   → 轮询到 `li[data-comment-id]` 出现（5s 超时），再触发滚动与闪烁。
+
+### 8.19 已执行：文档树一键折叠展开 + 默认折叠（2026-10-15）
+
+**需求**：侧栏文档清单支持一键折叠/展开；**默认折叠**（截图：所有节点都是 `>` 一行排开）。
+
+**现状实测**（动手前核验，不照搬文档）：`FileTree.tsx:241` 是
+`const [open, setOpen] = useState(depth === 0)` —— **顶层展开、其余折叠**，
+且**没有任何"全部展开/折叠"入口**（`grep` 全无）。
+
+**实现**：
+- **默认改全折叠**：`useState(false)`（所有层级一致）。
+- **Sidebar 顶栏**加「全部展开 / 全部折叠」按钮（`data-testid="toggle-batched-all"`），
+  位置在「刷新」与「折叠侧栏」之间；选中态 `text-accent` + `aria-pressed`；
+  图标双三角，展开时 `rotate(90deg)`。
+- **状态提升**：`page.tsx` 持 `batchedAll: boolean | null` + `batchedAt: number`
+  两个 state，透传到 Sidebar → FileTree → 递归子节点。
+  - `null` = 未控制；`true/false` = 批量态；`batchedAt` 每次切换 +1（保证 effect 重跑）。
+- **用户偏好优先**：FileTree 每个节点持 `userToggled`，一旦用户手动点过该节点，
+  就**永久脱离批量控制**——避免「刚展开想看的内容被『全部折叠』一键收走」。
+- **切 KB 时重置**批量态（`useEffect [currentKbId]`），避免上一个 KB 的展开偏好串味。
+- **不加 localStorage 持久化**：折叠/展开是临时的视线状态，不该污染知识库结构。
+
+**真机验证**（`web/scripts/verify_tree_toggle.cjs`，14/14 全绿）：
+默认折叠 12 个 folder 全 `data-open="0"`、可见行数 == 顶层数、点全部展开 → 38/38 展开、
+可见行数显著增加、按钮 `aria-pressed="true"`、点全部折叠 → 回到 0/12、
+**手动展开的节点不被「全部折叠」覆盖**、顶层缩进一致。
+
+**对抗性验证**：摘掉批量应用逻辑（`if (batchedAll !== undefined) setOpen(false)`）后，
+**精确失败 4 项**（全是批量/手动展开相关），其余 10 项照旧通过 → 断言非恒真。
+
+**一次判据错（不是产品错）**：首次脚本用 `firstRow.locator("button").first()` 点展开，
+失败。实测该行按钮顺序是 `[0]=选择框(title="选择")`、`[1]=展开/折叠(flex-1)`、
+`[2]=+新建`、`[3]=更多`。改用 `button.flex-1` 后通过。
+→ **又一次「断言失败先怀疑判据」**（记忆里第 N 次）。
+
+### 8.20 已执行：@ 提及 + [[ 文档引用 的编辑器内唤起（P2-2，2026-10-15）
+
+**需求**：编辑器内输入 `@` 唤起人员选择、`[[` 唤起文档引用（路线图 P2-2）。
+
+**动手前实测**（不照搬文档）：`[[标题]]` 的**渲染 + 点击跳转**早已存在
+（`markdown.ts` 的 wikilink 规则 + `Editor.tsx` 的事件委托），
+`backlinks` 面板也已接上；**真正缺的是「写作时主动插入」的唤起入口**
+（`grep` 无任何 Mention / Wikilink Suggestion 组件）。
+
+**实现**（`web/src/components/MentionCommand.tsx`）：
+- 复用 `SlashCommand` 的 Suggestion 骨架（含三道 IME 守卫）。
+- **`@` 用 `char: "@"`**，**`[[` 必须用 `char: "[["` 整体** ——
+  单字符 `[` 会让 `escapeForRegEx` 拼出非法正则（`[` 是字符类起头）。
+  这是实测踩到的坑：单 `[` 怎么按都不弹。
+- **各自独立的 `pluginKey`**（`new PluginKey(...)`）：同 editor 上多个 Suggestion
+  共用默认 key 会互相覆盖 active 状态。
+- **两个独立 `addProseMirrorPlugins`** 注册（参照 SlashCommand 的写法；
+  直接把 suggestion 塞进 `Extension.create` 的 addOptions 会卡类型）。
+- `@` 触发加白名单：前驱必须是空白/行首 → 邮箱 `user@example.com` 不误触。
+- 后端：`/users/search` 空 q 返回全员（最多 50）+ `mention` 字段；
+  **新增 `/documents/search-by-title`**（标题前缀/子串，前端 `[[` 唤起用）。
+
+🔴 **最大的坑：`prosemirror-markdown` 硬编码转义 `[`**
+- `dist/index.js:822` 的 `esc()`：`.replace(/[`*\\~\[\]_]/g, m => "\\" + m)`
+  —— **`[` 在表里**，纯文本 `[[标题]]` 序列化成 `\[\[标题\]\]`，落库后
+  markdown 再也解析不回 wikilink（预览 0 个 `.wikilink`）。
+- 试过但**无效**的两条路（别再试）：
+  1. 自定义 Mark 包住文本 → Mark 只控制 open/close 包装，节点文本仍走
+     `state.text()`，照样被 esc；
+  2. Mark 的 `addStorage().markdown.serialize` 里 `state.text(t, false)`
+     → Mark 的 spec 是 `{open, close}` 或 prosemirror 函数，签名不匹配，
+     运行时报 `value is not a function`。
+- **采用方案**：保存出口（`RichEditor` 的 `onUpdate`）对 `getMarkdown()` 输出做
+  「反 esc」—— `unescapeWikilinkBrackets()`，只还原成对的 `\[\[`/`\]\]`。
+
+**真机验证**（`web/scripts/verify_mention.cjs`，19/19 全绿）：
+`@` 弹菜单/中文过滤/回车插入/预览渲染 `a.mention[data-user-name]`；
+`[[` 弹菜单/`WSL` 过滤命中/回车插入/落库无转义/预览渲染 `.wikilink[data-wikilink]`；
+邮箱 `@` 不弹、单 `[` 不弹、ESC 关闭、默认高亮首项、零残留。
+
+**对抗性验证**：摘掉 `unescapeWikilinkBrackets` 后**精确失败 2 项**
+（落库变 `\[\[`、预览渲染 null），其余 17 项照旧通过 → 断言非恒真。
+
+**两条路由坑（后端）**：
+1. **Starlette 按声明顺序匹配路由** —— 新增的 `/documents/search-by-title`
+   若注册在 `/documents/{doc_id}` **之后**，会被后者当 doc_id 吃掉 → 永远 404
+   （且报错是 `{"detail":"文档不存在"}`，看着像 lookup 的错）。
+   必须放到 `{doc_id}` **之前**。
+2. 创建文档的字段名是 **`content` 不是 `text`**（`CreateDocumentRequest`），
+   传错会被静默忽略 → 建出空文档。
