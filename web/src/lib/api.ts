@@ -504,6 +504,33 @@ export async function batchDeleteDocuments(payload: {
   });
 }
 
+export type BatchMoveResult = {
+  moved: string[];
+  skipped: { id: string; reason: string }[];
+  count: number;
+};
+
+/**
+ * 批量移动文档到目标知识库/文件夹（与 batchDeleteDocuments 对称）。
+ * `kb_id: null` = 移出知识库（进「个人空间」）；`folder_id: null` = 目标库根目录。
+ * 无权限或不存在的项会被跳过而非整批失败。
+ */
+export async function batchMoveDocuments(payload: {
+  doc_ids: string[];
+  kb_id: string | null;
+  folder_id?: string | null;
+}): Promise<BatchMoveResult> {
+  return request<BatchMoveResult>("/documents/batch-move", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      doc_ids: payload.doc_ids ?? [],
+      kb_id: payload.kb_id,
+      folder_id: payload.folder_id ?? null,
+    }),
+  });
+}
+
 // —— 收藏 / 分享 ——
 
 export async function addFavorite(docId: string): Promise<void> {

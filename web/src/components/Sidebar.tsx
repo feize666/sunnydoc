@@ -122,6 +122,7 @@ export function Sidebar({
   onDeleteDoc,
   onDeleteFolder,
   onDeleteSelected,
+  onMoveSelected,
   onRenameFolder,
   onMoveDoc,
   onMoveFolder,
@@ -182,6 +183,8 @@ export function Sidebar({
   onDeleteFolder?: (id: string) => void;
   /** 批量删除选中项；返回实际删除数量。 */
   onDeleteSelected?: (docIds: string[], folderIds: string[]) => Promise<number>;
+  /** 批量移动选中的文档到其他知识库（打开 MoveToKbDialog）。 */
+  onMoveSelected?: (docIds: string[]) => void;
   onRenameFolder?: (folderId: string, name: string) => Promise<void> | void;
   onMoveDoc?: (docId: string, folderId: string | null, sortOrder?: number | null) => void;
   onMoveFolder?: (folderId: string, parentId: string | null, sortOrder?: number | null) => void;
@@ -973,6 +976,7 @@ export function Sidebar({
               onMoveToKb={readOnly ? undefined : onMoveToKb}
               onImportToFolder={readOnly ? undefined : onImportToFolder}
               onDeleteSelected={readOnly ? undefined : onDeleteSelected}
+              onMoveSelected={readOnly ? undefined : onMoveSelected}
               onEditTags={readOnly ? undefined : onEditTags}
               onGenerateSummary={readOnly ? undefined : onGenerateSummary}
               onTagSelect={onTagSelect ? (t) => setTagFilter(t) : undefined}

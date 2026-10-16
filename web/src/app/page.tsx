@@ -238,7 +238,10 @@ export default function Home() {
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [moveToKbTarget, setMoveToKbTarget] = useState<{ id: string; title: string } | null>(null);
+  const [moveToKbTarget, setMoveToKbTarget] = useState<{
+    ids: string[];
+    title: string;
+  } | null>(null);
   const [currentKbId, setCurrentKbId] = useState<string | null>(null);
   const [kbs, setKbs] = useState<Kb[]>([]);
   const [recent, setRecent] = useState<RecentDoc[]>([]);
@@ -1031,13 +1034,21 @@ export default function Home() {
   }, []);
 
   // 进入知识库
-  const enterKb = useCallback((id: string) => {
-    saveSessionKbId(id);
-    setCurrentKbId(id);
-    setView("kb");
-    setActiveKey(null);
-    setOpenKeys([]);
-  }, []);
+  const enterKb = useCallback(
+    (id: string) => {
+      saveSessionKbId(id);
+      setCurrentKbId(id);
+      setView("kb");
+      setActiveKey(null);
+      setOpenKeys([]);
+      // 刷新知识库列表：`kbs` state 原来只在登录时加载一次，
+      // 导致用户在会话中**新建的知识库不会出现在「移动到知识库」对话框**里
+      // （对话框的 targets 来自这个 state）—— 只能刷新整页才能看到，属真实缺陷。
+      // 进 KB 是低频动作，顺手刷一次的代价可忽略。
+      refreshKbs();
+    },
+    [refreshKbs],
+  );
 
   // 返回首页
   const goHome = useCallback(() => {
@@ -1394,7 +1405,7 @@ export default function Home() {
     onMoveFolder: handleMoveFolder,
     onMoveToKb: (docId: string) => {
       const meta = metas.find((m) => m.id === docId);
-      setMoveToKbTarget({ id: docId, title: meta?.title ?? docId });
+      setMoveToKbTarget({ ids: [docId], title: meta?.title ?? docId });
     },
     onNew: handleNew,
     onRenameDoc: handleRenameDoc,
@@ -1432,6 +1443,10 @@ export default function Home() {
     batchedAll,
     batchedAt,
     onToggleBatchedAll: handleToggleBatchedAll,
+    // 批量移动：多选工具条「移动」→ 打开既有的 MoveToKbDialog（传多 id）
+    onMoveSelected: (docIds: string[]) => {
+      setMoveToKbTarget({ ids: docIds, title: "" });
+    },
   };
 
   return (
@@ -1803,7 +1818,7 @@ export default function Home() {
         open={moveToKbTarget !== null}
         onClose={() => setMoveToKbTarget(null)}
         onMoved={refreshList}
-        docId={moveToKbTarget?.id ?? null}
+        docIds={moveToKbTarget?.ids ?? []}
         docTitle={moveToKbTarget?.title ?? ""}
         kbs={kbs}
         currentKbId={currentKbId}

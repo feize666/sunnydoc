@@ -1,15 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { moveDocumentToKb, type Kb } from "@/lib/api";
+import {
+  moveDocumentToKb,
+  batchMoveDocuments,
+  type Kb,
+} from "@/lib/api";
 import { useModalFocus } from "@/lib/useModalFocus";
 import { CloseIcon } from "./icons";
 
+/**
+ * 「移动到知识库」对话框。
+ *
+ * 同时服务两条路径（**不复制两份实现** —— 分叉代价在本项目已实证两次）：
+ *  - 单个文档：行内「更多操作 → 移动到…」
+ *  - 批量：多选工具条「移动」（`docIds` 长度 > 1）
+ *
+ * 批量走 `/documents/batch-move`（一次请求、逐项跳过无权限者）；
+ * 单个仍走既有的单文档接口，保持原有行为与后端语义不变。
+ */
 export function MoveToKbDialog({
   open,
   onClose,
   onMoved,
-  docId,
+  docIds,
   docTitle,
   kbs,
   currentKbId,
@@ -17,8 +31,10 @@ export function MoveToKbDialog({
   open: boolean;
   onClose: () => void;
   onMoved: () => void;
-  docId: string | null;
-  docTitle: string;
+  /** 批量时传多个 id；单个时长度为 1。空数组表示不可用。 */
+  docIds: string[];
+  /** 单个文档的标题（用于文案）；批量时留空，改用数量表述。 */
+  docTitle?: string;
   kbs: Kb[];
   currentKbId: string | null;
 }) {
@@ -29,19 +45,32 @@ export function MoveToKbDialog({
 
   if (!open) return null;
 
+  const isBatch = docIds.length > 1;
+
   // 可选目标：有写权限、且不是当前库
   const targets = kbs.filter(
     (k) => k.id !== currentKbId && (k.permission === "owner" || k.permission === "write"),
   );
 
   const handleMove = async (kb: Kb) => {
-    if (!docId || submitting) return;
+    if (docIds.length === 0 || submitting) return;
     setSubmitting(kb.id);
     setError(null);
+    let hasSkipped = false;
     try {
-      await moveDocumentToKb(docId, kb.id);
+      if (isBatch) {
+        const res = await batchMoveDocuments({ doc_ids: docIds, kb_id: kb.id });
+        // 有跳过项时如实告知，不假装全部成功
+        if (res.skipped.length > 0) {
+          hasSkipped = true;
+          setError(`已移动 ${res.count} 项，${res.skipped.length} 项被跳过（无权限或不存在）`);
+        }
+      } else {
+        await moveDocumentToKb(docIds[0], kb.id);
+      }
       onMoved();
-      onClose();
+      // 有跳过项时不自动关闭，让用户看清提示
+      if (!hasSkipped) onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "移动失败");
     } finally {
@@ -61,7 +90,15 @@ export function MoveToKbDialog({
 
         <div className="p-4">
           <p className="mb-3 text-[13px] text-muted">
-            将「<span className="font-medium text-text">{docTitle}</span>」移动到其他知识库（移动后将从当前知识库移除）
+            {isBatch ? (
+              <>
+                将选中的 <span className="font-medium text-text">{docIds.length}</span> 篇文档移动到其他知识库（移动后将从当前知识库移除）
+              </>
+            ) : (
+              <>
+                将「<span className="font-medium text-text">{docTitle}</span>」移动到其他知识库（移动后将从当前知识库移除）
+              </>
+            )}
           </p>
 
           {targets.length === 0 ? (

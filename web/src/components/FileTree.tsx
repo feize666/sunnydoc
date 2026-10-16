@@ -671,6 +671,7 @@ export function FileTree({
   onGenerateSummary,
   onTagSelect,
   onDeleteSelected,
+  onMoveSelected,
   batchedAll,
   batchedAt,
 }: {
@@ -700,6 +701,12 @@ export function FileTree({
   onTagSelect?: (tag: string) => void;
   /** 批量删除选中项；返回实际删除数量（用于决定提示文案）。 */
   onDeleteSelected?: (docIds: string[], folderIds: string[]) => Promise<number>;
+  /**
+   * 批量移动选中的**文档**到其他知识库（多选工具条「移动」）。
+   * 只收文档 id —— 跨库移动目前只支持文档，文件夹跨库涉及子树与权限继承，
+   * 不在本轮范围（传 id 列表，由页面层打开 MoveToKbDialog）。
+   */
+  onMoveSelected?: (docIds: string[]) => void;
   /**
    * 批量展开/折叠控制（侧栏「全部展开 / 全部折叠」按钮用）：
    *  - undefined: 不强制
@@ -896,6 +903,24 @@ export function FileTree({
           >
             取消
           </button>
+          {/* 「移动」只在选中项**全是文档**时可用：
+              跨库移动目前只支持文档；混选文件夹时禁用并说明原因，
+              好过点了之后静默只处理一部分。 */}
+          {onMoveSelected && (
+            <button
+              onClick={() => onMoveSelected(selectedIds.docs)}
+              disabled={selectedIds.docs.length === 0 || selectedIds.folders.length > 0}
+              data-testid="batch-move"
+              title={
+                selectedIds.folders.length > 0
+                  ? "跨知识库移动暂只支持文档（请取消选中文件夹）"
+                  : "移动到其他知识库"
+              }
+              className="btn btn-secondary !px-2.5 !py-1 !text-[13px] disabled:opacity-50"
+            >
+              移动{selectedIds.docs.length > 0 ? ` (${selectedIds.docs.length})` : ""}
+            </button>
+          )}
           <button
             onClick={() => setConfirmBatch(true)}
             disabled={batchBusy}

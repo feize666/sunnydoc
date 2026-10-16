@@ -208,6 +208,17 @@ class BatchDeleteRequest(BaseModel):
     folder_ids: list[str] = []
 
 
+class BatchMoveRequest(BaseModel):
+    """批量移动文档到目标知识库/文件夹。
+
+    与 BatchDeleteRequest 对称：逐个处理、跳过无权限项，返回实际成功与跳过原因。
+    `kb_id` 为 None 表示移出知识库（进「个人空间」）；`folder_id` 为 None 表示目标库根目录。
+    """
+    doc_ids: list[str] = []
+    kb_id: str | None = None
+    folder_id: str | None = None
+
+
 class CreateDocumentRequest(BaseModel):
     title: str
     content: str = ""
@@ -2011,6 +2022,59 @@ def batch_delete(req: BatchDeleteRequest, current_user: dict = Depends(get_curre
             skipped.append({"id": folder_id, "reason": "文件夹不存在或无删除权限"})
 
     return {"deleted": deleted, "skipped": skipped, "count": len(deleted)}
+
+
+@router.post("/documents/batch-move")
+def batch_move(req: BatchMoveRequest, current_user: dict = Depends(get_current_user)):
+    """批量移动文档到目标知识库/文件夹（跨库移动的批量版本）。
+
+    与 batch-delete 对称：逐个校验权限，**跳过无权限/不存在的项**而不是整批失败 ——
+    多选时列表里常混有他人文档或已删除项，整批回滚会让用户无法完成操作。
+
+    权限规则（与单文档移动一致，见 update_document）：
+      - 目标知识库必须可写（`_require_kb_write`）；`kb_id=None` 表示移出知识库，无需校验。
+      - 源文档必须可移动（store.update 内部按 user_id 判定可见/可写）。
+    这里**预先校验目标库权限**并在无权限时直接 403，而不是逐个报「文档不存在」——
+    否则用户拿到 10 条「不存在」却不知道真因是目标库没权限。
+    """
+    if req.kb_id:
+        _require_kb_write(req.kb_id, current_user)
+
+    moved: list[str] = []
+    skipped: list[dict[str, str]] = []
+    # 去重：同一 id 传两次会重复写审计日志
+    doc_ids = list(dict.fromkeys(req.doc_ids))
+
+    for doc_id in doc_ids:
+        doc = store.get(doc_id, current_user["id"])
+        if doc is None:
+            skipped.append({"id": doc_id, "reason": "文档不存在"})
+            continue
+        target_folder = req.folder_id
+        # 移出知识库时文件夹必须清空 —— 文件夹是「知识库内」的概念，
+        # 保留一个属于已离开知识库的 folder_id 会让文档挂在别人的目录下（脏数据）。
+        if req.kb_id is None:
+            target_folder = None
+        try:
+            updated = store.update(
+                doc_id,
+                user_id=current_user["id"],
+                kb_id=req.kb_id,
+                folder_id=target_folder,
+            )
+        except Exception:
+            updated = None
+        if updated:
+            moved.append(doc_id)
+            _audit(
+                current_user, "move", "doc", doc_id,
+                f"批量移动文档「{doc.get('title', doc_id)}」到 "
+                + (req.kb_id or "个人空间"),
+            )
+        else:
+            skipped.append({"id": doc_id, "reason": "无移动权限"})
+
+    return {"moved": moved, "skipped": skipped, "count": len(moved)}
 
 
 # ---------- 文件夹 ----------
