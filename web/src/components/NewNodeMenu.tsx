@@ -25,7 +25,7 @@ export type NodeType =
   | "slides"
   | "flowchart";
 
-function Icon({ d, color, size = 18 }: { d: string; color: string; size?: number }) {
+export function NodeTypeIcon({ d, color, size = 18 }: { d: string; color: string; size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
       {d.split("|").map((p, i) => (
@@ -35,7 +35,10 @@ function Icon({ d, color, size = 18 }: { d: string; color: string; size?: number
   );
 }
 
-interface TypeDef {
+/** 仅供本文件内使用的别名，避免改动既有调用点。 */
+const Icon = NodeTypeIcon;
+
+export interface TypeDef {
   type: NodeType;
   label: string;
   desc: string;
@@ -44,7 +47,12 @@ interface TypeDef {
   icon: string;
 }
 
-const TYPES: TypeDef[] = [
+/**
+ * 8 种节点类型的定义（图标 / 文案 / 是否可用）。
+ * **导出**供命令面板复用 —— 同一个类型在两处出现时，
+ * label/desc/icon 必须同源，否则又会出现「两处文案不一致」（D3 的教训）。
+ */
+export const NODE_TYPES: TypeDef[] = [
   { type: "doc", label: "文档", desc: "富文本笔记", color: "#3b82f6", available: true, icon: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z|M14 2v6h6" },
   // 表格 vs 数据表必须一眼分清（P1-2 / 缺陷 D3）：
   //   表格 = 文档里嵌一张表，纯行列 + 简单公式（=SUM(A1:B2)）
@@ -122,7 +130,7 @@ export function NewNodeMenu({
       style={{ ...(pos ?? {}), overflowY: "auto", overflowX: "hidden" }}
     >
       <div className="grid grid-cols-2 gap-0.5">
-        {TYPES.map((t) => (
+        {NODE_TYPES.map((t) => (
           <button
             key={t.type}
             disabled={!t.available}

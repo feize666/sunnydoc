@@ -32,7 +32,11 @@ import { useViewStack } from "@/hooks/useViewStack";
 import { CommentPanel } from "@/components/CommentPanel";
 import { NotificationPanel } from "@/components/NotificationPanel";
 import { MoveToKbDialog } from "@/components/MoveToKbDialog";
-import type { NodeType } from "@/components/NewNodeMenu";
+import {
+  NODE_TYPES,
+  NodeTypeIcon,
+  type NodeType,
+} from "@/components/NewNodeMenu";
 import type { Doc, TreeNode, SortBy } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
 import { buildTree } from "@/lib/buildTree";
@@ -903,6 +907,15 @@ export default function Home() {
   const handleNew = useCallback(
     async (type: NodeType, parentFolderId: string | null) => {
       try {
+        // 新建后必须让用户「看得见结果」：命令面板（⌘K）可在首页直接触发新建，
+        // 而首页没有文档树 —— 只建不切视图的话，用户点了「新建流程图」却
+        // 停留在首页，会以为没成功（D4 发现性问题的延续）。
+        // 这里在打开文档前先切到知识库视图。
+        const openInKb = (docId: string) => {
+          setView("kb");
+          refreshList();
+          openDoc(docId);
+        };
         if (type === "folder") {
           await createFolder("未命名文件夹", parentFolderId, currentKbId);
           refreshList();
@@ -914,8 +927,7 @@ export default function Home() {
             parentFolderId,
             "table",
           );
-          refreshList();
-          openDoc(doc.id);
+          openInKb(doc.id);
         } else if (type === "board") {
           const doc = await createDocument(
             "未命名画板",
@@ -924,8 +936,7 @@ export default function Home() {
             parentFolderId,
             "board",
           );
-          refreshList();
-          openDoc(doc.id);
+          openInKb(doc.id);
         } else if (type === "datasheet") {
           const doc = await createDocument(
             "未命名数据表",
@@ -934,8 +945,7 @@ export default function Home() {
             parentFolderId,
             "datasheet",
           );
-          refreshList();
-          openDoc(doc.id);
+          openInKb(doc.id);
         } else if (type === "mindmap") {
           const doc = await createDocument(
             "未命名思维导图",
@@ -944,8 +954,7 @@ export default function Home() {
             parentFolderId,
             "mindmap",
           );
-          refreshList();
-          openDoc(doc.id);
+          openInKb(doc.id);
         } else if (type === "flowchart") {
           const doc = await createDocument(
             "未命名流程图",
@@ -954,12 +963,10 @@ export default function Home() {
             parentFolderId,
             "flowchart",
           );
-          refreshList();
-          openDoc(doc.id);
+          openInKb(doc.id);
         } else {
           const doc = await createDocument("未命名文档", "", currentKbId, parentFolderId);
-          refreshList();
-          openDoc(doc.id);
+          openInKb(doc.id);
         }
       } catch (e) {
         toast.error(`新建失败：${e instanceof Error ? e.message : "未知错误"}`);
@@ -1312,7 +1319,22 @@ export default function Home() {
       hint: "Ctrl+I",
       action: openImport,
     },
+    // ---- 新建各类节点（D4 修复：非文档类型发现性差） ----
+    // 原来只有「进知识库 → 点 ⨁ 新建」一条极深路径，导致 5 个非文档编辑器
+    // （流程图/思维导图/表格/数据表/画板）写了 3000+ 行、生产数据 0 条。
+    // 命令面板（⌘K）是既有高频入口，这里补上「新建 X」直达通道。
+    // 类型清单取自 NODE_TYPES —— 与 ⨁ 菜单**同源**，避免两处文案不一致（D3 教训）。
+    // 排除 folder：目录走下方独立的「新建文件夹」项（可先命名）。
+    ...NODE_TYPES.filter((t) => t.available && t.type !== "folder").map((t) => ({
+      icon: <NodeTypeIcon d={t.icon} color={t.color} size={15} />,
+      // hint 位是 font-mono 的快捷键位（如 ⌘K），中文 desc 放那里会被当成快捷键，
+      // 因此 desc 并入 label；两段之间用「·」分隔，与 ⨁ 菜单的 desc 措辞同源。
+      label: `新建${t.label} · ${t.desc}`,
+      action: () => handleNew(t.type, null),
+    })),
     {
+      // 「目录」单独列出：走对话框可**先命名**，这是侧栏「新建文件夹」的既有行为，
+      // 不能退化成「先建个『未命名文件夹』再让用户改名」。
       icon: <FolderIcon size={15} />,
       label: "新建文件夹",
       hint: "",
