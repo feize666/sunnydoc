@@ -121,7 +121,12 @@ async function buildFixture() {
   // 夹具建在根级，可直接在文件树点到（不需要搜索，避免走「搜索态一次性渲染」）
   const CONTAINER_TITLE = "夹具-容器";
 
-  const b = await chromium.launch({ headless: true, args: ["--no-proxy-server"] });
+  const b = await chromium.launch({
+    headless: true,
+    args: ["--no-proxy-server"],
+    // 允许指定浏览器可执行文件（playwright 包升级后缓存里可能只有旧版 chromium）
+    ...(process.env.SUNNYDOC_CHROMIUM ? { executablePath: process.env.SUNNYDOC_CHROMIUM } : {}),
+  });
   const p = await b.newPage({ viewport: { width: 1600, height: 1000 } });
   const errs = [];
   p.on("pageerror", (e) => errs.push(String(e).slice(0, 150)));

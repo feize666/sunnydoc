@@ -170,7 +170,12 @@ async function ask(p, q, { expect, waitMs = 60000 } = {}) {
   if (!TARGET_DOC_ID) {
     console.log("⏭  未提供 AGENT_TARGET_DOC_ID，跳过破坏性操作用例");
   }
-  const b = await chromium.launch({ headless: true, args: ["--no-proxy-server"] });
+  const b = await chromium.launch({
+    headless: true,
+    args: ["--no-proxy-server"],
+    // 允许指定浏览器可执行文件（playwright 包升级后缓存里可能只有旧版 chromium）
+    ...(process.env.SUNNYDOC_CHROMIUM ? { executablePath: process.env.SUNNYDOC_CHROMIUM } : {}),
+  });
   const p = await b.newPage({ viewport: { width: 1440, height: 950 } });
   const errs = [];
   p.on("pageerror", (e) => errs.push(String(e)));

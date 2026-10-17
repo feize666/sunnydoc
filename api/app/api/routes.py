@@ -115,10 +115,15 @@ def _get_attachment(attachment_id: str, user_id: str) -> dict | None:
 TMP_DIR = DATA_DIR / "tmp"
 TMP_DIR.mkdir(parents=True, exist_ok=True)
 
-# 图片上传目录（编辑器粘贴上传）
+# 图片上传目录（编辑器粘贴上传）。保留：早期上传的图片落在这里，
+# 静态挂载 /uploads 仍在服务它们，不能删目录否则历史图片全裂。
 UPLOAD_DIR = MEDIA_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"}
+# 单个图片大小上限（10MB）：**必须有**，否则等于开放无限写盘 ——
+# 实测曾有 35MB 的文件被直接存盘（附件接口有 30MB 上限，图片接口却完全没有，
+# 属明显不对称）。图片经内存读取后内容寻址落盘，不设上限会打爆进程与磁盘。
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 # 正文附件允许的扩展名（编辑器内挂载非图片文件）。
 # 白名单而非黑名单：附件是要被下载/打开的原始文件，绝不能放行可执行脚本类型
@@ -1582,6 +1587,22 @@ def get_media(filename: str, name: str | None = None):
 
     ext = parser.ext_of(filename)
     ctype = media.content_type(ext)
+    # 🔴 SVG 必须当附件下载、不能内联渲染：SVG 可内嵌 <script>，而本站图片
+    #    默认内联展示 → 上传一张恶意 SVG 再让受害者打开文档，脚本就在本站
+    #    同源执行（存储型 XSS）。改成 attachment 后浏览器不会执行其中脚本。
+    #    代价是 SVG 不能用 <img> 直接显示 —— 但 <img> 本来也不执行 SVG 脚本，
+    #    真正危险的是「直接访问该 URL」这条路径，故这里必须收紧。
+    if ctype == "image/svg+xml":
+        return FileResponse(
+            path,
+            media_type=ctype,
+            headers={
+                "Content-Disposition": f'attachment; filename="{quote(filename)}"',
+                # 双保险：即使被内联，也禁掉脚本与外部引用
+                "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
     # 仅对非媒体类（即附件）附加下载文件名；图片/视频保持内联可预览
     is_inline = ctype.startswith("image/") or ctype.startswith("video/")
     if name and not is_inline:
@@ -3313,15 +3334,35 @@ def mark_all_notifications_read(current_user: dict = Depends(get_current_user)):
 async def upload_image(
     file: UploadFile = File(...), current_user: dict = Depends(get_current_user)
 ):
-    """编辑器粘贴上传图片：保存到 media/uploads，返回可访问 URL。"""
-    ext = Path(file.filename or "").suffix.lower()
+    """编辑器粘贴/选择上传图片，返回可访问 URL。
+
+    🔴 两个原本缺失的保护（2026-10-17 实测补上）：
+    1. **大小上限**：此前**完全没有**大小校验 —— 实测 35MB 的文件直接 200 存盘，
+       而附件接口有 30MB 上限，属明显不对称。无限制写盘 = 可被用来打满磁盘。
+    2. **内容寻址去重**：此前用 `uuid4().hex` 命名 → 同一张图粘贴两次存两份。
+       改走 `media.save`（sha1 内容寻址），相同内容只落一份盘。
+       这与附件的做法一致，也让「多次粘贴同一截图」不再浪费空间。
+
+    响应仍返回 `/api/v1/media/{filename}`（内容寻址路径），与附件一致；
+    历史上传的 `/uploads/{uuid}` 仍由静态挂载继续服务，不会失效。
+    """
+    raw_name = (file.filename or "").strip()
+    ext = Path(raw_name).suffix.lower()
     if ext not in ALLOWED_IMAGE_EXTS:
-        raise HTTPException(status_code=400, detail="仅支持图片格式（png/jpg/gif/webp/svg）")
-    name = f"{uuid.uuid4().hex}{ext}"
-    dest = UPLOAD_DIR / name
-    with dest.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
-    return {"url": f"/uploads/{name}"}
+        allowed = "、".join(sorted(e.lstrip(".") for e in ALLOWED_IMAGE_EXTS))
+        raise HTTPException(status_code=400, detail=f"仅支持图片格式：{allowed}")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="图片内容为空")
+    if len(data) > MAX_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"图片过大（上限 {MAX_IMAGE_BYTES // 1024 // 1024}MB）",
+        )
+
+    filename = media.save(data, ext)
+    return {"url": f"/api/v1/media/{filename}", "size": len(data)}
 
 
 @router.post("/upload/attachment")

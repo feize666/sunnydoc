@@ -104,7 +104,12 @@ async function openKbAndDoc(p) {
 }
 
 (async () => {
-  const b = await chromium.launch({ headless: true, args: ["--no-proxy-server"] });
+  const b = await chromium.launch({
+    headless: true,
+    args: ["--no-proxy-server"],
+    // 允许指定浏览器可执行文件（playwright 包升级后缓存里可能只有旧版 chromium）
+    ...(process.env.SUNNYDOC_CHROMIUM ? { executablePath: process.env.SUNNYDOC_CHROMIUM } : {}),
+  });
 
   console.log("━━━ A. 移动端：横向溢出与触控目标 ━━━");
   for (const vp of MOBILE_VPS) {

@@ -43,9 +43,20 @@ import {
 /* ---------- 上传插入图片（粘贴 / 拖拽共用） ---------- */
 
 /**
- * 上传图片并插入到当前光标处。
+ * 上传图片并插入到当前位置。
  *
  * 失败时给出 toast 提示，不再像原先那样静默吞掉——拖了半天没反应是最糟的体验。
+ *
+ * ⚠️ 两个真实坑（都实测踩过）：
+ *
+ * 1. **不能 `replaceSelectionWith`**：插入图片时若用户恰好选中了「一张已有图片」
+ *    或一段文字，替换会把它们**删掉**。实测症状极具迷惑性 —— 选中一张图后从
+ *    弹窗选本地图片，图片数从 1 变成… 仍是 1（旧的被替换了），看起来像
+ *    「选了图但没反应」。改为插到**选区末端之后**，永不破坏已有内容。
+ *
+ * 2. **焦点要先还给编辑器**：从弹窗的「选择本地图片」触发时焦点在文件选择器上，
+ *    编辑器已 blur、选区可能已折叠。先 `view.focus()` 让 PM 恢复自己的选区，
+ *    再以 `state.selection.to` 作为插入点。
  */
 function insertUploadedImage(
   view: EditorView,
@@ -54,9 +65,31 @@ function insertUploadedImage(
 ) {
   uploadImage(file)
     .then((url) => {
+      // 焦点回到编辑器：弹窗/文件选择器触发时 PM 需要它才会维护正确选区
+      view.focus();
       const { state, dispatch } = view;
       const node = state.schema.nodes.image.create({ src: url });
-      dispatch(state.tr.replaceSelectionWith(node));
+      const para = state.schema.nodes.paragraph?.createAndFill();
+      // 插入点 = 选区末端。ProseMirror 在块级节点被插入 inline 位置时会
+      // **自动 split 父块**（粘贴图片时的标准行为），无需自己找边界。
+      const tryInsert = () => {
+        // 先固定插入点：dispatch 之后选区会变，不能读第二次
+        const pos = state.selection.to;
+        const tr = state.tr.insert(pos, node);
+        dispatch(para ? tr.insert(pos + node.nodeSize, para) : tr);
+      };
+      try {
+        tryInsert();
+      } catch {
+        // 插入点被其它事务改动（如自动保存回写）导致位置失效时兜底：
+        // 追加到文末 —— 图片**已经上传成功**，绝不能让它悄悄丢掉变成
+        // 「上传了但看不见」，那比插错位置更糟。
+        try {
+          dispatch(state.tr.insert(state.doc.content.size, node).scrollIntoView());
+        } catch (e2) {
+          onError(e2 instanceof Error ? e2.message : "图片插入失败（已上传但未能插入）");
+        }
+      }
     })
     .catch((e: unknown) => {
       onError(e instanceof Error ? e.message : "图片上传失败");
@@ -488,6 +521,10 @@ export function RichEditor({
   const attachInputRef = useRef<HTMLInputElement>(null);
   /** 「插入卡片」选择器开关 */
   const [embedOpen, setEmbedOpen] = useState(false);
+  // 图片弹窗里的「选择本地图片」要能触发隐藏 input；
+  // 同时记录是否正在拖文件到弹窗上，用于给出高亮反馈
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const [imageDragOver, setImageDragOver] = useState(false);
 
   /**
    * 图片放大请求：由 DocImage 的 NodeView 通过 window 事件发出。
@@ -1317,7 +1354,31 @@ export function RichEditor({
             <ImageIcon size={17} />
           </ToolBtn>
           {imageOpen && (
-            <div className="popover-panel absolute left-0 top-full z-30 mt-1 w-72">
+            <div
+              className={`popover-panel absolute left-0 top-full z-30 mt-1 w-72 ${
+                imageDragOver ? "ring-2 ring-accent" : ""
+              }`}
+              // 支持直接把图片文件拖进弹窗：此前弹窗只能手填 URL 或去正文里拖，
+              // 用户明确问过「怎么添加图片」——这条路径此前完全不存在。
+              onDragOver={(e) => {
+                if (Array.from(e.dataTransfer.items).some((i) => i.type.startsWith("image/"))) {
+                  e.preventDefault();
+                  setImageDragOver(true);
+                }
+              }}
+              onDragLeave={() => setImageDragOver(false)}
+              onDrop={(e) => {
+                const files = Array.from(e.dataTransfer.files).filter((f) =>
+                  f.type.startsWith("image/"),
+                );
+                if (files.length === 0) return;
+                e.preventDefault();
+                e.stopPropagation();
+                setImageDragOver(false);
+                setImageOpen(false);
+                files.forEach((f) => insertUploadedImage(editor.view, f, toast.error));
+              }}
+            >
               <div className="mb-1 text-[12px] font-medium text-text">图片地址</div>
               <input
                 value={imageUrl}
@@ -1328,6 +1389,15 @@ export function RichEditor({
                 data-testid="image-url-input"
                 className="input input-sm mb-2"
               />
+              {/* 本地文件：此前只能靠粘贴/拖拽/手填 URL，没有「选文件」入口 */}
+              <button
+                type="button"
+                data-testid="image-pick-file"
+                onClick={() => imageInputRef.current?.click()}
+                className="mb-2 w-full rounded-md border border-dashed border-line px-3 py-2 text-[12px] text-muted transition-colors hover:border-accent/50 hover:bg-hover hover:text-text"
+              >
+                选择本地图片，或把图片拖到这里
+              </button>
               <div className="flex justify-end gap-1.5">
                 <button
                   type="button"
@@ -1376,6 +1446,22 @@ export function RichEditor({
             // 重置 input，否则连续插同一个文件不会触发 change
             e.target.value = "";
             files.forEach((f) => insertUploadedAttachment(editor.view, f, toast));
+          }}
+        />
+        {/* 图片弹窗「选择本地图片」用的隐藏 input（图片上传走内容寻址 URL） */}
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          data-testid="image-file-input"
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            e.target.value = "";
+            if (files.length === 0) return;
+            setImageOpen(false);
+            files.forEach((f) => insertUploadedImage(editor.view, f, toast.error));
           }}
         />
         {/* 插入文档卡片：把表格/思维导图/流程图等作为可跟随的卡片嵌入正文 */}

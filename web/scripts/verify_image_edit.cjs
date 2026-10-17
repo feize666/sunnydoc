@@ -78,7 +78,12 @@ const PNG_B64 =
   "BV6a7faRBxaTAAAAAElFTkSuQmCC";
 
 (async () => {
-  const b = await chromium.launch({ headless: true, args: ["--no-proxy-server"] });
+  const b = await chromium.launch({
+    headless: true,
+    args: ["--no-proxy-server"],
+    // 允许指定浏览器可执行文件（playwright 包升级后缓存里可能只有旧版 chromium）
+    ...(process.env.SUNNYDOC_CHROMIUM ? { executablePath: process.env.SUNNYDOC_CHROMIUM } : {}),
+  });
   const p = await b.newPage({ viewport: { width: 1600, height: 1000 } });
   const errs = [];
   p.on("pageerror", (e) => errs.push(String(e).slice(0, 160)));
@@ -232,6 +237,47 @@ await p.locator(".ProseMirror").first().click();
     /^https?:\/\//.test(imgInfo.src || "") || /^\/(api\/v1\/media|uploads)\//.test(imgInfo.src || ""),
     "src=" + String(imgInfo.src || "(空)").slice(0, 120),
   );
+
+  // ---------- 2b) 本地选图入口（此前完全没有） ----------
+  // 背景：图片弹窗原先只有「图片地址」输入框，用户必须粘贴/拖拽/手填 URL
+  // 才能插图 —— 没有「选本地文件」这条最直白的路径。现补上。
+  await p.locator('button[title="图片"]').first().click({ force: true });
+  await sleep(600);
+  const pickBtn = p.locator('[data-testid="image-pick-file"]').first();
+  check("图片弹窗提供「选择本地图片」入口", (await pickBtn.count()) > 0, "未找到 image-pick-file");
+
+  const fileInput = p.locator('[data-testid="image-file-input"]').first();
+  const hasInput = (await fileInput.count()) > 0;
+  check("存在图片 file input（accept=image/*）", hasInput, "未找到 image-file-input");
+
+  if (hasInput) {
+    // 记录插入前的图片数，用增量判断（不等同「页面上有 img」——侧栏图标也算）
+    const before = await p.locator(".ProseMirror img").count();
+    await fileInput.setInputFiles({
+      name: "picked.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(PNG_B64, "base64"),
+    });
+    const picked = await waitFor(
+      async () => (await p.locator(".ProseMirror img").count()) > before,
+      12000,
+      "本地选图后图片插入",
+    );
+    const after = await p.evaluate(() => {
+      const imgs = document.querySelectorAll(".ProseMirror img");
+      const last = imgs[imgs.length - 1];
+      return last ? { src: last.getAttribute("src") || "", n: imgs.length } : { src: "", n: imgs.length };
+    });
+    check("选本地图片后确实插入正文", picked, `before=${before} after=${after.n}`);
+    check(
+      "选图走上传接口（src 指向 media/uploads，非本地 blob）",
+      /^\/(api\/v1\/media|uploads)\//.test(after.src) || /^https?:\/\//.test(after.src),
+      "src=" + String(after.src).slice(0, 120),
+    );
+  } else {
+    check("选本地图片后确实插入正文", false, "无 file input");
+    check("选图走上传接口（src 指向 media/uploads，非本地 blob）", false, "无 file input");
+  }
 
   // ---------- 3/4) 点选图片 → 浮条 ----------
   // ⚠️ 不能用 `img.click()`：图片是 block 且被拉到正文整宽，在 1000px 视口里
@@ -406,8 +452,8 @@ await p.mouse.move(hb2.x + hb2.width / 2, hb2.y + hb2.height / 2);
     await editBtn2.click({ force: true });
     await sleep(2500);
   }
-  const imgCount = await p.locator(".ProseMirror img").count();
-  if (imgCount > 0) {
+  const imgCountBeforeDel = await p.locator(".ProseMirror img").count();
+  if (imgCountBeforeDel > 0) {
     // 同前：用派发事件代替 click（图片常在视口外）
     await p.evaluate(() => {
       const im = document.querySelector(".ProseMirror img");
@@ -424,12 +470,18 @@ await p.mouse.move(hb2.x + hb2.width / 2, hb2.y + hb2.height / 2);
     if (await del.count()) {
       await del.click({ force: true });
       await sleep(1500);
+      // 断言「少了一张」而非「一张不剩」—— 前面「本地选图」测试会多插一张，
+      // 写死 ===0 会让本项假失败（判据要跟实现对齐，不能假设初始张数）。
       const gone = await waitFor(
-        async () => (await p.locator(".ProseMirror img").count()) === 0,
+        async () => (await p.locator(".ProseMirror img").count()) === imgCountBeforeDel - 1,
         5000,
         "图片被删除",
       );
-      check("点「删除」后图片从正文消失", gone, "img 仍在");
+      check(
+        "点「删除」后图片从正文消失",
+        gone,
+        `${imgCountBeforeDel} → ${await p.locator(".ProseMirror img").count()}`,
+      );
     } else {
       check("点「删除」后图片从正文消失", false, "未找到 img-delete");
     }
@@ -445,7 +497,8 @@ await p.mouse.move(hb2.x + hb2.width / 2, hb2.y + hb2.height / 2);
     await sleep(2500);
   }
   if ((await p.locator(".ProseMirror img").count()) === 0) {
-    // 上一步已删掉图片 —— 重新插一张（预览必须真的测到，不能因为顺序而跳过）
+    // 若此刻已无图片（例如前面的删除恰好删到了最后一张），补插一张 ——
+    // 预览能力必须真的被测到，不能因为步骤顺序而静默跳过。
     const reinserted = await p.evaluate(
       async ([apiBase, tok, b64, id]) => {
         const H = { Authorization: "Bearer " + tok, "Content-Type": "application/json" };

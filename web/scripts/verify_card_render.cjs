@@ -26,7 +26,12 @@ const VH = 900;
 const MAX_CARD_H = 560; // 卡片高度上限（含头部 44px + 内容 460px + 边框）
 
 (async () => {
-  const b = await chromium.launch({ headless: true, args: ["--no-proxy-server"] });
+  const b = await chromium.launch({
+    headless: true,
+    args: ["--no-proxy-server"],
+    // 允许指定浏览器可执行文件（playwright 包升级后缓存里可能只有旧版 chromium）
+    ...(process.env.SUNNYDOC_CHROMIUM ? { executablePath: process.env.SUNNYDOC_CHROMIUM } : {}),
+  });
   const p = await b.newPage({ viewport: { width: 1440, height: VH } });
   const errs = [];
   p.on("pageerror", (e) => errs.push(String(e).slice(0, 160)));

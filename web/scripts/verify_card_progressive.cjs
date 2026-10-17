@@ -25,7 +25,12 @@ const check = (n, c, d) => {
 };
 
 (async () => {
-  const b = await chromium.launch({ headless: true, args: ["--no-proxy-server"] });
+  const b = await chromium.launch({
+    headless: true,
+    args: ["--no-proxy-server"],
+    // 允许指定浏览器可执行文件（playwright 包升级后缓存里可能只有旧版 chromium）
+    ...(process.env.SUNNYDOC_CHROMIUM ? { executablePath: process.env.SUNNYDOC_CHROMIUM } : {}),
+  });
   const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
   const errs = [];
   p.on("pageerror", (e) => errs.push(String(e).slice(0, 150)));

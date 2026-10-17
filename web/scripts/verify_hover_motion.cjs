@@ -71,7 +71,12 @@ async function probeHover(page, selector, opts = {}) {
 }
 
 (async () => {
-  const b = await chromium.launch({ headless: true, args: ["--no-proxy-server"] });
+  const b = await chromium.launch({
+    headless: true,
+    args: ["--no-proxy-server"],
+    // 允许指定浏览器可执行文件（playwright 包升级后缓存里可能只有旧版 chromium）
+    ...(process.env.SUNNYDOC_CHROMIUM ? { executablePath: process.env.SUNNYDOC_CHROMIUM } : {}),
+  });
 
   // ---------- A. 常规动效 ----------
   const p = await b.newPage({ viewport: { width: 1440, height: 1000 } });
