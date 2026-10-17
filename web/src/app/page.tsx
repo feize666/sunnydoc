@@ -32,6 +32,7 @@ import { useViewStack } from "@/hooks/useViewStack";
 import { CommentPanel } from "@/components/CommentPanel";
 import { NotificationPanel } from "@/components/NotificationPanel";
 import { MoveToKbDialog } from "@/components/MoveToKbDialog";
+import { TagManagerDialog } from "@/components/TagManagerDialog";
 import {
   NODE_TYPES,
   NodeTypeIcon,
@@ -242,6 +243,7 @@ export default function Home() {
     ids: string[];
     title: string;
   } | null>(null);
+  const [tagManagerOpen, setTagManagerOpen] = useState(false);
   const [currentKbId, setCurrentKbId] = useState<string | null>(null);
   const [kbs, setKbs] = useState<Kb[]>([]);
   const [recent, setRecent] = useState<RecentDoc[]>([]);
@@ -1447,6 +1449,8 @@ export default function Home() {
     onMoveSelected: (docIds: string[]) => {
       setMoveToKbTarget({ ids: docIds, title: "" });
     },
+    // 标签管理（重命名 / 合并 / 删除）
+    onManageTags: () => setTagManagerOpen(true),
   };
 
   return (
@@ -1822,6 +1826,12 @@ export default function Home() {
         docTitle={moveToKbTarget?.title ?? ""}
         kbs={kbs}
         currentKbId={currentKbId}
+      />
+
+      <TagManagerDialog
+        open={tagManagerOpen}
+        onClose={() => setTagManagerOpen(false)}
+        onChanged={refreshList}
       />
 
       {/* 全局拖拽导入遮罩 */}

@@ -875,24 +875,115 @@ def set_document_summary(doc_id: str, summary: str) -> bool:
     return updated
 
 
-def list_all_tags(user_id: str | None = None) -> list[str]:
-    """聚合所有文档标签（去重）。"""
+def list_all_tags(user_id: str | None = None, kb_ids: set[str] | None = None) -> list[str]:
+    """聚合所有文档标签（去重）。
+
+    `kb_ids` 是**可访问知识库集合**（属主 + 被共享），与其它查询保持同一可见性模型。
+    只按 `user_id` 过滤会漏掉共享库里他人文档上的标签 —— 有读权限的用户看不到，
+    但点进去文档里标签明明在（标签与文档的可见性必须一致）。
+    """
+    return [t for t, _ in list_tags_with_count(user_id, kb_ids)]
+
+
+def list_tags_with_count(
+    user_id: str | None = None, kb_ids: set[str] | None = None
+) -> list[tuple[str, int]]:
+    """聚合标签并统计每个标签被多少篇（未删除）文档使用。
+
+    返回按「篇数降序、标签名升序」排列 —— 管理界面里高频标签排前面更好用；
+    篇数相同时按名排序保证结果稳定（可测）。
+
+    可见性：与 list_documents 一致 —— 自己的文档（个人空间）+ 可访问知识库内的文档。
+    """
     conn = _connect()
     with conn.cursor() as cur:
         sql = "SELECT tags FROM documents WHERE deleted_at IS NULL AND tags IS NOT NULL"
         params: list[Any] = []
-        if user_id is not None:
+        if kb_ids is not None:
+            if kb_ids:
+                placeholders = ",".join(["%s"] * len(kb_ids))
+                sql += (
+                    f" AND (kb_id IN ({placeholders})"
+                    " OR (user_id = %s AND kb_id IS NULL))"
+                )
+                params += list(kb_ids) + [user_id]
+            else:
+                # 无任何可访问知识库时，只剩自己的个人空间文档
+                sql += " AND user_id = %s AND kb_id IS NULL"
+                params.append(user_id)
+        elif user_id is not None:
             sql += " AND user_id = %s"
             params.append(user_id)
         cur.execute(sql, params)
-        all_tags: set[str] = set()
+        counts: dict[str, int] = {}
         for (tags_raw,) in cur.fetchall():
             try:
                 for t in json.loads(tags_raw) if tags_raw else []:
-                    all_tags.add(t)
+                    if t:
+                        counts[t] = counts.get(t, 0) + 1
             except Exception:  # noqa: BLE001
                 continue
-    return sorted(all_tags)
+    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+
+
+def rename_tag(
+    old: str, new: str, user_id: str | None = None, kb_ids: set[str] | None = None
+) -> dict[str, int]:
+    """把可访问范围内所有文档的标签 `old` 改名为 `new`（`new` 为空则删除该标签）。
+
+    合并语义（rename 到已存在的标签）必须**去重**：某文档同时有 `old` 与 `new`
+    时，直接替换会得到 `["new","new"]` —— 前端渲染出重复徽标，且下次统计把它算两次。
+    唯一的做法是逐篇读取、去重、回写（标签是 JSON 数组列，无法用一条 SQL 完成）。
+
+    返回 {scanned, updated, skipped}：
+      scanned 扫到的含该标签的文档数；updated 真正被改写的文档数。
+    """
+    conn = _connect()
+    scanned = 0
+    updated = 0
+    with conn.transaction():
+        with conn.cursor() as cur:
+            sql = "SELECT id, tags FROM documents WHERE deleted_at IS NULL AND tags IS NOT NULL"
+            params: list[Any] = []
+            if kb_ids is not None:
+                if kb_ids:
+                    placeholders = ",".join(["%s"] * len(kb_ids))
+                    sql += (
+                        f" AND (kb_id IN ({placeholders})"
+                        " OR (user_id = %s AND kb_id IS NULL))"
+                    )
+                    params += list(kb_ids) + [user_id]
+                else:
+                    sql += " AND user_id = %s AND kb_id IS NULL"
+                    params.append(user_id)
+            elif user_id is not None:
+                sql += " AND user_id = %s"
+                params.append(user_id)
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+            for doc_id, tags_raw in rows:
+                try:
+                    tags = json.loads(tags_raw) if tags_raw else []
+                except Exception:  # noqa: BLE001
+                    continue
+                if old not in tags:
+                    continue
+                scanned += 1
+                # 逐项映射并去重，保持原有顺序（避免标签顺序无故跳动）
+                new_tags: list[str] = []
+                for t in tags:
+                    mapped = new if t == old else t
+                    # `mapped and ...`：`new` 为空串表示**删除**该标签，
+                    # 必须把它从数组里剔掉；只判 `not in` 会让文档留下 `[""]`
+                    # —— 前端渲染出一个空徽标，且统计里多出一个「空标签」。
+                    if mapped and mapped not in new_tags:
+                        new_tags.append(mapped)
+                cur.execute(
+                    "UPDATE documents SET tags = %s WHERE id = %s",
+                    (json.dumps(new_tags, ensure_ascii=False), doc_id),
+                )
+                updated += 1
+    return {"scanned": scanned, "updated": updated, "skipped": scanned - updated}
 
 
 # ---------- 向量健康：缺向量分片的治理（2026-10-14） ----------

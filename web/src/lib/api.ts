@@ -625,6 +625,27 @@ export async function listTags(): Promise<string[]> {
   return Array.isArray(data?.tags) ? data.tags : [];
 }
 
+export type TagStat = { tag: string; count: number };
+export type RenameTagResult = { scanned: number; updated: number; skipped: number };
+
+/** 标签 + 使用篇数（篇数降序、名升序），供标签管理界面。 */
+export async function tagStats(): Promise<TagStat[]> {
+  const data = await request<{ tags: TagStat[] }>("/tags/stats");
+  return Array.isArray(data?.tags) ? data.tags : [];
+}
+
+/**
+ * 重命名标签；`new` 传空字符串表示**删除**该标签；`new` 已存在即**合并**（后端自动去重）。
+ * 一次改完所有可见文档。
+ */
+export async function renameTag(oldName: string, newName: string): Promise<RenameTagResult> {
+  return request<RenameTagResult>("/tags/rename", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ old: oldName, new: newName }),
+  });
+}
+
 export async function pinDocument(docId: string): Promise<void> {
   await request(`/documents/${docId}/pin`, { method: "POST" });
 }

@@ -2743,6 +2743,12 @@ class SetTagsRequest(BaseModel):
     tags: list[str]
 
 
+class RenameTagRequest(BaseModel):
+    """重命名标签。`new` 为空字符串表示**删除**该标签；`new` 已存在即**合并**。"""
+    old: str
+    new: str = ""
+
+
 class RenameDocumentRequest(BaseModel):
     title: str
 
@@ -2813,6 +2819,43 @@ def set_document_tags(
 def list_tags(current_user: dict = Depends(get_current_user)):
     """列出当前用户可见的所有标签。"""
     return {"tags": store.list_all_tags(current_user["id"])}
+
+
+@router.get("/tags/stats")
+def tag_stats(current_user: dict = Depends(get_current_user)):
+    """标签 + 使用篇数（篇数降序、名升序），供标签管理界面。
+
+    ⚠️ 必须注册在 `/tags/{...}` 形式的路由之前；当前 `/{tag}` 尚未定义，
+    但保持「静态段在前」的习惯 —— Starlette 按声明顺序匹配。
+    """
+    return {"tags": store.list_tags_with_count(current_user["id"])}
+
+
+@router.post("/tags/rename")
+def rename_tag(req: RenameTagRequest, current_user: dict = Depends(get_current_user)):
+    """重命名标签；`new` 为空表示删除该标签；`new` 已存在即**合并**（自动去重）。
+
+    一次请求改完所有可见文档，返回 {scanned, updated, skipped}。
+    合并不会产生重复（逐篇去重后回写）—— 这是路线图 P4-2 的验收点之一。
+    """
+    old = (req.old or "").strip()
+    new = (req.new or "").strip()
+    if not old:
+        raise HTTPException(status_code=400, detail="原标签名不能为空")
+    if len(new) > 50:
+        raise HTTPException(status_code=400, detail="标签名过长（上限 50 字符）")
+    if new == old:
+        # 无变化：不写审计、不落库，直接回报 0 改动（避免制造无意义的审计噪音）
+        return {"scanned": 0, "updated": 0, "skipped": 0}
+    res = store.rename_tag(old, new, current_user["id"])
+    if res["updated"]:
+        detail = (
+            f"删除标签「{old}」（影响 {res['updated']} 篇）"
+            if not new
+            else f"标签「{old}」改为「{new}」（影响 {res['updated']} 篇）"
+        )
+        _audit(current_user, "delete" if not new else "rename", "tag", old, detail)
+    return res
 
 
 @router.post("/documents/{doc_id}/pin")

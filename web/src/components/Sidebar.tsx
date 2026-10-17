@@ -123,6 +123,7 @@ export function Sidebar({
   onDeleteFolder,
   onDeleteSelected,
   onMoveSelected,
+  onManageTags,
   onRenameFolder,
   onMoveDoc,
   onMoveFolder,
@@ -185,6 +186,8 @@ export function Sidebar({
   onDeleteSelected?: (docIds: string[], folderIds: string[]) => Promise<number>;
   /** 批量移动选中的文档到其他知识库（打开 MoveToKbDialog）。 */
   onMoveSelected?: (docIds: string[]) => void;
+  /** 打开标签管理（重命名 / 合并 / 删除）。 */
+  onManageTags?: () => void;
   onRenameFolder?: (folderId: string, name: string) => Promise<void> | void;
   onMoveDoc?: (docId: string, folderId: string | null, sortOrder?: number | null) => void;
   onMoveFolder?: (folderId: string, parentId: string | null, sortOrder?: number | null) => void;
@@ -711,11 +714,34 @@ export function Sidebar({
         <div className="border-b border-line px-3 py-2">
           <div className="flex items-center justify-between">
             <span className="text-[12px] text-faint">标签</span>
-            <button
-              onClick={() => setTagsCollapsed((v) => !v)}
-              className="grid h-5 w-5 place-items-center rounded text-faint transition-colors hover:bg-hover hover:text-text"
-              title={tagsCollapsed ? "展开标签" : "收起标签"}
-            >
+            <div className="flex items-center gap-0.5">
+              {onManageTags && (
+                <button
+                  onClick={onManageTags}
+                  className="grid h-5 w-5 place-items-center rounded text-faint transition-colors hover:bg-hover hover:text-text"
+                  title="管理标签（重命名 / 合并 / 删除）"
+                  data-testid="manage-tags"
+                >
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                </button>
+              )}
+              <button
+                onClick={() => setTagsCollapsed((v) => !v)}
+                className="grid h-5 w-5 place-items-center rounded text-faint transition-colors hover:bg-hover hover:text-text"
+                title={tagsCollapsed ? "展开标签" : "收起标签"}
+              >
               <svg
                 width="12"
                 height="12"
@@ -730,6 +756,7 @@ export function Sidebar({
                 <path d="M6 9l6 6 6-6" />
               </svg>
             </button>
+            </div>
           </div>
           {!tagsCollapsed && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1">

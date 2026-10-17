@@ -921,16 +921,79 @@ class DocStore:
 
     def list_all_tags(self, user_id: str | None = None) -> list[str]:
         if self._backend == "db":
-            return db.list_all_tags(user_id)
+            kb_ids = self._accessible_kb_ids(user_id) if user_id is not None else None
+            return db.list_all_tags(user_id, kb_ids)
         all_tags: set[str] = set()
+        kb_ids = self._accessible_kb_ids(user_id) if user_id is not None else None
         for d in self._docs:
             if d.get("deleted_at"):
                 continue
-            if user_id is not None and d.get("user_id") != user_id:
-                continue
+            # 与 list() 同一可见性模型：自己的个人空间文档 + 可访问知识库内的文档。
+            # 只比 user_id 会漏掉共享库里他人文档上的标签（标签与文档可见性必须一致）。
+            if user_id is not None:
+                if not (
+                    (kb_ids is not None and d.get("kb_id") in kb_ids)
+                    or (d.get("user_id") == user_id and not d.get("kb_id"))
+                ):
+                    continue
             for t in d.get("tags") or []:
                 all_tags.add(t)
         return sorted(all_tags)
+
+    def list_tags_with_count(self, user_id: str | None = None) -> list[dict[str, Any]]:
+        """标签 + 使用篇数（供标签管理界面）。排序与 db 层一致：篇数降序、名升序。"""
+        if self._backend == "db":
+            kb_ids = self._accessible_kb_ids(user_id) if user_id is not None else None
+            return [
+                {"tag": t, "count": c} for t, c in db.list_tags_with_count(user_id, kb_ids)
+            ]
+        kb_ids = self._accessible_kb_ids(user_id) if user_id is not None else None
+        counts: dict[str, int] = {}
+        for d in self._docs:
+            if d.get("deleted_at"):
+                continue
+            if user_id is not None and not (
+                (kb_ids is not None and d.get("kb_id") in kb_ids)
+                or (d.get("user_id") == user_id and not d.get("kb_id"))
+            ):
+                continue
+            for t in d.get("tags") or []:
+                counts[t] = counts.get(t, 0) + 1
+        return [
+            {"tag": t, "count": c}
+            for t, c in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
+
+    def rename_tag(self, old: str, new: str, user_id: str | None = None) -> dict[str, int]:
+        """重命名/合并标签（new 为空则删除该标签）。返回 {scanned, updated, skipped}。"""
+        if self._backend == "db":
+            kb_ids = self._accessible_kb_ids(user_id) if user_id is not None else None
+            return db.rename_tag(old, new, user_id, kb_ids)
+        kb_ids = self._accessible_kb_ids(user_id) if user_id is not None else None
+        scanned = updated = 0
+        for d in self._docs:
+            if d.get("deleted_at"):
+                continue
+            if user_id is not None and not (
+                (kb_ids is not None and d.get("kb_id") in kb_ids)
+                or (d.get("user_id") == user_id and not d.get("kb_id"))
+            ):
+                continue
+            tags = d.get("tags") or []
+            if old not in tags:
+                continue
+            scanned += 1
+            new_tags: list[str] = []
+            for t in tags:
+                mapped = new if t == old else t
+                if mapped and mapped not in new_tags:
+                    new_tags.append(mapped)
+            if new_tags != tags:
+                d["tags"] = new_tags
+                updated += 1
+        if updated:
+            self._save()
+        return {"scanned": scanned, "updated": updated, "skipped": scanned - updated}
 
     # ---------- 向量健康 ----------
 
