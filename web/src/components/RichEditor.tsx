@@ -12,6 +12,7 @@ import Image from "@tiptap/extension-image";
 import { Markdown } from "tiptap-markdown";
 import { uploadImage, uploadAttachment, aiAssist, createDocument, type AIAssistAction } from "@/lib/api";
 import { mediaUrl } from "@/lib/markdown";
+import { DocImage } from "./DocImage";
 import { DocumentEmbedView, EmbedPicker, NEW_DOC_TEMPLATE, type EmbeddableType } from "./DocumentEmbed";
 import SlashCommand from "./SlashCommand";
 import { MentionCommand, WikilinkCommand, unescapeWikilinkBrackets } from "./MentionCommand";
@@ -413,6 +414,12 @@ function ToolBtn({
         onMouseDown={(e) => e.preventDefault()}
         onClick={onClick}
         disabled={disabled}
+        // 工具栏按钮原来**没有可访问名**（只有视觉 Tooltip）：
+        // 屏幕阅读器与键盘用户无从识别，真机脚本也只能靠结构硬猜。
+        // 用 title 承载（Tooltip 是自绘浮层，不占 title 属性），
+        // 同时也是稳定的测试锚点。
+        title={title}
+        aria-label={title}
         className={`tool-btn ${
           active ? "tool-btn-on" : tone ? `${tone} hover:bg-hover` : ""
         }`}
@@ -495,19 +502,10 @@ export function RichEditor({
       TaskItem,
       TextAlign,
       Link.configure({ openOnClick: false }),
-      // 编辑态直出 `<img src="/api/v1/media/…">`，本地前后端分端口时会 404，
-      // 故渲染时补后端 origin。注意只改「渲染」，不改文档数据——保存走
-      // `editor.storage.markdown.getMarkdown()`，源里仍是根绝对路径。
-      Image.extend({
-        renderHTML({ HTMLAttributes }) {
-          return [
-            "img",
-            mergeAttributes(HTMLAttributes, {
-              src: mediaUrl(HTMLAttributes.src as string),
-            }),
-          ];
-        },
-      }),
+      // 图片：内容寻址 URL（/api/v1/media/{sha1}.png）+ 选中浮条（改宽/对齐/删除）。
+      // 详见 DocImage.tsx —— 宽度按百分比存（换屏宽不变形），
+      // 对齐用 data-align（只影响图片自身，不带动整段）。
+      DocImage,
       Markdown.configure({
         html: true,
         tightLists: true,
@@ -1306,6 +1304,7 @@ export function RichEditor({
                 onKeyDown={(e) => { if (e.key === "Enter") applyImage(); if (e.key === "Escape") setImageOpen(false); }}
                 placeholder="https://…（也可直接粘贴截图，⌘V）"
                 autoFocus
+                data-testid="image-url-input"
                 className="input input-sm mb-2"
               />
               <div className="flex justify-end gap-1.5">
@@ -1319,6 +1318,7 @@ export function RichEditor({
                 <button
                   type="button"
                   onClick={applyImage}
+                  data-testid="image-insert-btn"
                   className="btn-ghost bg-accent-solid px-3 text-white hover:bg-accent-solid-hover hover:brightness-105"
                 >
                   插入

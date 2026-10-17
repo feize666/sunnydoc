@@ -249,7 +249,11 @@ const PURIFY_CONFIG: Config = {
   // 搜索命中高亮用 <mark>，语雀折叠块用 <details>/<summary>，加入白名单
   ADD_TAGS: ["mark", "details", "summary"],
   // 双向链接 <span data-wikilink> / @ 提及 <a data-user-name class="mention">：数据属性需放行
-  ADD_ATTR: ["data-wikilink", "data-user-name", "data-doc-id"],
+  // 图片尺寸与对齐（DocImage）：data-width / data-align 是自定义属性，
+  // 不放行会被清洗掉 → 预览态宽度失效（编辑态却正常，很难发现）。
+  // `style` 是 DOMPurify 的默认放行属性之一，但这里显式列出以免误判；
+  // 值仍由 DOMPurify 过滤（危险样式会被剔除）。
+  ADD_ATTR: ["data-wikilink", "data-user-name", "data-doc-id", "data-width", "data-align", "style"],
 };
 
 function escapeHtml(s: string): string {
