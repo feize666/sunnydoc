@@ -23,6 +23,7 @@ import {
   LazyRichEditor,
 } from "./LazyEditors";
 import { CopyIcon, CheckIcon, EditIcon, HistoryIcon, ShareIcon } from "./icons";
+import { useImageZoom } from "./ImageLightbox";
 import { EmptyState } from "./EmptyState";
 import {
   applyAnchors,
@@ -280,6 +281,9 @@ export function Editor({
   const [collabPresence, setCollabPresence] = useState<{ id: string; nickname: string; avatar?: string | null }[]>([]);
   const [collabNotice, setCollabNotice] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  // 预览态的图片点击放大（正文是 dangerouslySetInnerHTML 出来的原生 <img>，
+  // 没有 React 事件，只能在容器上做委托）
+  const imageLightbox = useImageZoom(contentRef);
   // 滚动容器（正文外层，key={doc.key} 那个 div）：大纲的滚动高亮与跳转都基于它
   const scrollRef = useRef<HTMLDivElement>(null);
   // 大纲当前高亮项；-1 表示尚未定位（滚动到首个标题之前）
@@ -1562,6 +1566,9 @@ export function Editor({
         onTakeTheirs={() => void handleTakeTheirs()}
         onCancel={() => setConflict(null)}
       />
+
+      {/* 预览态点图片放大 */}
+      {imageLightbox}
     </main>
   );
 }

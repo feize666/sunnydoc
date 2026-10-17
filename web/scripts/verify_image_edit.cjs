@@ -61,14 +61,21 @@ const waitFor = async (fn, ms = 8000, label = "") => {
 /**
  * 夹具图片：200×100 的纯色 PNG（真实矩形比例）。
  *
- * ⚠️ 不要用 1×1 图片：CSS 会把它拉到容器宽度、高度按 1:1 比例算，
+ * ⚠️ 两个坑（都实际踩过）：
+ * 1. **不要用 1×1 图片**：CSS 会把它拉到容器宽度、高度按 1:1 比例算，
  *    手柄定位到很奇怪的位置（实测在视口外 380px），拖动测不了。
- * 用真实比例的图，手柄落在图片右下角，交互接近真实使用。
+ * 2. **这一串 base64 必须是真能解码的**：早先版本只看「PNG 签名对、IHDR 尺寸对」
+ *    就当成有效图，实际 IDAT 是坏数据 —— 浏览器加载必然失败，而当时没有
+ *    错误提示，表现为「图片插入了但一片空白」，查了很久才定位到是夹具本身坏。
+ *    现在这串由 Python 的 zlib 生成并**解压校验通过**（file/sips 双重确认 200x100）。
+ *    改这串前后务必本地解码验一次，别只看前缀。
  */
 const PNG_B64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAMgAAABkCAIAAAD9w0KcAAAAWklEQVR42u3QAQ0AAAgDIF/e9tDg" +
-  "D0oQblXVvXsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
-  "AAAAAAAAAAAAAAAAAPgaJ8AAAcV6Z3QAAAAASUVORK5CYII=";
+  "iVBORw0KGgoAAAANSUhEUgAAAMgAAABkCAIAAABM5OhcAAAAzElEQVR42u3SMQ0AAAgEsZeFSNShCBMM" +
+  "DE2q4HKpHjgXCTAWxsJYYCyMhbHAWBgLY4GxMBbGAmNhLIwFxsJYGAuMhbEwFhgLY2EsMBbGwlhgLIyF" +
+  "scBYGAtjgbEwFsYCY2EsjAXGwlgYC4yFsTAWGAtjYSwwFsbCWGAsjIWxwFgYC2OBsTAWxgJjYSyMBcbC" +
+  "WBgLjIWxMBYYC2NhLDAWxsJYYCyMhbHAWBgLY4GxMBbGAmNhLIyFsVTAWBgLY4GxMBbGAmNhLIwFxuK3" +
+  "BV6a7faRBxaTAAAAAElFTkSuQmCC";
 
 (async () => {
   const b = await chromium.launch({ headless: true, args: ["--no-proxy-server"] });
@@ -287,9 +294,13 @@ await p.locator(".ProseMirror").first().click();
           const w = document.querySelector(".ProseMirror .doc-image-wrap span");
           return w ? Math.round(w.getBoundingClientRect().width) : 0;
         });
-        await p.mouse.move(hb2.x + hb2.width / 2, hb2.y + hb2.height / 2);
+        // ⚠️ 位移必须**够小**，否则两种实现都会被下限 10% 夹住而结果相同 ——
+//    实测：起点 18% 时拖 150px，正确实现算得 4.2%、基准取错的实现算得 -57%，
+//    两者都被夹到 10% ⇒ 断言失去区分度（「阈值型断言最易无区分度」的又一例）。
+//    拖 40px 时：正确 18-3.7=14%（变窄 48px）；基准取错 18-20=-2%→夹到 10%（变窄 91px）。
+await p.mouse.move(hb2.x + hb2.width / 2, hb2.y + hb2.height / 2);
         await p.mouse.down();
-        await p.mouse.move(hb2.x - 150, hb2.y + hb2.height / 2, { steps: 12 });
+        await p.mouse.move(hb2.x - 40, hb2.y + hb2.height / 2, { steps: 12 });
         await sleep(300);
         // 拖到一半时先看：如果 DOM 宽度在拖动中就已经变了，说明 ResizeHandle 生效，
         // 只是「松手落库」那步没写进去（两个阶段分开定位，避免混为一谈）
@@ -316,6 +327,27 @@ await p.locator(".ProseMirror").first().click();
         );
         widthChanged = docOk;
         check("拖动手柄后宽度写入文档源（data-width）", widthChanged, "源里无 data-width");
+
+        // 🔴 方向与灵敏度断言：向左拖必须**变窄**，且变窄量要≈拖动像素量。
+        //
+        // 为什么「≈拖动像素量」是正确判据：`width:N%` 按包含块解析，拖动换算
+        // 也用包含块 ⇒ N 像素位移对应 N 像素宽度变化（百分比的分子分母抵消）。
+        // 基准取错（用图片自身宽 200px）时同样拖 40px 会算成 -20%，
+        // 再被 10% 下限夹住 → 变窄约 91px，与 40px 差一倍多，可明确区分。
+        //
+        // ⚠️ 位移不能太大：拖 150px 时两种实现都被下限夹住、结果相同
+        //    （阈值型断言失去区分度的典型情形，本脚本已栽过一次）。
+        const base = await p.evaluate(() => {
+          const w = document.querySelector(".doc-image-wrap");
+          return w ? Math.round(w.getBoundingClientRect().width) : 0;
+        });
+        check("向左拖动后图片变窄（方向正确）", afterW < beforeW, `before=${beforeW} after=${afterW}`);
+        const shrunk = beforeW - afterW;
+        check(
+          "变窄量≈拖动像素量（基准是包含块，而非图片自身）",
+          shrunk >= 25 && shrunk <= 65,
+          `实际变窄 ${shrunk}px，期望≈40px（包含块 ${base}px；基准取错时会变成 ~91px）`,
+        );
       } else {
         check("拖动手柄后宽度写入文档源（data-width）", false, "手柄 boundingBox 为 null（不可见/被遮挡）");
       }
@@ -403,6 +435,181 @@ await p.locator(".ProseMirror").first().click();
     }
   } else {
     check("点「删除」后图片从正文消失", false, "编辑态未找到 img");
+  }
+
+  // ---------- 13) 大图预览（双击图片 / 浮条「放大」） ----------
+  // 编辑态切回编辑
+  const editBtn3 = p.locator("button").filter({ hasText: /^编辑$/ }).first();
+  if (await editBtn3.count()) {
+    await editBtn3.click({ force: true });
+    await sleep(2500);
+  }
+  if ((await p.locator(".ProseMirror img").count()) === 0) {
+    // 上一步已删掉图片 —— 重新插一张（预览必须真的测到，不能因为顺序而跳过）
+    const reinserted = await p.evaluate(
+      async ([apiBase, tok, b64, id]) => {
+        const H = { Authorization: "Bearer " + tok, "Content-Type": "application/json" };
+        const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        const fd = new FormData();
+        fd.append("file", new File([bin], "t.png", { type: "image/png" }));
+        const up = await fetch(apiBase + "/api/v1/upload/image", {
+          method: "POST",
+          headers: { Authorization: "Bearer " + tok },
+          body: fd,
+        });
+        const { url } = await up.json();
+        const cur = await (await fetch(apiBase + "/api/v1/documents/" + id, { headers: H })).json();
+        // ⚠️ 更新文档的字段名是 `content`（不是 `text`）——PUT 时传 text 会被
+        //    静默忽略（Pydantic 不报错），表现为「接口 200 但内容没变」。
+        const put = await fetch(apiBase + "/api/v1/documents/" + id, {
+          method: "PUT",
+          headers: H,
+          body: JSON.stringify({ content: String(cur.text || "") + `\n\n![测试图](${url})\n` }),
+        });
+        if (!put.ok) return { ok: false, reason: "PUT " + put.status };
+        // 复核：读回来确认图片标记真的进去了（不假设成功）
+        const after = await (await fetch(apiBase + "/api/v1/documents/" + id, { headers: H })).json();
+        const wrote = /!\[测试图\]|doc-image|data-width/.test(String(after.text || ""));
+        return { ok: wrote, size: String(after.text || "").length };
+      },
+      [API, TOKEN, PNG_B64, DOC_ID],
+    );
+    console.log("     重新插图: " + JSON.stringify(reinserted));
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await sleep(2500);
+    const kb3 = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
+    if (await kb3.count()) await kb3.click({ force: true });
+    await sleep(2500);
+    const box3 = p.locator('input[type="search"], input[placeholder*="搜索"]').first();
+    await box3.fill(TITLE);
+    await sleep(2000);
+    const hit3 = p.getByText(TITLE, { exact: true }).first();
+    if (await hit3.count()) await hit3.click({ force: true });
+    await sleep(3500);
+    const editBtn4 = p.locator("button").filter({ hasText: /^编辑$/ }).first();
+    if (await editBtn4.count()) {
+      await editBtn4.click({ force: true });
+      await sleep(2500);
+    }
+  }
+
+  // 双击图片 → lightbox
+  const dbl = await p.evaluate(() => {
+    const im = document.querySelector(".ProseMirror img");
+    if (!im) return false;
+    im.scrollIntoView({ block: "center" });
+    const r = im.getBoundingClientRect();
+    const opts = { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+    im.dispatchEvent(new MouseEvent("dblclick", opts));
+    return true;
+  });
+  await sleep(1000);
+  const lbOpen = await waitFor(
+    async () => (await p.locator('[data-testid="img-lightbox"]').count()) > 0,
+    5000,
+    "lightbox 打开",
+  );
+  check("双击图片打开放大查看", dbl && lbOpen, `dblclick=${dbl} lightbox=${lbOpen}`);
+
+  if (lbOpen) {
+    const lbInfo = await p.evaluate(() => {
+      const img = document.querySelector('[data-testid="img-lightbox-image"]');
+      return {
+        hasImg: !!img,
+        natural: img ? img.naturalWidth + "x" + img.naturalHeight : "",
+        complete: img ? img.complete : false,
+        // 放大态应当真的加载成功（夹具是有效 PNG，此处应为 true）
+        loadedOk: img ? img.complete && img.naturalWidth > 0 : false,
+      };
+    });
+    check("放大态图片加载成功（非裂图）", lbInfo.loadedOk, JSON.stringify(lbInfo));
+
+    // 缩放按钮生效
+    await p.locator('[data-testid="img-zoom-in"]').first().click({ force: true });
+    await p.locator('[data-testid="img-zoom-in"]').first().click({ force: true });
+    await sleep(500);
+    const zoomText = await p.evaluate(() => {
+      const el = document.querySelector('[data-testid="img-lightbox-image"]');
+      return el ? el.style.transform : "";
+    });
+    check("点「+」后图片被放大（transform scale > 1）", /scale\(1\.[1-9]/.test(zoomText), zoomText);
+
+    await p.locator('[data-testid="img-zoom-fit"]').first().click({ force: true });
+    await sleep(400);
+    const fitText = await p.evaluate(
+      () => document.querySelector('[data-testid="img-lightbox-image"]')?.style.transform || "",
+    );
+    check("点「适应窗口」后缩放重置", /scale\(1\)/.test(fitText), fitText);
+
+    // Esc 关闭（走 useModalFocus 的既有约定）
+    await p.keyboard.press("Escape");
+    await sleep(700);
+    const lbClosed = (await p.locator('[data-testid="img-lightbox"]').count()) === 0;
+    check("Esc 关闭放大查看", lbClosed, "lightbox 仍存在");
+
+    // 浮条「放大」按钮也要能开
+    await p.evaluate(() => {
+      const im = document.querySelector(".ProseMirror img");
+      if (!im) return;
+      im.scrollIntoView({ block: "center" });
+      const r = im.getBoundingClientRect();
+      const opts = { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+      im.dispatchEvent(new MouseEvent("mousedown", opts));
+      im.dispatchEvent(new MouseEvent("mouseup", opts));
+      im.dispatchEvent(new MouseEvent("click", opts));
+    });
+    await sleep(800);
+    const zoomBtn = p.locator('[data-testid="img-zoom"]').first();
+    let viaBar = false;
+    if (await zoomBtn.count()) {
+      await zoomBtn.click({ force: true });
+      await sleep(800);
+      viaBar = (await p.locator('[data-testid="img-lightbox"]').count()) > 0;
+      if (viaBar) {
+        await p.keyboard.press("Escape");
+        await sleep(600);
+      }
+    }
+    check("浮条「放大」按钮也能打开", viaBar, "未打开或按钮不存在");
+  }
+
+  // ---------- 14) 拖动时显示宽度百分比 ----------
+  await p.evaluate(() => {
+    const im = document.querySelector(".ProseMirror img");
+    if (!im) return;
+    im.scrollIntoView({ block: "center" });
+    const r = im.getBoundingClientRect();
+    const opts = { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+    im.dispatchEvent(new MouseEvent("mousedown", opts));
+    im.dispatchEvent(new MouseEvent("mouseup", opts));
+    im.dispatchEvent(new MouseEvent("click", opts));
+  });
+  await sleep(800);
+  const handle2 = p.locator('[data-testid="img-resize-handle"]').first();
+  if (await handle2.count()) {
+    await handle2.scrollIntoViewIfNeeded().catch(() => {});
+    await sleep(400);
+    const hb3 = await handle2.boundingBox();
+    if (hb3) {
+      await p.mouse.move(hb3.x + hb3.width / 2, hb3.y + hb3.height / 2);
+      await p.mouse.down();
+      await p.mouse.move(hb3.x - 80, hb3.y + hb3.height / 2, { steps: 6 });
+      await sleep(400);
+      const badge = await p.evaluate(
+        () => document.querySelector('[data-testid="img-width-badge"]')?.textContent || "",
+      );
+      check("拖动中显示宽度百分比提示", /^\d+%$/.test(badge.trim()), "badge=" + JSON.stringify(badge));
+      await p.mouse.up();
+      await sleep(800);
+      const badgeGone = (await p.locator('[data-testid="img-width-badge"]').count()) === 0;
+      check("松手后百分比提示消失", badgeGone, "badge 仍在");
+    } else {
+      check("拖动中显示宽度百分比提示", false, "手柄不可见");
+      check("松手后百分比提示消失", false, "未开始拖动");
+    }
+  } else {
+    check("拖动中显示宽度百分比提示", false, "未找到手柄");
+    check("松手后百分比提示消失", false, "未找到手柄");
   }
 
   // ---------- 12) 清理 + 异常 ----------

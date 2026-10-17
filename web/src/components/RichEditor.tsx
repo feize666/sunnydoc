@@ -12,7 +12,8 @@ import Image from "@tiptap/extension-image";
 import { Markdown } from "tiptap-markdown";
 import { uploadImage, uploadAttachment, aiAssist, createDocument, type AIAssistAction } from "@/lib/api";
 import { mediaUrl } from "@/lib/markdown";
-import { DocImage } from "./DocImage";
+import { DocImage, IMAGE_PREVIEW_EVENT } from "./DocImage";
+import { ImageLightbox } from "./ImageLightbox";
 import { DocumentEmbedView, EmbedPicker, NEW_DOC_TEMPLATE, type EmbeddableType } from "./DocumentEmbed";
 import SlashCommand from "./SlashCommand";
 import { MentionCommand, WikilinkCommand, unescapeWikilinkBrackets } from "./MentionCommand";
@@ -467,6 +468,9 @@ export function RichEditor({
   // 图片弹窗
   const [imageOpen, setImageOpen] = useState(false);
   const [imageUrl, setImageUrl] = useState("");
+  // 图片放大查看（双击图片 / 点浮条「放大」触发）
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+  const [previewAlt, setPreviewAlt] = useState("");
   // 查找替换
   const [findOpen, setFindOpen] = useState(false);
   const [findText, setFindText] = useState("");
@@ -484,6 +488,23 @@ export function RichEditor({
   const attachInputRef = useRef<HTMLInputElement>(null);
   /** 「插入卡片」选择器开关 */
   const [embedOpen, setEmbedOpen] = useState(false);
+
+  /**
+   * 图片放大请求：由 DocImage 的 NodeView 通过 window 事件发出。
+   *
+   * 为什么用事件而不是 Context/props：NodeView 由 tiptap 内部创建并渲染在
+   * 编辑器 DOM 里，不经过本组件的 React 树，拿不到 props；事件是最低耦合的通道。
+   */
+  useEffect(() => {
+    const onPreview = (e: Event) => {
+      const d = (e as CustomEvent<{ src?: string; alt?: string }>).detail;
+      if (!d?.src) return;
+      setPreviewAlt(d.alt || "");
+      setPreviewSrc(mediaUrl(d.src));
+    };
+    window.addEventListener(IMAGE_PREVIEW_EVENT, onPreview);
+    return () => window.removeEventListener(IMAGE_PREVIEW_EVENT, onPreview);
+  }, []);
 
   const editor = useEditor({
     extensions: [
@@ -1668,6 +1689,12 @@ export function RichEditor({
       <EditorContent
         editor={editor}
         className="md-body rich-editor flex-1 px-4 py-3"
+      />
+
+      <ImageLightbox
+        src={previewSrc}
+        alt={previewAlt}
+        onClose={() => setPreviewSrc(null)}
       />
     </div>
   );

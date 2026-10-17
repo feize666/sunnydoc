@@ -8,6 +8,7 @@ import { handleCodeBlockCopy } from "./CodeBlock";
 import { PasswordInput } from "./PasswordInput";
 import { ThemeToggle } from "./ThemeToggle";
 import { Watermark } from "./Watermark";
+import { useImageZoom } from "./ImageLightbox";
 
 /** 公开分享的只读文档视图（无需登录，可带密码保护）。 */
 export function ShareView({ token }: { token: string }) {
@@ -18,6 +19,8 @@ export function ShareView({ token }: { token: string }) {
   const [password, setPassword] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const bodyRef = useRef<HTMLDivElement>(null);
+  // 分享页正文也是 HTML 渲染，图片点击放大同样要走事件委托
+  const imageLightbox = useImageZoom(bodyRef);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -157,6 +160,9 @@ export function ShareView({ token }: { token: string }) {
           />
         </div>
       </div>
+
+      {/* 点图片放大 */}
+      {imageLightbox}
     </div>
   );
 }
