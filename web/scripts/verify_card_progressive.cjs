@@ -11,6 +11,7 @@
  * 这样 mode=preview 且 highlight 为空 → 走 renderProgressively → 才会分批追加。
  */
 const { chromium } = require("playwright");
+const { seedBigDocFixture, cleanupCardFixtures } = require("./_card_fixtures.cjs");
 const fs = require("fs");
 // token 走环境变量，避免把凭据写进仓库
 const TOKEN = process.env.SUNNYDOC_TOKEN || fs.readFileSync(process.env.SUNNYDOC_TOKEN_FILE || "/tmp/sunnydoc-token.txt", "utf8").trim();
@@ -53,8 +54,26 @@ const check = (n, c, d) => {
   await p.evaluate((t) => localStorage.setItem("sunnydoc.token", t), TOKEN);
   await p.reload({ waitUntil: "domcontentloaded" });
   await sleep(2500);
-  const kb = p.locator("button, a").filter({ hasText: "云计算知识库" }).first();
+  const kb = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
   if (await kb.count()) { await kb.click(); await sleep(2500); }
+
+  // 自建夹具：大文档（>= 900 顶层块）+ 末尾远置卡片。
+  // 不再依赖库中预存夹具 —— 它被清理后本脚本会报「文件树里找不到目标文档」，
+  // 失败信息与真因（夹具不存在）无关，极易误判成产品回归。
+  const fx = await seedBigDocFixture(p, {
+    title: TITLE,
+    cardCount: parseInt(process.argv[3] || "2", 10),
+  });
+  console.log("  夹具: " + fx.containerId + (fx.created.length ? "（新建）" : "（复用既有）"));
+  // 让新文档进入侧栏 metas（脚本用 API 建文档，前端列表还是旧的）
+  const rf = p.locator('[data-testid="refresh-doc-list"]').first();
+  if (await rf.count()) { await rf.click({ force: true }); await sleep(3000); }
+  // 展开全部，确保能在树里找到（默认折叠）
+  const tg = p.locator('[data-testid="toggle-batched-all"]').first();
+  if (await tg.count() && (await tg.getAttribute("aria-pressed")) !== "true") {
+    await tg.click({ force: true });
+    await sleep(1500);
+  }
 
   // ★ 直接在文件树点开（非搜索态）
   // ⚠️ 必须用 getByText 而不是 locator("button").filter({hasText})：
@@ -126,6 +145,7 @@ const check = (n, c, d) => {
     JSON.stringify(detail.map((c) => ({ h: c.h, l: c.loading }))));
   check("无运行时错误", errs.length === 0, errs.slice(0, 2).join(" | "));
 
+  await cleanupCardFixtures(p, fx.created);
   await p.screenshot({ path: "/tmp/sd_card/progressive.png", fullPage: false });
   await b.close();
   console.log("\n" + (fail ? "❌ FAIL = " + fail : "✅ ALL PASS"));

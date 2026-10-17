@@ -28,7 +28,7 @@ const fs = require("fs");
 
 const TOKEN =
   process.env.SUNNYDOC_TOKEN ||
-  fs.readFileSync(process.env.SUNNYDOC_TOKEN_FILE || "/tmp/sdtoken.txt", "utf8").trim();
+  fs.readFileSync(process.env.SUNNYDOC_TOKEN_FILE || "/tmp/sunnydoc-token.txt", "utf8").trim();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let fail = 0;
@@ -126,7 +126,7 @@ async function probeHover(page, selector, opts = {}) {
   console.log("━━━ 3. 文件树行（.tree-row，刻意不用 transform）━━━");
   {
     // 进知识库才有文件树
-    const kb = p.locator("button, a").filter({ hasText: "云计算知识库" }).first();
+    const kb = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
     if (await kb.count()) {
       await kb.click();
       await sleep(2200);

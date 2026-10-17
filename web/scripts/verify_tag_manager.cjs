@@ -128,7 +128,7 @@ const waitFor = async (fn, ms = 8000, label = "") => {
   const kbCard = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
   if (await kbCard.count()) await kbCard.click({ force: true });
   else {
-    const kb = p.locator("button, a").filter({ hasText: "云计算知识库" }).first();
+    const kb = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
     if (await kb.count()) await kb.click({ force: true });
   }
   await waitFor(async () => (await p.locator("[data-tree-kind]").count()) > 0, 10000, "进入 KB");

@@ -27,7 +27,7 @@ const fs = require("fs");
 
 const TOKEN =
   process.env.SUNNYDOC_TOKEN ||
-  fs.readFileSync(process.env.SUNNYDOC_TOKEN_FILE || "/tmp/sdtoken.txt", "utf8").trim();
+  fs.readFileSync(process.env.SUNNYDOC_TOKEN_FILE || "/tmp/sunnydoc-token.txt", "utf8").trim();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let fail = 0;
@@ -91,7 +91,7 @@ async function measure(page) {
 }
 
 async function openKbAndDoc(p) {
-  const kb = p.locator("button, a").filter({ hasText: "云计算知识库" }).first();
+  const kb = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
   if (await kb.count()) {
     await kb.click();
     await sleep(2200);

@@ -11,8 +11,11 @@
  */
 const { chromium } = require("playwright");
 const fs = require("fs");
+const { seedCardFixtures, cleanupCardFixtures } = require("./_card_fixtures.cjs");
 // token 走环境变量，避免把凭据写进仓库
 const TOKEN = process.env.SUNNYDOC_TOKEN || fs.readFileSync(process.env.SUNNYDOC_TOKEN_FILE || "/tmp/sunnydoc-token.txt", "utf8").trim();
+// 容器文档由本脚本**自建**（不再依赖库中预存夹具：预存夹具被清理后整批失效，
+// 且失败信息与真因无关，会误判成产品回归）。
 const CONTAINER_TITLE = process.env.SUNNYDOC_CONTAINER || "卡片容器文档";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -33,8 +36,11 @@ const check = (n, c, d) => {
   await p.evaluate((t) => localStorage.setItem("sunnydoc.token", t), TOKEN);
   await p.reload({ waitUntil: "domcontentloaded" });
   await sleep(2500);
-  const kb = p.locator("button, a").filter({ hasText: "云计算知识库" }).first();
+  const kb = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
   if (await kb.count()) { await kb.click(); await sleep(2200); }
+
+  // 播种容器文档（自建；已存在则复用）。来源文档由本脚本自己「新建并插入」。
+  const fx = await seedCardFixtures(p, { container: CONTAINER_TITLE, source: "嵌入测试-表格源" });
 
   // 打开容器文档并进编辑态
   const box = p.locator('input[type="search"], input[placeholder*="搜索"]').first();
@@ -156,6 +162,9 @@ const check = (n, c, d) => {
 
   console.log("\nconsole 错误: " + (errs.length ? errs.slice(0, 3).join(" | ") : "无"));
   if (errs.length) fail++;
+  // 清理：① 本次「新建并插入」产生的表格文档（脚本自己造的残留）
+  //       ② 本次新建的夹具容器（不动原本就存在的文档）
+  await cleanupCardFixtures(p, [created.newId, ...fx.created]);
   await p.screenshot({ path: "/tmp/sd_new/new_embed.png" });
   await b.close();
   console.log("\n" + (fail ? "❌ FAIL = " + fail : "✅ ALL PASS"));

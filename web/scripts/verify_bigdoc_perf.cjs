@@ -52,7 +52,7 @@ const check = (n, c, d) => { if (c) console.log("  ✅ " + n); else { fail++; co
   await p.evaluate((t) => localStorage.setItem("sunnydoc.token", t), TOKEN);
   await p.reload({ waitUntil: "domcontentloaded" });
   await sleep(2500);
-  const kb = p.locator("button, a").filter({ hasText: "云计算知识库" }).first();
+  const kb = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
   if (await kb.count()) { await kb.click(); await sleep(2200); }
   // 优先在文件树直接点；找不到则退回搜索（文档可能藏在折叠目录里）
   let opened = false;

@@ -79,7 +79,7 @@ const waitFor = async (fn, ms = 8000, label = "") => {
   await p.evaluate((t) => localStorage.setItem("sunnydoc.token", t), TOKEN);
   await p.reload({ waitUntil: "domcontentloaded" });
   await sleep(2500);
-  const kb = p.locator("button, a").filter({ hasText: "云计算知识库" }).first();
+  const kb = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
   if (await kb.count()) { await kb.click(); await sleep(2200); }
 
   // 准备临时文档

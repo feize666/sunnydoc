@@ -50,7 +50,7 @@ const check = (n, c, d) => {
 
   // ⚠️ 首页是 HomeView（仪表盘），**没有搜索框也没有编辑器**。
   // 必须先点进一个知识库，才会出现侧栏搜索框与文档树。
-  const kb = p.locator("button, a").filter({ hasText: "云计算知识库" }).first();
+  const kb = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
   if (await kb.count()) {
     await kb.click();
     await sleep(2500);

@@ -32,7 +32,7 @@ const check = (n, c, d) => {
   await p.reload({ waitUntil: "domcontentloaded" });
   await sleep(2500);
 
-  const kb = p.locator("button, a").filter({ hasText: "云计算知识库" }).first();
+  const kb = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
   if (await kb.count()) { await kb.click(); await sleep(2200); }
 
   const box = p.locator('input[type="search"], input[placeholder*="搜索"]').first();

@@ -11,6 +11,7 @@
  */
 const { chromium } = require("playwright");
 const fs = require("fs");
+const { seedCardFixtures, cleanupCardFixtures } = require("./_card_fixtures.cjs");
 // token 走环境变量，避免把凭据写进仓库
 const TOKEN = process.env.SUNNYDOC_TOKEN || fs.readFileSync(process.env.SUNNYDOC_TOKEN_FILE || "/tmp/sunnydoc-token.txt", "utf8").trim();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -37,12 +38,21 @@ const MAX_CARD_H = 560; // 卡片高度上限（含头部 44px + 内容 460px + 
   await p.evaluate((t) => localStorage.setItem("sunnydoc.token", t), TOKEN);
   await p.reload({ waitUntil: "domcontentloaded" });
   await sleep(2500);
-  const kb = p.locator("button, a").filter({ hasText: "云计算知识库" }).first();
+  const kb = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
   if (await kb.count()) { await kb.click(); await sleep(2200); }
 
   // 容器标题参数化：曾硬编码上一轮的文档名，那个文档被清理后脚本就静默搜不到、
   // 从而"一张卡片都没抓到"（而 every() 对空数组恒真，看起来全过）。
   const CONTAINER = process.argv[2] || "卡片观感-容器";
+  // 自建夹具：容器正文里**预置一个卡片**（本脚本要断言卡片的实际渲染尺寸与内部控件，
+  // 没有卡片可看就无从测起）。不再依赖库中预存夹具。
+  const fx = await seedCardFixtures(p, {
+    container: CONTAINER,
+    source: "嵌入测试-表格源",
+    withCard: true,
+  });
+  console.log("  夹具: 容器=" + fx.containerId + " 来源=" + fx.sourceId +
+    (fx.created.length ? "（新建 " + fx.created.length + "）" : "（复用既有）"));
   const box = p.locator('input[type="search"], input[placeholder*="搜索"]').first();
   await box.fill(CONTAINER);
   await sleep(2000);
@@ -154,6 +164,8 @@ const MAX_CARD_H = 560; // 卡片高度上限（含头部 44px + 内容 460px + 
   check("无运行时错误", errs.length === 0, errs.slice(0, 2).join(" | "));
 
   await p.screenshot({ path: "/tmp/sd_card/after.png", fullPage: false });
+  // 清理本次新建的夹具（不动原本就存在的文档）
+  await cleanupCardFixtures(p, fx.created);
   await b.close();
   console.log("\n" + (fail ? "❌ FAIL = " + fail : "✅ ALL PASS"));
   process.exit(fail ? 1 : 0);

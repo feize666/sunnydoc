@@ -102,7 +102,7 @@ const waitFor = async (fn, ms = 8000, label = "") => {
     await kbCard.click({ force: true });
   } else {
     // 兜底：首页可能没有该卡片（已在 KB 视图），直接用文案
-    const kb = p.locator("button, a").filter({ hasText: "云计算知识库" }).first();
+    const kb = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
     if (await kb.count()) await kb.click({ force: true });
   }
   await sleep(3000);

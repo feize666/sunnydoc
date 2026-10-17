@@ -163,14 +163,18 @@ def _search_documents(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     hits = search_hits(q, int(args.get("top_k") or 5), ctx.user["id"])
     return {
         "count": len(hits),
+        # `index` 是**引用编号**（1 起），供模型在回答里写 `[1]`/`[2]` 时引用。
+        # 不加这个字段时模型只能按数组位置自行猜，标号时有时无 ——
+        # 而引用溯源要求正文编号与引用列表一一对应，猜不得。
         "results": [
             {
+                "index": i + 1,
                 "doc_id": h["doc_id"],
                 "title": h["title"],
                 "snippet": (h.get("text") or "")[:200],
                 "score": round(float(h.get("score") or 0), 3),
             }
-            for h in hits
+            for i, h in enumerate(hits)
         ],
     }
 

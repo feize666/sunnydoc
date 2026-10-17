@@ -144,7 +144,7 @@ const waitFor = async (fn, ms = 8000, label = "") => {
   if (await kbCard.count()) {
     await kbCard.click({ force: true });
   } else {
-    const kb = p.locator("button, a").filter({ hasText: "云计算知识库" }).first();
+    const kb = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
     if (await kb.count()) await kb.click({ force: true });
   }
   const inKb = await waitFor(

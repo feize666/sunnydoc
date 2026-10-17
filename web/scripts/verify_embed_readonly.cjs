@@ -7,6 +7,7 @@
  */
 const { chromium } = require("playwright");
 const fs = require("fs");
+const { seedCardFixtures, cleanupCardFixtures } = require("./_card_fixtures.cjs");
 // token 走环境变量，避免把凭据写进仓库
 const TOKEN = process.env.SUNNYDOC_TOKEN || fs.readFileSync(process.env.SUNNYDOC_TOKEN_FILE || "/tmp/sunnydoc-token.txt", "utf8").trim();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -21,8 +22,17 @@ const check = (n, c, d) => { if (c) console.log("  ✅ " + n); else { fail++; co
   await p.evaluate((t) => localStorage.setItem("sunnydoc.token", t), TOKEN);
   await p.reload({ waitUntil: "domcontentloaded" });
   await sleep(2400);
-  const kb = p.locator("button, a").filter({ hasText: "云计算知识库" }).first();
+  const kb = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
   if (await kb.count()) { await kb.click(); await sleep(2000); }
+  // 自建夹具：容器正文预置一个卡片（本脚本要验「卡片内单元格只读」与「点标题跳转」，
+  // 没有卡片就无从测起）。不再依赖库中预存夹具。
+  const fx = await seedCardFixtures(p, {
+    container: "嵌入测试-容器文档",
+    source: "嵌入测试-表格源",
+    withCard: true,
+  });
+  console.log("  夹具: 容器=" + fx.containerId + " 来源=" + fx.sourceId +
+    (fx.created.length ? "（新建 " + fx.created.length + "）" : "（复用既有）"));
   const box = p.locator('input[type="search"], input[placeholder*="搜索"]').first();
   await box.fill("嵌入测试-容器文档"); await sleep(2000);
   const hit = p.getByText("嵌入测试-容器文档", { exact: true }).first();
@@ -84,6 +94,8 @@ const check = (n, c, d) => { if (c) console.log("  ✅ " + n); else { fail++; co
 
   console.log("  console 错误: " + (errs.length ? errs.slice(0, 2).join(" | ") : "无"));
   if (errs.length) fail++;
+  // 清理本次新建的夹具（不动原本就存在的文档）
+  await cleanupCardFixtures(p, fx.created);
   await b.close();
   console.log(fail ? "❌ FAIL = " + fail : "✅ ALL PASS");
   process.exit(fail ? 1 : 0);

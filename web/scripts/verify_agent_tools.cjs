@@ -27,7 +27,7 @@ const fs = require("fs");
 
 const TOKEN =
   process.env.SUNNYDOC_TOKEN ||
-  fs.readFileSync(process.env.SUNNYDOC_TOKEN_FILE || "/tmp/sdtoken.txt", "utf8").trim();
+  fs.readFileSync(process.env.SUNNYDOC_TOKEN_FILE || "/tmp/sunnydoc-token.txt", "utf8").trim();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 靶子文档由外部注入（脚本不自建 —— 删除类断言需要一个真实目标）

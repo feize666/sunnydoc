@@ -12,10 +12,13 @@
  */
 const { chromium } = require("playwright");
 const fs = require("fs");
+const { seedCardFixtures, cleanupCardFixtures } = require("./_card_fixtures.cjs");
 // token 走环境变量，避免把凭据写进仓库
 const TOKEN = process.env.SUNNYDOC_TOKEN || fs.readFileSync(process.env.SUNNYDOC_TOKEN_FILE || "/tmp/sunnydoc-token.txt", "utf8").trim();
 // 容器与来源都用**标题**定位，不硬编码 id —— 否则换一次测试环境脚本就失效
 // （曾因写死 id 而读到空正文，误判为「卡片标记没保存」）。
+// 文档由本脚本**自建**（不再依赖库中预存夹具 —— 预存夹具一旦被清理，
+// 整批脚本失效且失败信息与真因无关，极易误判成产品回归）。
 const CONTAINER_TITLE = process.env.SUNNYDOC_CONTAINER || "嵌入测试-容器文档";
 const SOURCE_TITLE = process.env.SUNNYDOC_SOURCE || "嵌入测试-表格源";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -38,23 +41,14 @@ const check = (n, c, d) => {
   await p.reload({ waitUntil: "domcontentloaded" });
   await sleep(2500);
 
-  const kb = p.locator("button, a").filter({ hasText: "云计算知识库" }).first();
+  const kb = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
   if (await kb.count()) { await kb.click(); await sleep(2200); }
 
-  // 按标题查出两个文档的 id（供后续精确断言用；不硬编码）
-  const ids = await p.evaluate(async ([ct, st]) => {
-    const tok = localStorage.getItem("sunnydoc.token");
-    const r = await fetch("http://localhost:8000/api/v1/documents", {
-      headers: { Authorization: "Bearer " + tok },
-    });
-    const all = (await r.json()).documents || [];
-    return {
-      container: all.find((x) => x.title === ct)?.id || null,
-      source: all.find((x) => x.title === st)?.id || null,
-    };
-  }, [CONTAINER_TITLE, SOURCE_TITLE]);
-  const SOURCE_ID = ids.source;
-  console.log("  定位: 容器=" + (ids.container || "未找到") + " 来源=" + (ids.source || "未找到"));
+  // 播种夹具（自建自清；已存在则复用，不重复创建）
+  const fx = await seedCardFixtures(p, { container: CONTAINER_TITLE, source: SOURCE_TITLE });
+  const SOURCE_ID = fx.sourceId;
+  console.log("  定位: 容器=" + fx.containerId + " 来源=" + SOURCE_ID +
+    (fx.created.length ? "（新建 " + fx.created.length + " 个夹具）" : "（复用既有）"));
 
   // 打开容器文档（用搜索，避免折叠目录问题）
   const box = p.locator('input[type="search"], input[placeholder*="搜索"]').first();
@@ -155,7 +149,7 @@ const check = (n, c, d) => {
   // 重新加载页面再打开，确认卡片能重建
   await p.reload({ waitUntil: "domcontentloaded" });
   await sleep(2600);
-  const kb2 = p.locator("button, a").filter({ hasText: "云计算知识库" }).first();
+  const kb2 = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
   if (await kb2.count()) { await kb2.click(); await sleep(2000); }
   const box2 = p.locator('input[type="search"], input[placeholder*="搜索"]').first();
   await box2.fill("嵌入测试-容器文档");
@@ -177,6 +171,8 @@ const check = (n, c, d) => {
 
   console.log("\nconsole 错误: " + (errs.length ? errs.slice(0, 3).join(" | ") : "无"));
   if (errs.length) fail++;
+  // 清理本次新建的夹具（不动原本就存在的文档）
+  await cleanupCardFixtures(p, fx.created);
   await p.screenshot({ path: "/tmp/sd_ed/embed_ok.png" });
   await b.close();
   console.log("\n" + (fail ? "❌ FAIL = " + fail : "✅ ALL PASS"));
