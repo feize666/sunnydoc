@@ -628,6 +628,7 @@ export function Sidebar({
                 }
               }}
               placeholder="搜索文档内容…"
+              data-testid="sidebar-search"
               className="input input-icon pr-9"
             />
             {searchQuery && (
@@ -763,6 +764,8 @@ export function Sidebar({
               {tagList.map((t) => (
                 <button
                   key={t.name}
+                  data-testid="sidebar-tag-chip"
+                  data-active={activeTag === t.name ? "1" : undefined}
                   onClick={() =>
                     activeTag === t.name ? clearTagFilter() : setTagFilter(t.name)
                   }

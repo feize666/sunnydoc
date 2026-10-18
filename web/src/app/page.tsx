@@ -1052,6 +1052,46 @@ export default function Home() {
     [refreshKbs],
   );
 
+  /**
+   * 「全文搜索」：进入知识库并把焦点交给侧栏搜索框。
+   *
+   * 为什么需要显式接线：命令面板里这一项原先**没有 `action`** ——
+   * 点了只是把面板关掉、焦点掉到 body，什么都没发生（实测：
+   * `panelOpen:false, active:"BODY", hasSearchBox:false`）。用户会以为功能坏了。
+   *
+   * 侧栏搜索框**只在知识库视图里存在**（首页是 HomeView 仪表盘，没有搜索框），
+   * 所以必须先确保处于 kb 视图，再等一帧让输入框挂载后聚焦。
+   *
+   * 定义位置必须在 `enterKb` 之后 —— 否则引用到块级作用域外（TS 会直接报
+   * 「used before its declaration」）。
+   */
+  const handleFocusSearch = useCallback(() => {
+    // 优先用当前库；否则用会话里记着的上次访问库；再退回第一个可用库
+    const kbId = currentKbId || loadSessionKbId() || kbs[0]?.id;
+    if (!kbId) {
+      toast.error("还没有知识库，先创建一个再搜索");
+      return;
+    }
+    if (currentKbId !== kbId) enterKb(kbId);
+    // 等 Sidebar 挂载出搜索框再聚焦（同一帧里 DOM 还没换）
+    requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLInputElement>('[data-testid="sidebar-search"]');
+      el?.focus();
+      el?.select?.();
+    });
+  }, [currentKbId, kbs, enterKb, toast]);
+
+  /** 按标签浏览（供命令面板的标签项复用，与侧栏标签浏览同一条路径）。 */
+  const handleOpenTagBrowse = useCallback(
+    (tag: string) => {
+      const kbId = currentKbId || loadSessionKbId() || kbs[0]?.id;
+      if (kbId && currentKbId !== kbId) enterKb(kbId);
+      setSearchQuery("");
+      setSearchTag(tag);
+    },
+    [currentKbId, kbs, enterKb],
+  );
+
   // 返回首页
   const goHome = useCallback(() => {
     clearSessionKbId();
@@ -1359,14 +1399,14 @@ export default function Home() {
       hint: "",
       action: () => refreshList(),
     },
-    { icon: <SearchIcon size={15} />, label: "全文搜索", hint: "Ctrl+F" },
+    { icon: <SearchIcon size={15} />, label: "全文搜索", hint: "Ctrl+F", action: handleFocusSearch },
     {
       icon: theme === "light" ? <MoonIcon size={15} /> : <SunIcon size={15} />,
       label: "切换主题",
       hint: "Ctrl+Shift+T",
       action: () => setTheme((t) => (t === "light" ? "dark" : "light")),
     },
-    { icon: <SettingsIcon size={15} />, label: "系统设置", hint: "Ctrl+," },
+    { icon: <SettingsIcon size={15} />, label: "系统设置", hint: "Ctrl+,", action: handleOpenSettings },
   ];
 
   // 公开分享视图（优先，无需登录）
@@ -1640,6 +1680,11 @@ export default function Home() {
           setPaletteOpen(false);
           openDoc(docId);
         }}
+        // P4-2「统一检索入口」：把标签也纳入命令面板。
+        // 数据直接复用上层已算好的 tagList（含篇数），不另发请求 ——
+        // 同一份数据的第二条产出路径在本项目已踩过坑。
+        tags={tagList}
+        onOpenTag={handleOpenTagBrowse}
       />
 
       <ShortcutPanel open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />

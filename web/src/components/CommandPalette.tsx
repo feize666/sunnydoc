@@ -3,6 +3,15 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { SearchResult } from "@/lib/api";
 
+/**
+ * 命令面板里的一项命令。
+ *
+ * ⚠️ `action` 是可选的 —— 但**没有 action 的命令等于坏按钮**：
+ * 点击会关闭面板却不做任何事，用户以为功能坏了（实测过两项：
+ * 「全文搜索」「系统设置」，点击后焦点掉到 body、什么都没发生）。
+ * 因此渲染层对无 action 的项**显式标注为不可用**，而不是让它假装可点。
+ * 真机脚本也据此断言「每一项都必须能执行」。
+ */
 export interface Command {
   icon: ReactNode;
   label: string;
@@ -11,11 +20,13 @@ export interface Command {
 }
 
 interface Item {
-  kind: "command" | "result" | "header";
+  kind: "command" | "result" | "header" | "tag";
   key: string;
   command?: Command;
   result?: SearchResult;
   label?: string;
+  /** kind === "tag" 时的标签信息 */
+  tag?: { name: string; count: number };
 }
 
 export function CommandPalette({
@@ -24,12 +35,23 @@ export function CommandPalette({
   commands,
   onSearch,
   onOpenResult,
+  /**
+   * 标签匹配结果（P4-2「统一检索入口」）。
+   *
+   * 为什么把它作为 props 而不是面板内部去查：标签数据（含篇数）来自
+   * 上层已经持有的 `metas`，面板再去请求一次既多余又可能不一致
+   * （同一份数据的第二条产出路径 —— 本项目已因此踩过坑）。
+   */
+  tags = [],
+  onOpenTag,
 }: {
   open: boolean;
   onClose: () => void;
   commands: Command[];
   onSearch?: (q: string) => Promise<SearchResult[]>;
   onOpenResult?: (docId: string) => void;
+  tags?: { name: string; count: number }[];
+  onOpenTag?: (tag: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
@@ -83,11 +105,22 @@ export function CommandPalette({
     return c.label.toLowerCase().includes(q) || (c.hint ?? "").toLowerCase().includes(q);
   });
 
-  // 组装可导航列表：命令 + （结果分组头 + 结果）
+  // 组装可导航列表：命令 + 标签匹配 + （结果分组头 + 结果）
+  // 标签排在文档结果之前：标签是「归类」，通常比零散命中更快缩小范围。
   const items: Item[] = [];
   filteredCommands.forEach((c, i) =>
     items.push({ kind: "command", key: `c-${i}`, command: c }),
   );
+  const q0 = query.trim().toLowerCase();
+  const matchedTags = q0
+    ? tags.filter((t) => t.name.toLowerCase().includes(q0)).slice(0, 8)
+    : [];
+  if (matchedTags.length > 0) {
+    items.push({ kind: "header", key: "h-tags", label: "标签" });
+    matchedTags.forEach((t) =>
+      items.push({ kind: "tag", key: `t-${t.name}`, tag: t }),
+    );
+  }
   if (query.trim() && onSearch) {
     if (results.length > 0) {
       items.push({ kind: "header", key: "h-results", label: "文档搜索结果" });
@@ -112,11 +145,17 @@ export function CommandPalette({
 
   const run = (item: Item) => {
     if (item.kind === "command") {
+      // 无 action 的命令不关闭面板 —— 关掉却不做事最让人困惑。
+      // （面板里它们已被标为禁用态，正常不会走到这里，属兜底。）
+      if (!item.command?.action) return;
       onClose();
-      item.command?.action?.();
+      item.command.action();
     } else if (item.kind === "result" && item.result) {
       onClose();
       onOpenResult?.(item.result.doc_id);
+    } else if (item.kind === "tag" && item.tag) {
+      onClose();
+      onOpenTag?.(item.tag.name);
     }
   };
 
@@ -185,6 +224,7 @@ export function CommandPalette({
                   <button
                     key={item.key}
                     data-index={i}
+                    data-testid="palette-result"
                     onClick={() => run(item)}
                     onMouseEnter={() => setActiveIndex(i)}
                     className={`relative flex w-full flex-col gap-0.5 rounded-lg px-3 py-2 text-left ${
@@ -199,15 +239,57 @@ export function CommandPalette({
                   </button>
                 );
               }
+              if (item.kind === "tag" && item.tag) {
+                return (
+                  <button
+                    key={item.key}
+                    data-index={i}
+                    data-testid="palette-tag"
+                    onClick={() => run(item)}
+                    onMouseEnter={() => setActiveIndex(i)}
+                    className={`relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left ${
+                      active ? "bg-accent-soft text-accent" : "text-text"
+                    }`}
+                  >
+                    {active && (
+                      <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-accent" />
+                    )}
+                    <span className="grid w-5 shrink-0 place-items-center text-muted">
+                      {/* 标签图标（内联 —— 与面板里其它图标风格一致，
+                          icons.tsx 暂无 tag 图标，不为一处新增加导出） */}
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                        <circle cx="7" cy="7" r="1.5" />
+                      </svg>
+                    </span>
+                    <span className="flex-1 truncate text-[14px]">{item.tag.name}</span>
+                    <span className="text-[12px] text-faint">{item.tag.count} 篇</span>
+                  </button>
+                );
+              }
               return (
                 <button
                   key={item.key}
                   data-index={i}
+                  data-testid="palette-command"
+                  data-disabled={item.command?.action ? undefined : "1"}
+                  // 无 action 的项不执行（也标成禁用态，见下方 class）
+                  disabled={!item.command?.action}
                   onClick={() => run(item)}
                   onMouseEnter={() => setActiveIndex(i)}
                   className={`group relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[14px] ${
                     active ? "bg-accent-soft text-accent" : "text-text"
-                  }`}
+                  } ${!item.command?.action ? "cursor-not-allowed opacity-45" : ""}`}
+                  title={!item.command?.action ? "该命令尚未接线（点击无效果）" : undefined}
                 >
                   {active && (
                     <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-accent" />
