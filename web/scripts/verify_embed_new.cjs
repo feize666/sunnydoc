@@ -3,11 +3,15 @@
  * 真机验证「新建并插入卡片」。
  *
  * 断言（每条都要有可打印证据）：
- *   1. 选择器里有「新建并插入」的 5 个类型按钮
+ *   1. 选择器里的「新建并插入」类型按钮**与 EMBEDDABLE_TYPES 完全一致**（集合比较）
  *   2. 点「+ 表格」→ 新文档**真的入库**（后端可查到）
  *   3. **不跳转**：用户仍停在原文档（这是与「新建文档」的关键区别）
  *   4. 卡片出现在正文里，且渲染出真实表格内容（不是空壳）
  *   5. 新建文档的初始内容与「从文件树新建」一致（结构不能自造）
+ *
+ * ⚠️ 第 1 条不要写成「有 N 个按钮」：数字会随类型增减而过时，且「漏了一个」
+ *    与「多了一个」都表现成同一个数字变化，看不出是哪一项。校验**文案集合**：
+ *    既覆盖新增（如 2026-10-18 加入 slides），也不放过误删。
  */
 const { chromium } = require("playwright");
 const fs = require("fs");
@@ -83,7 +87,15 @@ const check = (n, c, d) => {
     Array.from(document.querySelectorAll(".embed-new-btn")).map((e) => (e.textContent || "").trim()),
   );
   console.log("  新建按钮: " + JSON.stringify(newBtns));
-  check("选择器有 5 个新建类型按钮", newBtns.length === 5, JSON.stringify(newBtns));
+  // 集合比较（不用数字）：多一个 / 少一个都能指出具体是哪一项
+  const EXPECTED_EMBED = ["表格", "数据表", "画板", "思维导图", "流程图", "幻灯片"];
+  const missing = EXPECTED_EMBED.filter((x) => !newBtns.some((t) => t.includes(x)));
+  const extra = newBtns.filter((t) => !EXPECTED_EMBED.some((x) => t.includes(x)));
+  check(
+    "选择器的新建类型与 EMBEDDABLE_TYPES 一致（含幻灯片）",
+    missing.length === 0 && extra.length === 0,
+    `missing=${JSON.stringify(missing)} extra=${JSON.stringify(extra)} 实测=${JSON.stringify(newBtns)}`,
+  );
 
   // 记录点按钮前的文档总数
   const countBefore = await p.evaluate(async () => {

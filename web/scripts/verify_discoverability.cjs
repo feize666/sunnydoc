@@ -142,15 +142,17 @@ const waitFor = async (fn, ms = 8000, label = "") => {
     JSON.stringify(newCmds),
   );
 
-  // ---- 3) 7 种可用类型都有入口 ----
-  // 期望：文档/表格/数据表/思维导图/流程图/画板 + 文件夹
-  const EXPECT = ["文档", "表格", "数据表", "思维导图", "流程图", "画板", "文件夹"];
+  // ---- 3) 全部可用类型都有入口 ----
+  // 期望：文档/表格/数据表/思维导图/流程图/画板/幻灯片 + 文件夹
+  // ⚠️ 新增一种类型就要补进 EXPECT，否则发现性缺口会悄悄回来
+  //    （命令面板的「新建 X」直接由 NODE_TYPES 生成，加了枚举就自动有入口）。
+  const EXPECT = ["文档", "表格", "数据表", "思维导图", "流程图", "画板", "幻灯片", "文件夹"];
   const missing = EXPECT.filter((name) => {
     const re = name === "文件夹" ? /^新建文件夹/ : new RegExp("^新建" + name + "[ ·]");
     return !all.some((t) => re.test(t));
   });
   check(
-    `7 种可用类型都有入口（缺：${missing.join("/") || "无"}）`,
+    `全部可用类型都有入口（缺：${missing.join("/") || "无"}）`,
     missing.length === 0,
     JSON.stringify(all),
   );

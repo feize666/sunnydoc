@@ -21,6 +21,7 @@ import {
   LazyDatasheetEditor,
   LazyTableEditor,
   LazyRichEditor,
+  LazySlideEditor,
 } from "./LazyEditors";
 import { CopyIcon, CheckIcon, EditIcon, HistoryIcon, ShareIcon } from "./icons";
 import { useImageZoom } from "./ImageLightbox";
@@ -674,7 +675,7 @@ export function Editor({
   // 切换文档时重置为预览模式（表格/画板/数据表/流程图/思维导图默认进编辑态）
   useEffect(() => {
     const t = doc?.type ?? "doc";
-    const isEdit = ["table", "board", "datasheet", "flowchart", "mindmap"].includes(t);
+    const isEdit = ["table", "board", "datasheet", "flowchart", "mindmap", "slides"].includes(t);
     setMode(isEdit ? "edit" : "preview");
     // 直接进编辑态时，同步初始化草稿内容（否则编辑器收到空内容）
     if (isEdit && doc) {
@@ -1327,6 +1328,10 @@ export function Editor({
                 <div className="mt-6 overflow-hidden rounded-lg border border-line">
                   <LazyDatasheetEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly />
                 </div>
+              ) : doc.type === "slides" ? (
+                <div className="mt-6">
+                  <LazySlideEditor key={doc.key} value={doc.body} onChange={() => {}} readOnly title={doc.title} />
+                </div>
               ) : doc.type === "html" ? (
                 <div
                   ref={contentRef}
@@ -1419,6 +1424,13 @@ export function Editor({
                   <LazyBoardEditor key={`${doc.key}:${editorEpoch}`} value={draft} onChange={setDraft} />
                 ) : doc.type === "datasheet" ? (
                   <LazyDatasheetEditor key={`${doc.key}:${editorEpoch}`} value={draft} onChange={setDraft} />
+                ) : doc.type === "slides" ? (
+                  <LazySlideEditor
+                    key={`${doc.key}:${editorEpoch}`}
+                    value={draft}
+                    onChange={setDraft}
+                    title={doc.title}
+                  />
                 ) : doc.type === "flowchart" ? (
                   <LazyFlowchartEditor
                     key={`${doc.key}:${editorEpoch}`}

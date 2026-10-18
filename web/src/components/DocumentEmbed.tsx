@@ -18,18 +18,19 @@ import {
   LazyDatasheetEditor,
   LazyMindMapEditor,
   LazyFlowchartEditor,
+  LazySlideEditor,
 } from "./LazyEditors";
+import { newSlideDocBody } from "@/lib/slideTemplates";
 import { Tooltip } from "./Tooltip";
 
 /**
  * 可嵌入正文的文档类型（P2-3 卡片嵌入）。
  *
- * 为什么只允许这 5 种：它们当前必须「新建一个独立文档」才能使用，
+ * 为什么只允许这几种：它们当前必须「新建一个独立文档」才能使用，
  * 实测数据里 241 篇文档中一条都没有 —— 不是没人需要，而是门槛太高。
  * 改成可在正文里随手插入后，使用成本降到接近零。
  *
- * 不含 `doc`：把整篇文档嵌进另一篇会形成无意义的递归；
- * 也不含 `slides`：尚未实现。
+ * 不含 `doc`：把整篇文档嵌进另一篇会形成无意义的递归。
  */
 export const EMBEDDABLE_TYPES = [
   "table",
@@ -37,6 +38,7 @@ export const EMBEDDABLE_TYPES = [
   "board",
   "mindmap",
   "flowchart",
+  "slides",
 ] as const;
 
 export type EmbeddableType = (typeof EMBEDDABLE_TYPES)[number];
@@ -47,6 +49,7 @@ const TYPE_LABEL: Record<string, string> = {
   board: "画板",
   mindmap: "思维导图",
   flowchart: "流程图",
+  slides: "幻灯片",
 };
 
 /**
@@ -55,7 +58,8 @@ const TYPE_LABEL: Record<string, string> = {
  * ⚠️ 必须与 `page.tsx` 的 `handleNew` 逐字一致 —— 两处若不一致，
  * 会出现「从文件树新建」与「从卡片新建」得到不同初始结构的怪现象，
  * 而各编辑器的解析器对结构有假设（如思维导图要求 nodes 数组）。
- * 这里的取值是照抄 handleNew 的，不是自己编的。
+ * 幻灯片的初始内容由 `@/lib/slideTemplates` 的 `newSlideDocBody()` 统一提供，
+ * 两边调同一个函数，从根上避免漂移。
  */
 export const NEW_DOC_TEMPLATE: Record<EmbeddableType, { title: string; body: string }> = {
   table: {
@@ -72,6 +76,7 @@ export const NEW_DOC_TEMPLATE: Record<EmbeddableType, { title: string; body: str
     body: JSON.stringify({ nodes: [{ id: "1", text: "中心主题", parent: null }] }),
   },
   flowchart: { title: "未命名流程图", body: JSON.stringify({ nodes: [], edges: [] }) },
+  slides: { title: "未命名幻灯片", body: newSlideDocBody() },
 };
 
 /**
@@ -99,6 +104,8 @@ function renderEmbedded(
       return <LazyMindMapEditor {...common} />;
     case "flowchart":
       return <LazyFlowchartEditor {...common} />;
+    case "slides":
+      return <LazySlideEditor {...common} />;
     default:
       return null;
   }

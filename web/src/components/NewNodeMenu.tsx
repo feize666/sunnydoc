@@ -64,7 +64,7 @@ export const NODE_TYPES: TypeDef[] = [
   { type: "datasheet", label: "数据表", desc: "列类型 + 筛选", color: "#0ea5e9", available: true, icon: "M4 5h16v14H4z|M4 9h16|M9 9v10" },
   { type: "mindmap", label: "思维导图", desc: "梳理思路", color: "#ec4899", available: true, icon: "M12 4v16M12 8H5M12 14h7" },
   { type: "flowchart", label: "流程图", desc: "流程可视化", color: "#6366f1", available: true, icon: "M12 2l6 8-6 8-6-8z|M12 6v4M12 14v4" },
-  { type: "slides", label: "幻灯片", desc: "演示文稿", color: "#ef4444", available: false, icon: "M3 5h18v12H3z|M3 9h18|M9 9v8" },
+  { type: "slides", label: "幻灯片", desc: "演示文稿 · 可放映", color: "#ef4444", available: true, icon: "M3 5h18v12H3z|M3 9h18|M9 9v8" },
 ];
 
 /**
@@ -133,6 +133,9 @@ export function NewNodeMenu({
         {NODE_TYPES.map((t) => (
           <button
             key={t.type}
+            data-testid="node-type-item"
+            data-type={t.type}
+            data-available={t.available ? "1" : "0"}
             disabled={!t.available}
             onClick={() => {
               if (t.available) {

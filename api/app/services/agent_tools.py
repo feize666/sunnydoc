@@ -391,7 +391,7 @@ def _overview(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
             "content": {**_S, "description": "正文（Markdown）"},
             "kb_id": {**_S, "description": "所属知识库 id，省略则用当前所在知识库"},
             "folder_id": {**_S, "description": "所属文件夹 id"},
-            "type": {**_S, "description": "文档类型：doc/flowchart/mindmap/datasheet/board，默认 doc"},
+            "type": {**_S, "description": "文档类型：doc/table/datasheet/board/mindmap/flowchart/slides，默认 doc"},
         },
         ["title"],
     ),

@@ -42,6 +42,9 @@ import type { Doc, TreeNode, SortBy } from "@/data/docs";
 import { countWords } from "@/lib/markdown";
 import { buildTree } from "@/lib/buildTree";
 import { parseTagQuery } from "@/lib/tagQuery";
+// 幻灯片初始内容：从**纯函数模块**取，别从 SlideEditor（重依赖）取 —— 后者会把
+// html-to-image 整包拽进首屏 chunk。详见 slideTemplates.ts 顶部说明。
+import { newSlideDocBody } from "@/lib/slideTemplates";
 import { ImportIcon, FolderIcon, RefreshIcon, SearchIcon, SunIcon, MoonIcon, SettingsIcon } from "@/components/icons";
 import {
   listDocuments,
@@ -967,6 +970,18 @@ export default function Home() {
             currentKbId,
             parentFolderId,
             "flowchart",
+          );
+          openInKb(doc.id);
+        } else if (type === "slides") {
+          // 初始内容 = 一页封面模板（与 DocumentEmbed 的 NEW_DOC_TEMPLATE 同源）。
+          // ⚠️ 必须从 @/lib/slideTemplates 取（纯函数零重依赖）：若从 SlideEditor
+          // 里 import，会把 html-to-image 等整包拽进首屏 chunk，正是懒加载要避免的。
+          const doc = await createDocument(
+            "未命名幻灯片",
+            newSlideDocBody(),
+            currentKbId,
+            parentFolderId,
+            "slides",
           );
           openInKb(doc.id);
         } else {

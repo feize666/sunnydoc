@@ -62,3 +62,7 @@ export const LazyTableEditor = lazy(
 export const LazyRichEditor = lazy(
   () => import("./RichEditor").then((m) => m.RichEditor) as never,
 );
+
+export const LazySlideEditor = lazy(
+  () => import("./SlideEditor").then((m) => m.SlideEditor) as never,
+);

@@ -61,12 +61,23 @@ function highlightKw(text: string, kw: string): string {
   return out;
 }
 
+/**
+ * 搜索态的类型过滤 chip。
+ *
+ * ⚠️ 必须覆盖**全部**可搜索的类型：此前只有 doc/table/board/datasheet 四项，
+ * 流程图与思维导图建出来后按类型过滤会「消失」（不是没数据，是入口没列），
+ * 幻灯片同理。这类「枚举漏项」不会报错，只会让功能悄悄少一块。
+ * 不要含 `folder`：目录不是文档，不出现在搜索结果里。
+ */
 const TYPE_FILTERS: { value: string; label: string }[] = [
   { value: "", label: "全部" },
   { value: "doc", label: "文档" },
   { value: "table", label: "表格" },
-  { value: "board", label: "画板" },
   { value: "datasheet", label: "数据表" },
+  { value: "board", label: "画板" },
+  { value: "mindmap", label: "思维导图" },
+  { value: "flowchart", label: "流程图" },
+  { value: "slides", label: "幻灯片" },
 ];
 
 function TypeIcon({ type }: { type?: string }) {
@@ -98,6 +109,27 @@ function TypeIcon({ type }: { type?: string }) {
     return (
       <svg {...common}>
         <path d="M4 5h16v14H4zM4 9h16M9 9v10" />
+      </svg>
+    );
+  }
+  if (type === "slides") {
+    return (
+      <svg {...common}>
+        <path d="M3 5h18v12H3zM3 9h18M9 9v8" />
+      </svg>
+    );
+  }
+  if (type === "flowchart") {
+    return (
+      <svg {...common}>
+        <path d="M4 4h6v5H4zM14 15h6v5h-6zM7 9v3a3 3 0 0 0 3 3h4" />
+      </svg>
+    );
+  }
+  if (type === "mindmap") {
+    return (
+      <svg {...common}>
+        <path d="M12 4v16M12 8H5M12 14h7M4 6h4v4H4zM16 12h4v4h-4z" />
       </svg>
     );
   }
@@ -523,6 +555,7 @@ export function Sidebar({
             <button
               onClick={() => setMenuOpen((v) => !v)}
               className="btn btn-accent text-white"
+              data-testid="new-node-btn"
             >
               <PlusIcon size={15} />
               新建
