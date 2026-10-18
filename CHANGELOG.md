@@ -4,6 +4,41 @@
 
 ## [未发布]
 
+### 修复
+
+- **思维导图：点节点选不中，连带所有键盘快捷键失效**（严重）。
+  画布 `onPointerDown` 无条件 `setPointerCapture`，浏览器会把后续 `click`/`dblclick`
+  的 target 重定向到画布 div，节点的事件永远收不到 → `selected` 恒为 null →
+  `onKeyDown` 的 `if (!selected) return` 把 **Tab / Enter / Delete / F2 /
+  Ctrl+C·V·D / 方向键全部挡掉**，双击改名也进不去。
+  改为在 pointer 层做命中判定（`closest(".mind-node")`，与 capture 无关），
+  双击也用「同节点 + 400ms 内」在这层识别。
+  > 铁证：真实鼠标点击无反应，而 `dispatchEvent(new MouseEvent("click"))`
+  > 却能正常选中 —— 是「事件到不了」，不是处理逻辑有问题。
+- **思维导图：双击改名「进了又被自己那一下点掉」**：编辑由双击的第二下 pointerdown
+  触发，输入框 `autoFocus` 后立刻被那次指针交互的余波 blur → `onBlur` 当场退出。
+  加「进入编辑后 350ms 内忽略一次 blur」守卫。
+- **流程图：就地编辑框失去焦点 → 关不掉，且画布快捷键被挡**。
+  React Flow 双击后把焦点落到节点 div 上，时机晚于输入框的 `autoFocus` →
+  焦点被抢走：Esc 收不到（**点空白 / 点另一节点 / 点工具栏 / Esc 四种方式都关不掉**）、
+  `onBlur` 从不触发、编辑期间 Ctrl+D / Delete 失效。
+  改为 rAF 延后一帧主动 `focus()` 抢回，并在画布 `onKeyDown` 加「编辑期间只认 Esc」兜底。
+
+### 测试
+
+- 新增 `web/scripts/verify_mindmap.cjs` **16/16** 与
+  `web/scripts/verify_flowchart.cjs` **19/19** —— 这两个编辑器合计 6186 行，
+  **此前零真机断言**（补测即抓到上面三个缺陷）。覆盖：选中 / 增删改 / 复制粘贴 /
+  撤销重做 / 编辑框焦点与关闭 / 落库 / 导出 PNG / 零残留。
+  > 一律用**真实鼠标键盘**：合成事件不经焦点抢占与 pointer capture，
+  > 恰好把这两个缺陷完全掩盖 —— 这正是它们此前没被发现的原因。
+- **对抗性验证 ×3**：回滚 pointer 层选中 → 精确失败 9 项；去掉 blur 守卫 → 2 项；
+  去掉 rAF 主动 focus → 2 项。
+  > 第 4 次注入（去掉画布编辑守卫）**没失败** —— 说明焦点修好后该分支走不到。
+  > 于是补了一条能触达它的断言（直接向画布派发 keydown），回滚即精确失败 1 项。
+  > **「对抗性验证没失败」先怀疑判据的区分度，再决定补判据还是删代码。**
+- 全量真机回归 **32/32**；后端单测 **227 passed**；`tsc` 0 错误。
+
 ### 新增
 
 - **幻灯片编辑器**（补齐 `NODE_TYPES` 里最后一种未实现的类型，路线图 P1-1）。

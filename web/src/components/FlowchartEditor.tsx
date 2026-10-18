@@ -1877,6 +1877,32 @@ export function FlowchartEditor({
   // 就地编辑期间禁用画布拖拽与缩放：否则在输入框里拖选文字会连带拖动整个画布
   const editing = !!inlineEdit;
 
+  /**
+   * 就地编辑框的 DOM 引用 —— 用于**主动抢回焦点**。
+   *
+   * 🔴 为什么不能只靠 `autoFocus`（2026-10-19 实测）：
+   *   React Flow 在双击后会把焦点落到节点 div 上（`.react-flow__node`），
+   *   时机晚于输入框的 `autoFocus` → 焦点被抢走。后果：
+   *   · `onKeyDown` 里的 Esc 收不到 → **编辑框关不掉**（实测点空白/点别的节点/
+   *     点工具栏/Esc 四种方式都关不掉，textarea 一直在）；
+   *   · `onBlur` 也从不会触发（它压根没获得过焦点）→ `commitEdit` 不执行；
+   *   · 同时在编辑期间，画布快捷键（Ctrl+D / Delete）被这层挡住，用户会以为
+   *     「快捷键坏了」。
+   *   用 rAF 延后一帧 focus：等 React Flow 的这次焦点切换结束再抢回来。
+   */
+  const editInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (!inlineEdit) return;
+    const raf = requestAnimationFrame(() => {
+      const el = editInputRef.current;
+      if (el && document.activeElement !== el) {
+        el.focus();
+        el.select?.();
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [inlineEdit]);
+
   const deleteSelected = (onlyNodeIds?: string[], onlyEdgeIds?: string[]) => {
     const sel = onlyNodeIds ? nodes.filter((n) => onlyNodeIds.includes(n.id)) : nodes.filter((n) => n.selected);
     const selEdges = onlyEdgeIds ? edges.filter((e) => onlyEdgeIds.includes(e.id)) : edges.filter((e) => e.selected);
@@ -2544,6 +2570,21 @@ export function FlowchartEditor({
   // —— 键盘快捷键 ——
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      /**
+       * 就地编辑期间，画布快捷键必须让位。
+       *
+       * 编辑框自己会 stopPropagation，但**焦点被 React Flow 抢到节点上**时
+       * （见 editInputRef 的说明）按键会落到这里 —— 那时若不拦住，Delete
+       * 会删掉正在改的节点、Esc 也无处可退，用户会看到「编辑框关不掉 + 快捷键失效」。
+       * 这里统一兜住：编辑期间只认 Esc（退出编辑），其余一律忽略。
+       */
+      if (inlineEdit) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          closeEdit();
+        }
+        return;
+      }
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === "z" && !e.shiftKey) {
         e.preventDefault();
@@ -2588,7 +2629,7 @@ export function FlowchartEditor({
         setCtxMenu(null);
       }
     },
-    [undo, redo, copySelected, pasteClipboard, duplicateSelected, selectAll, deleteSelected, pushHistory, setNodes],
+    [undo, redo, copySelected, pasteClipboard, duplicateSelected, selectAll, deleteSelected, pushHistory, setNodes, inlineEdit],
   );
 
   if (!mounted) return <div className="flex-1" />;
@@ -3273,6 +3314,7 @@ export function FlowchartEditor({
                 描边用 accent 表明「正在编辑」。
               */
               <textarea
+                ref={editInputRef as React.Ref<HTMLTextAreaElement>}
                 autoFocus
                 value={inlineEdit.draft}
                 onChange={(e) => setInlineEdit({ ...inlineEdit, draft: e.target.value })}
@@ -3303,6 +3345,7 @@ export function FlowchartEditor({
             ) : (
               /* 连线文字：单行即可，Enter 直接提交 */
               <input
+                ref={editInputRef as React.Ref<HTMLInputElement>}
                 autoFocus
                 value={inlineEdit.draft}
                 onChange={(e) => setInlineEdit({ ...inlineEdit, draft: e.target.value })}

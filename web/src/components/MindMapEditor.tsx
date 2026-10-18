@@ -744,6 +744,21 @@ export function MindMapEditor({
     nodeScreenX?: number;
     nodeScreenY?: number;
   } | null>(null);
+  /**
+   * 上一次 pointerdown 命中的节点与时刻 —— 用于在 pointer 层识别双击。
+   *
+   * 必须自己做：画布 `setPointerCapture` 会把 dblclick 的 target 重定向到画布 div，
+   * 节点上的 `onDoubleClick`（双击改名）收不到事件（实测）。阈值 400ms 与浏览器
+   * 默认双击间隔一致；只比节点 id，不比坐标（双击时轻微位移不该漏判）。
+   */
+  const lastTap = useRef<{ id: string | null; t: number }>({ id: null, t: 0 });
+  /**
+   * 进入编辑态的时刻 —— 用于忽略紧随的 blur（见 startEdit / finishEdit）。
+   *
+   * 双击改字的第二次 pointerdown 会顺势让刚 focus 的输入框失焦，
+   * 不挡掉这次 blur 就会「进了编辑又立刻退出」（实测症状）。
+   */
+  const editGuardRef = useRef(0);
   const [dragNode, setDragNode] = useState<{ id: string; x: number; y: number } | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
   const [aiText, setAiText] = useState("");
@@ -906,9 +921,23 @@ export function MindMapEditor({
     setEditing(id);
     setEditText(text);
     setHoverId(null); // 编辑态不保留 hover 高亮
+    /**
+     * 🔴 记录进入时刻，用于「忽略紧邻的 blur」。
+     *
+     * 为什么需要：编辑是通过**双击的第二下 pointerdown** 触发的（画布
+     * `setPointerCapture` 让 dblclick 到不了节点，详见 onPointerDown 注释）。
+     * 输入框 `autoFocus` 拿到焦点后，那一次指针交互随后产生的
+     * pointerup/焦点转移会让输入框**立刻 blur** → `onBlur={finishEdit}`
+     * 当场退出编辑态。实测症状：`editing` 确实被设上过（探针计数 +1），
+     * 但输入框一次都没渲染出来（`foreignObject` 恒为 0）——
+     * 「看着像双击没生效」，实际是进了又被自己那一下点掉。
+     */
+    editGuardRef.current = Date.now();
   };
 
   const finishEdit = () => {
+    // 刚进入编辑的一瞬（同一指针交互的余波）忽略 blur，否则双击改字必然失败
+    if (Date.now() - editGuardRef.current < 350) return;
     if (editing) {
       const t = editText.trim();
       const cur = mapNode(editing);
@@ -1196,6 +1225,42 @@ export function MindMapEditor({
     if (nodeEl && nodeEl.dataset.id) {
       setNoteTarget(null);
       const id = nodeEl.dataset.id;
+      /**
+       * 🔴 选中必须在这里做，**不能只靠节点上的 `onClick`**。
+       *
+       * 原因（2026-10-19 实测定位）：本函数末尾会 `setPointerCapture`，而一旦
+       * 捕获指针，浏览器会把**后续 click / dblclick 的 target 重定向到捕获元素**
+       * （即下面的画布 div），于是 `<g class="mind-node" onClick>` 永远收不到事件。
+       * 实测：真实鼠标点节点 → 右侧「节点操作」面板不出现、`selected` 恒为 null
+       * → `onKeyDown` 开头的 `if (!selected) return` 把 **Tab/Enter/Delete/F2/
+       * Ctrl+C/V/D/方向键全部挡掉**（连双击改名也进不去，同因）。
+       * 用 `dispatchEvent(new MouseEvent("click"))` 直接派发却能选中 —— 这正是
+       * 「事件到不了，而非处理逻辑有问题」的铁证。
+       *
+       * 因此在 pointer 层直接命中判定并选中（`closest(".mind-node")` 拿到的就是
+       * 真实落点，与 capture 无关）；节点上的 onClick 保留，仅作为兜底。
+       */
+      if (linkingFrom || linkingFrom === id) {
+        // 关联模式交由 onClick 处理（点击起点取消 / 点击终点建立关联）
+      } else {
+        setSelected(id);
+      }
+      /**
+       * 双击识别也必须在 pointer 层做，理由同上的 capture 重定向
+       * （`<g onDoubleClick>` 同样收不到）。用「同节点 + 间隔 < 400ms」判定，
+       * 与浏览器 `dblclick` 的默认阈值一致；用节点 id 而非坐标，避免
+       * 双击时手指/鼠标轻微位移导致漏判。
+       */
+      const now = Date.now();
+      if (lastTap.current.id === id && now - lastTap.current.t < 400) {
+        lastTap.current.id = null; // 用完即清，避免三连击被当成两次双击
+        const node = mapNode(id);
+        if (node) startEdit(id, node.text);
+        // 双击不该顺带触发拖动
+        return;
+      }
+      lastTap.current.id = id;
+      lastTap.current.t = now;
       const nd: NonNullable<typeof nodeDragRef.current> = { id, startX: e.clientX, startY: e.clientY };
       // 自由分布：记录拖拽起点处的世界坐标与屏幕中心点，用于换算落点
       if (layoutMode === "free") {
@@ -1214,6 +1279,8 @@ export function MindMapEditor({
       setNoteTarget(null);
       canvasDragRef.current = { startX: e.clientX, startY: e.clientY, vx: v.x, vy: v.y };
     }
+    // 捕获指针：拖动时即使移出容器也不丢事件（见 onPointerMove/onPointerUp）。
+    // ⚠️ 代价是后续 click 的 target 被重定向 → 因此选中/双击都在本层自己处理。
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
