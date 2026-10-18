@@ -1535,6 +1535,13 @@ body {
   display: block;
 }
 
+/* 正文图片可点开放大（见 ImageLightbox 的 useImageZoom）—— 用 zoom-in 光标
+   让「这里能点」可见。此前没有任何提示，用户根本不知道图片能点。
+   编辑态图片由 tiptap 渲染，不走这条选择器（那边用的是 ring 选中态）。 */
+.md-zoomable img {
+  cursor: zoom-in;
+}
+
 /* 全文搜索命中高亮 */
 mark.search-hit {
   background: #fde68a;

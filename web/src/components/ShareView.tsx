@@ -154,7 +154,7 @@ export function ShareView({ token }: { token: string }) {
           <div className="mt-4 border-b border-line" />
           <div
             ref={bodyRef}
-            className="md-body mt-6"
+            className="md-body md-zoomable mt-6"
             onClick={handleCodeBlockCopy}
             dangerouslySetInnerHTML={{ __html: html }}
           />

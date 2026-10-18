@@ -1330,7 +1330,7 @@ export function Editor({
               ) : doc.type === "html" ? (
                 <div
                   ref={contentRef}
-                  className="md-body mt-6"
+                  className="md-body md-zoomable mt-6"
                   onClick={handleAnchorClick}
                   onMouseUp={handleTextSelect}
                   dangerouslySetInnerHTML={{ __html: htmlPreview }}
@@ -1338,7 +1338,7 @@ export function Editor({
               ) : (
                 <div
                   ref={contentRef}
-                  className="md-body mt-6"
+                  className="md-body md-zoomable mt-6"
                   onClick={(e) => {
                     handleAnchorClick(e);
                     handleCodeBlockCopy(e);

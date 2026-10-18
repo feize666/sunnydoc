@@ -445,6 +445,10 @@ await p.mouse.move(hb2.x + hb2.width / 2, hb2.y + hb2.height / 2);
     preview.align === "center",
     JSON.stringify(preview),
   );
+  // 🔴 阅读态 / 分享页的图片放大（单击、双击、点遮罩关闭）不在本脚本 ——
+  //    它测的是「编辑态」。那条分支由 `verify_image_read_zoom.cjs` 专职覆盖：
+  //    阅读态曾整个失效（effect 依赖 ref 对象 → 永不重绑），而本脚本原先
+  //    32 项断言只覆盖编辑态，一条都没抓到。
 
   // ---------- 11) 删除图片 ----------
   const editBtn2 = p.locator("button").filter({ hasText: /^编辑$/ }).first();
@@ -547,15 +551,37 @@ await p.mouse.move(hb2.x + hb2.width / 2, hb2.y + hb2.height / 2);
   }
 
   // 双击图片 → lightbox
-  const dbl = await p.evaluate(() => {
-    const im = document.querySelector(".ProseMirror img");
-    if (!im) return false;
-    im.scrollIntoView({ block: "center" });
-    const r = im.getBoundingClientRect();
-    const opts = { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
-    im.dispatchEvent(new MouseEvent("dblclick", opts));
-    return true;
-  });
+  //
+  // 用**真实鼠标序列**（p.mouse.dblclick），不是合成 `new MouseEvent("dblclick")`：
+  // 合成事件没有前面的 click#1，正好绕开「第二下点掉刚打开的遮罩」这个手势冲突，
+  // 会让判据失去区分度（真实双击坏掉也照样绿）。图片可能在视口外，故用
+  // scrollIntoViewIfNeeded + boundingBox 定位；取不到坐标时才退回合成事件。
+  const editImgBox = await (async () => {
+    const im = p.locator(".ProseMirror img").first();
+    if (!(await im.count())) return null;
+    await im.scrollIntoViewIfNeeded().catch(() => {});
+    await sleep(400);
+    return await im.boundingBox();
+  })();
+  let dbl = false;
+  if (editImgBox) {
+    await p.mouse.dblclick(
+      editImgBox.x + editImgBox.width / 2,
+      editImgBox.y + editImgBox.height / 2,
+      { delay: 40 },
+    );
+    dbl = true;
+  } else {
+    dbl = await p.evaluate(() => {
+      const im = document.querySelector(".ProseMirror img");
+      if (!im) return false;
+      im.scrollIntoView({ block: "center" });
+      const r = im.getBoundingClientRect();
+      const opts = { bubbles: true, cancelable: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+      im.dispatchEvent(new MouseEvent("dblclick", opts));
+      return true;
+    });
+  }
   await sleep(1000);
   const lbOpen = await waitFor(
     async () => (await p.locator('[data-testid="img-lightbox"]').count()) > 0,
