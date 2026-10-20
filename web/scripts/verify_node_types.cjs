@@ -56,6 +56,22 @@ const waitFor = async (fn, ms = 8000, label = "") => {
 };
 
 (async () => {
+
+/**
+ * 彻底删除一篇文档（软删 + 从回收站 purge）。
+ *
+ * 🔴 为什么不能只 `DELETE /documents/{id}`：那是**软删除**，文档会进回收站
+ * 并保留（默认 30 天）。而脚本的「零残留」只查活跃列表 —— 于是**清理没清干净、
+ * 断言也看不见**，回收站实测因此堆了 764 条历次夹具（2026-10-20 发现）。
+ */
+const purgeDoc = async (id) => {
+  if (!id) return { status: 0, json: null };
+  // 返回**软删那一步**的响应，保持与原写法兼容（有脚本断言 .status === 200）
+  const r = await api("/api/v1/documents/" + id, "DELETE").catch(() => ({ status: 0, json: null }));
+  await api("/api/v1/trash/document/" + id, "DELETE").catch(() => {});
+  return r;
+};
+
   const b = await chromium.launch({
     headless: true,
     args: ["--no-proxy-server"],
@@ -96,7 +112,7 @@ const waitFor = async (fn, ms = 8000, label = "") => {
   // 清理旧夹具
   const pre = await api("/api/v1/documents");
   for (const d of (pre.json.documents || [])) {
-    if (d.title === T1 || d.title === T2) await api("/api/v1/documents/" + d.id, "DELETE");
+    if (d.title === T1 || d.title === T2) await purgeDoc(d.id);
   }
 
   // 进知识库：用 data-testid 锚点，不靠文案匹配
@@ -276,8 +292,8 @@ const waitFor = async (fn, ms = 8000, label = "") => {
   );
 
   // ---- 8) 清理 ----
-  await api("/api/v1/documents/" + c1.json.id, "DELETE");
-  await api("/api/v1/documents/" + c2.json.id, "DELETE");
+  await purgeDoc(c1.json.id);
+  await purgeDoc(c2.json.id);
   const after = await api("/api/v1/documents");
   const left = (after.json.documents || []).filter((d) => d.title === T1 || d.title === T2);
   check("临时文档已删除（零残留）", left.length === 0, JSON.stringify(left.map((d) => d.id)));

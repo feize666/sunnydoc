@@ -106,11 +106,71 @@ async function seedCardFixtures(page, opts = {}) {
   };
 }
 
-/** 清理**本次新建**的夹具（不动原本就存在的文档）。 */
+/** 清理**本次新建**的夹具（不动原本就存在的文档）。
+ *
+ * ⚠️ 仅 `DELETE` 是**软删除** —— 文档会进入回收站并长期留着。
+ * 想真正清干净请用 `purgeDocuments`（见下）。
+ */
 async function cleanupCardFixtures(page, ids = []) {
   for (const id of ids.filter(Boolean)) {
     await api(page, "/api/v1/documents/" + id, "DELETE");
   }
+}
+
+/**
+ * **彻底删除**文档：先软删，再从回收站 purge。
+ *
+ * 🔴 为什么必须用它（2026-10-20 发现的系统性缺陷）：
+ *   所有验证脚本的清理此前只调 `DELETE /documents/{id}` —— 那是**软删除**，
+ *   文档会进回收站并保留 30 天。而「零残留」断言只查 `/documents` 活跃列表，
+ *   于是**从来没检查过回收站** → 一次跑 30+ 个脚本、每个建若干夹具，
+ *   日积月累在回收站堆了 **284 个历次夹具**（实测），却一直显示「零残留 ✅」。
+ *   这是**判据口径与清理动作同时漏了回收站**：清理没清干净，断言也看不见。
+ *
+ * 用法（脚本收尾）：
+ *   await cleanupDocuments(page, ids);            // 软删 + purge，返回 {purged}
+ *   const left = await countFixtures(page, pref); // 同时核对活跃 + 回收站
+ */
+async function cleanupDocuments(page, ids = []) {
+  let purged = 0;
+  for (const id of ids.filter(Boolean)) {
+    // 1) 先软删（已是删除态时会 404，忽略）
+    await api(page, "/api/v1/documents/" + id, "DELETE").catch(() => {});
+    // 2) 再从回收站彻底删除。purge 对「已不在回收站」返回 404 —— 属正常，忽略。
+    const r = await api(page, "/api/v1/trash/document/" + id, "DELETE").catch(() => null);
+    if (r && (r.status === 200 || r.status === 404)) purged++;
+  }
+  return { purged };
+}
+
+/** 按标题前缀找出**活跃**文档。 */
+async function listFixtureDocs(page, titlePrefix) {
+  const list = await api(page, "/api/v1/documents?limit=1000");
+  return (list.json?.documents || []).filter((d) => String(d.title || "").startsWith(titlePrefix));
+}
+
+/** 按标题前缀找出**回收站**里的文档（软删残留就藏在这里）。 */
+async function listFixtureTrash(page, titlePrefix) {
+  const t = await api(page, "/api/v1/trash");
+  return (t.json?.documents || []).filter((d) => String(d.title || "").startsWith(titlePrefix));
+}
+
+/**
+ * 夹具是否真的清干净 —— **同时核对活跃列表与回收站**。
+ *
+ * 直接拿它当「零残留」断言的数据源：只查活跃列表的旧写法会漏掉软删残留
+ * （见 cleanupDocuments 的说明）。
+ */
+async function fixtureResidue(page, titlePrefix) {
+  const [live, trash] = await Promise.all([
+    listFixtureDocs(page, titlePrefix),
+    listFixtureTrash(page, titlePrefix),
+  ]);
+  return {
+    live: live.map((d) => d.title),
+    trash: trash.map((d) => d.title),
+    clean: live.length === 0 && trash.length === 0,
+  };
 }
 
 /**
@@ -178,6 +238,10 @@ async function seedBigDocFixture(page, opts = {}) {
 module.exports = {
   seedCardFixtures,
   cleanupCardFixtures,
+  cleanupDocuments,
+  listFixtureDocs,
+  listFixtureTrash,
+  fixtureResidue,
   seedBigDocFixture,
   api,
   KB,

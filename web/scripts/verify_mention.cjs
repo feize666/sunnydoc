@@ -53,6 +53,22 @@ const waitFor = async (fn, ms = 8000, label = "") => {
 };
 
 (async () => {
+
+/**
+ * 彻底删除一篇文档（软删 + 从回收站 purge）。
+ *
+ * 🔴 为什么不能只 `DELETE /documents/{id}`：那是**软删除**，文档会进回收站
+ * 并保留（默认 30 天）。而脚本的「零残留」只查活跃列表 —— 于是**清理没清干净、
+ * 断言也看不见**，回收站实测因此堆了 764 条历次夹具（2026-10-20 发现）。
+ */
+const purgeDoc = async (id) => {
+  if (!id) return { status: 0, json: null };
+  // 返回**软删那一步**的响应，保持与原写法兼容（有脚本断言 .status === 200）
+  const r = await api("/api/v1/documents/" + id, "DELETE").catch(() => ({ status: 0, json: null }));
+  await api("/api/v1/trash/document/" + id, "DELETE").catch(() => {});
+  return r;
+};
+
   const b = await chromium.launch({
     headless: true,
     args: ["--no-proxy-server"],
@@ -90,7 +106,7 @@ const waitFor = async (fn, ms = 8000, label = "") => {
   // 准备临时文档
   const list = await api("/api/v1/documents");
   for (const d of (list.json.documents || []).filter((x) => x.title === DOC_TITLE))
-    await api("/api/v1/documents/" + d.id, "DELETE");
+    await purgeDoc(d.id);
   const kbs = await api("/api/v1/kbs");
   const kbId = (kbs.json.kbs || []).find((k) => k && k.name === "云计算知识库")?.id;
   const created = await api("/api/v1/documents", "POST", {
@@ -180,7 +196,7 @@ const waitFor = async (fn, ms = 8000, label = "") => {
   const W_TITLE = "M2-临时-W";
   const wl = await api("/api/v1/documents");
   for (const d of (wl.json.documents || []).filter((x) => x.title === W_TITLE))
-    await api("/api/v1/documents/" + d.id, "DELETE");
+    await purgeDoc(d.id);
   const wkbs = await api("/api/v1/kbs");
   const wkbId = (wkbs.json.kbs || []).find((k) => k && k.name === "云计算知识库")?.id;
   const wcr = await api("/api/v1/documents", "POST", {
@@ -349,7 +365,7 @@ const waitFor = async (fn, ms = 8000, label = "") => {
   const N_TITLE = "M2-临时-N";
   const nl = await api("/api/v1/documents");
   for (const d of (nl.json.documents || []).filter((x) => x.title === N_TITLE))
-    await api("/api/v1/documents/" + d.id, "DELETE");
+    await purgeDoc(d.id);
   const nkbs = await api("/api/v1/kbs");
   const nkbId = (nkbs.json.kbs || []).find((k) => k && k.name === "云计算知识库")?.id;
   const ncr = await api("/api/v1/documents", "POST", {
@@ -383,18 +399,18 @@ const waitFor = async (fn, ms = 8000, label = "") => {
   await p.keyboard.press("Escape");
   await sleep(300);
   // 立即删 N 文档
-  await api("/api/v1/documents/" + ndocId, "DELETE");
+  await purgeDoc(ndocId);
 
   // ---- 14) 清理 ----
   // 三个临时文档（DOC_TITLE / M2-临时-W / M2-临时-N）的删除都直接走 API，
   // 不依赖 UI 切预览。N 文档已在 13 段即时删除；此处只删 @ 与 [[ 两个。
-  const wDel = await api("/api/v1/documents/" + wdocId, "DELETE");
-  const mDel = await api("/api/v1/documents/" + docId, "DELETE");
+  const wDel = await purgeDoc(wdocId);
+  const mDel = await purgeDoc(docId);
   // 兜底：再扫描一次按标题清
   const allDocs = await api("/api/v1/documents");
   for (const d of (allDocs.json.documents || [])) {
     if (d.title === DOC_TITLE || d.title === "M2-临时-W" || d.title === "M2-临时-N") {
-      await api("/api/v1/documents/" + d.id, "DELETE");
+      await purgeDoc(d.id);
     }
   }
   const after = await api("/api/v1/documents");

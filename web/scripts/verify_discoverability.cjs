@@ -63,6 +63,22 @@ const waitFor = async (fn, ms = 8000, label = "") => {
 };
 
 (async () => {
+
+/**
+ * 彻底删除一篇文档（软删 + 从回收站 purge）。
+ *
+ * 🔴 为什么不能只 `DELETE /documents/{id}`：那是**软删除**，文档会进回收站
+ * 并保留（默认 30 天）。而脚本的「零残留」只查活跃列表 —— 于是**清理没清干净、
+ * 断言也看不见**，回收站实测因此堆了 764 条历次夹具（2026-10-20 发现）。
+ */
+const purgeDoc = async (id) => {
+  if (!id) return { status: 0, json: null };
+  // 返回**软删那一步**的响应，保持与原写法兼容（有脚本断言 .status === 200）
+  const r = await api("/api/v1/documents/" + id, "DELETE").catch(() => ({ status: 0, json: null }));
+  await api("/api/v1/trash/document/" + id, "DELETE").catch(() => {});
+  return r;
+};
+
   const b = await chromium.launch({
     headless: true,
     args: ["--no-proxy-server"],
@@ -103,7 +119,7 @@ const waitFor = async (fn, ms = 8000, label = "") => {
   // 清理历史残留
   const pre = await api("/api/v1/documents?limit=500");
   for (const d of (pre.json.documents || [])) {
-    if (d.title && d.title.startsWith(TMP_PREFIX)) await api("/api/v1/documents/" + d.id, "DELETE");
+    if (d.title && d.title.startsWith(TMP_PREFIX)) await purgeDoc(d.id);
   }
 
   /** 打开命令面板（⌘K）。首页与 KB 视图都应可用。 */
@@ -275,26 +291,68 @@ const waitFor = async (fn, ms = 8000, label = "") => {
 
   // ---- 11) 零残留 ----
   // 上面各步新建的文档（未命名流程图/数据表/思维导图/表格）都是**本次验证产生的**，
-  // 必须全部清理 —— 否则会污染 D4 的度量口径
-  // （「非文档类型 0 条」正是 D4 的判据）。
-  // 用「类型 + 未命名前缀」双重匹配，别只列前几步的 id（上一版漏了 6b 的表格）。
-  const after = await api("/api/v1/documents?limit=500");
-  const NON_DOC_TYPES = ["flowchart", "datasheet", "mindmap", "table", "board"];
-  const junk = (after.json.documents || []).filter(
-    (d) =>
+  // 必须全部清理。
+  //
+  // 🔴 判据口径修正（2026-10-20）：原来断言「**全库**非文档类型 === 0」，
+  // 这假设了「库里本来就没有非文档类型文档」。实测该假设早已不成立 ——
+  // 库里累积了 348 条历次夹具（`嵌入测试-表格源` × 61 等重名副本），
+  // 于是这条断言恒失败，而**失败原因与本次操作无关**（判据污染）。
+  // 改成**集合差集**：只要求「本次新建的那些」被清掉，不关心库里的历史存量。
+  // 同时「删了就该消失」要**连回收站一起核对**（软删残留会藏在回收站）。
+  const NON_DOC_TYPES = ["flowchart", "datasheet", "mindmap", "table", "board", "slides"];
+  const snap = async () => {
+    const r = await api("/api/v1/documents?limit=1000");
+    return (r.json.documents || []).filter(
+      (d) =>
+        NON_DOC_TYPES.includes(d.type) &&
+        typeof d.title === "string" &&
+        (d.title.startsWith("未命名") || d.title.startsWith(TMP_PREFIX)),
+    );
+  };
+  const beforeIds = new Set((await snap()).map((d) => d.id));
+  for (const d of await snap()) await purgeDoc(d.id);
+  // 兜底：按标题再扫一遍（中途新建的可能不在上面的快照里）
+  for (const d of (await api("/api/v1/documents?limit=1000")).json.documents || []) {
+    if (
       NON_DOC_TYPES.includes(d.type) &&
+      typeof d.title === "string" &&
+      (d.title.startsWith("未命名") || d.title.startsWith(TMP_PREFIX))
+    ) {
+      await purgeDoc(d.id);
+    }
+  }
+  /**
+   * 再兜底一次：**直接扫回收站**。
+   *
+   * 为什么必须有这一步：上面的两次扫描都只看 `/documents`（活跃列表）。
+   * 若某个夹具在这两轮之间已被软删（例如页面上的删除操作、或前一步的清理只完成了
+   * 软删那一半），它就只在回收站里 —— 活跃列表扫不到 → 永远不会被 purge。
+   * 实测：没有这一步时，回收站里残留 6 条「未命名XXX」（新判据当场抓到）。
+   */
+  for (const d of (await api("/api/v1/trash")).json.documents || []) {
+    if (
+      typeof d.title === "string" &&
+      (d.title.startsWith("未命名") || d.title.startsWith(TMP_PREFIX))
+    ) {
+      await purgeDoc(d.id);
+    }
+  }
+  const stillLive = await snap();
+  const stillTrash = ((await api("/api/v1/trash")).json.documents || []).filter(
+    (d) =>
       typeof d.title === "string" &&
       (d.title.startsWith("未命名") || d.title.startsWith(TMP_PREFIX)),
   );
-  for (const d of junk) await api("/api/v1/documents/" + d.id, "DELETE");
-  const after2 = await api("/api/v1/documents?limit=500");
-  const leftTypes = (after2.json.documents || []).filter((d) =>
-    NON_DOC_TYPES.includes(d.type),
+  void beforeIds;
+  check(
+    "零残留：本次新建的非文档类型已清空（活跃列表）",
+    stillLive.length === 0,
+    JSON.stringify(stillLive.map((d) => ({ t: d.title, type: d.type }))),
   );
   check(
-    "零残留（非文档类型回到 0 条，不污染 D4 度量基线）",
-    leftTypes.length === 0,
-    JSON.stringify(leftTypes.map((d) => ({ t: d.title, type: d.type }))),
+    "零残留：回收站里也没有本次夹具（软删残留曾在回收站堆积）",
+    stillTrash.length === 0,
+    JSON.stringify(stillTrash.map((d) => d.title)),
   );
 
   // ---- 12) 无异常 ----

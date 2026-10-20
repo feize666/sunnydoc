@@ -54,6 +54,22 @@ async function waitFor(fn, ms = 8000, label = "") {
 }
 
 (async () => {
+
+/**
+ * 彻底删除一篇文档（软删 + 从回收站 purge）。
+ *
+ * 🔴 为什么不能只 `DELETE /documents/{id}`：那是**软删除**，文档会进回收站
+ * 并保留（默认 30 天）。而脚本的「零残留」只查活跃列表 —— 于是**清理没清干净、
+ * 断言也看不见**，回收站实测因此堆了 764 条历次夹具（2026-10-20 发现）。
+ */
+const purgeDoc = async (id) => {
+  if (!id) return { status: 0, json: null };
+  // 返回**软删那一步**的响应，保持与原写法兼容（有脚本断言 .status === 200）
+  const r = await api("/api/v1/documents/" + id, "DELETE").catch(() => ({ status: 0, json: null }));
+  await api("/api/v1/trash/document/" + id, "DELETE").catch(() => {});
+  return r;
+};
+
   const b = await chromium.launch({
     headless: true,
     args: ["--no-proxy-server"],
@@ -89,15 +105,59 @@ async function waitFor(fn, ms = 8000, label = "") {
       await kb.click();
       await sleep(2200);
     }
+    /**
+     * 🔴 必须点「刷新文档列表」。
+     *
+     * 本脚本的临时文档是用 **API** 建的，而前端侧栏的 `metas` 只在进入知识库时
+     * 拉过一次 —— API 建出的文档不在里面，于是下面的「搜索标题 → 点开」永远
+     * 找不到它（症状是 `waitFor("打开文档")` 超时，看起来像"文档打不开"这种
+     * 产品缺陷，实际是少了这一步刷新）。项目里其它脚本早已统一这么做。
+     */
+    const rf = p.locator('[data-testid="refresh-doc-list"]').first();
+    if (await rf.count()) {
+      await rf.click({ force: true });
+      await sleep(2500);
+    }
+    // 文档树默认全折叠 → 展开，避免命中不到节点
+    const tg = p.locator('[data-testid="toggle-batched-all"]').first();
+    if ((await tg.count()) && (await tg.getAttribute("aria-pressed")) !== "true") {
+      await tg.click({ force: true });
+      await sleep(1200);
+    }
   };
 
+  /**
+   * 打开夹具文档。
+   *
+   * 🔴 **不要靠「搜标题 → 点结果」来打开夹具**。
+   * 侧栏搜索是**全文搜索**且**只返回前 50 条**（后端 `/search` 实测：
+   * 命中 279 条、`results` 只有 50）。夹具是 API 刚建的，相关度/时间排序都靠后，
+   * 于是**搜不到它** —— 症状是 `waitFor("打开文档")` 超时，看起来像
+   * "文档打不开"这种产品缺陷，实际是判据依赖了不稳定的搜索结果排名。
+   * 改为**按 id 点文档树里的行**（`data-tree-kind="doc"` + `data-tree-key`），
+   * 与排名无关；搜索仅作兜底。
+   */
   const openDoc = async () => {
-    const box = p.locator('input[type="search"], input[placeholder*="搜索"]').first();
-    await box.fill(DOC_TITLE);
-    await sleep(1600);
-    const hit = p.getByText(DOC_TITLE, { exact: true }).first();
-    if (await hit.count()) await hit.click({ force: true }).catch(() => {});
-    await waitFor(async () => (await p.locator(".md-body").count()) > 0, 10000, "打开文档");
+    // 文档由 API 创建，侧栏 metas 需显式刷新才可见
+    const _rf = p.locator('[data-testid="refresh-doc-list"]').first();
+    if (await _rf.count()) { await _rf.click({ force: true }); await sleep(2600); }
+    const _tg = p.locator('[data-testid="toggle-batched-all"]').first();
+    if ((await _tg.count()) && (await _tg.getAttribute("aria-pressed")) !== "true") {
+      await _tg.click({ force: true }); await sleep(1200);
+    }
+    // 首选：按 id 定位文档树行（不依赖搜索排名）
+    const row = p.locator(`[data-tree-kind="doc"][data-tree-key="${docId}"]`).first();
+    if (await row.count()) {
+      await row.click({ force: true }).catch(() => {});
+    } else {
+      // 兜底：搜索标题
+      const box = p.locator('[data-testid="sidebar-search"], input[placeholder*="搜索"]').first();
+      await box.fill(DOC_TITLE);
+      await sleep(1800);
+      const hit = p.getByText(DOC_TITLE, { exact: true }).first();
+      if (await hit.count()) await hit.click({ force: true }).catch(() => {});
+    }
+    await waitFor(async () => (await p.locator(".md-body").count()) > 0, 12000, "打开文档");
     await sleep(1200); // 渐进渲染 + 锚点重放防抖
   };
 
@@ -124,7 +184,7 @@ async function waitFor(fn, ms = 8000, label = "") {
   // ---- 准备临时文档（自建自清，绝不碰真实数据） ----
   const list = await api("/api/v1/documents");
   const stale = (list.json.documents || []).filter((d) => d.title === DOC_TITLE);
-  for (const d of stale) await api("/api/v1/documents/" + d.id, "DELETE");
+  for (const d of stale) await purgeDoc(d.id);
 
   const kbs = await api("/api/v1/kbs");
   const kbId = (kbs.json.kbs || kbs.json.knowledge_bases || []).find(
@@ -138,6 +198,26 @@ async function waitFor(fn, ms = 8000, label = "") {
   });
   const docId = created.json.id;
   check("已创建临时验证文档", !!docId && String(docId).length === 32, JSON.stringify(created));
+  /**
+   * 🔴 刷新必须放在**创建之后**。
+   *
+   * 本脚本的临时文档是 API 建的，前端侧栏的 metas 不会自动包含它；而 `enterKb()`
+   * 里的刷新发生在**创建之前** → 列表里仍然没有这篇文档 → 后面「按标题搜索」
+   * 命中 0、`waitFor("打开文档")` 超时（症状酷似"文档打不开"这种产品缺陷）。
+   * 实测：手动刷新后搜索命中 1；不刷新则命中 0。
+   */
+  {
+    const rf = p.locator('[data-testid="refresh-doc-list"]').first();
+    if (await rf.count()) {
+      await rf.click({ force: true });
+      await sleep(2800);
+    }
+    const tg = p.locator('[data-testid="toggle-batched-all"]').first();
+    if ((await tg.count()) && (await tg.getAttribute("aria-pressed")) !== "true") {
+      await tg.click({ force: true });
+      await sleep(1200);
+    }
+  }
   if (!docId) {
     await b.close();
     process.exit(1);
@@ -312,7 +392,7 @@ async function waitFor(fn, ms = 8000, label = "") {
   // ---- 10) 清理 ----
   const cs = await api(`/api/v1/documents/${docId}/comments`);
   for (const c of cs.json.comments || []) await api("/api/v1/comments/" + c.id, "DELETE");
-  const del = await api("/api/v1/documents/" + docId, "DELETE");
+  const del = await purgeDoc(docId);
   const after = await api("/api/v1/documents");
   const left = (after.json.documents || []).filter((d) => d.title === DOC_TITLE);
   check("临时文档已删除（零残留）", left.length === 0, JSON.stringify(left.map((d) => d.id)));

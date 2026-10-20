@@ -27,15 +27,19 @@ function Checkbox({
   checked,
   onChange,
   title,
+  testId,
 }: {
   checked: boolean | "indeterminate";
   onChange: () => void;
   title?: string;
+  testId?: string;
 }) {
   const isOn = checked === true;
   const isPartial = checked === "indeterminate";
   return (
     <button
+      type="button"
+      data-testid={testId}
       onClick={(e) => {
         e.stopPropagation();
         onChange();
@@ -278,6 +282,9 @@ export function TrashView({ onBack }: { onBack: () => void }) {
               <li
                 key={item.id}
                 data-flip-key={keyOf(kind, item.id)}
+                data-testid="trash-item"
+                data-kind={kind}
+                data-item-id={item.id}
                 className={exiting.has(keyOf(kind, item.id)) ? "anim-exit" : undefined}
               >
                 <div
@@ -287,6 +294,7 @@ export function TrashView({ onBack }: { onBack: () => void }) {
                     checked={on}
                     onChange={() => toggleItem(kind, item.id)}
                     title={on ? "取消选择" : "选择"}
+                    testId="trash-item-check"
                   />
                   <span
                     className="min-w-0 flex-1 cursor-pointer truncate text-[15px] text-text"
@@ -295,6 +303,8 @@ export function TrashView({ onBack }: { onBack: () => void }) {
                     {item.title ?? item.name}
                   </span>
                   <button
+                    type="button"
+                    data-testid="trash-restore"
                     onClick={() => handleRestore(kind, item.id)}
                     className="rounded-md border border-line px-2.5 py-1 text-xs text-muted transition-colors hover:border-accent/40 hover:text-accent"
                   >
@@ -302,6 +312,8 @@ export function TrashView({ onBack }: { onBack: () => void }) {
                   </button>
                   <Tooltip content="彻底删除（不可恢复）">
                     <button
+                      type="button"
+                      data-testid="trash-purge"
                       onClick={() => setPendingPurge({ kind, item })}
                       className="grid h-6 w-6 place-items-center rounded-md text-faint transition-colors hover:bg-danger-soft hover:text-danger"
                     >
@@ -333,32 +345,49 @@ export function TrashView({ onBack }: { onBack: () => void }) {
         </Tooltip>
         <div className="leading-tight">
           <div className="text-[16px] font-semibold text-text">回收站</div>
-          <div className="text-[12px] text-faint">
+          <div className="text-[12px] text-faint" data-testid="trash-summary">
             {loading ? "加载中…" : `共 ${total} 项，删除后可在此恢复`}
           </div>
         </div>
         {!loading && total > 0 && (
           <div className="ml-auto flex items-center gap-2">
-            <button
-              onClick={toggleAll}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text"
-            >
+            {/*
+              🔴 这里原本是 `<button><Checkbox/></button>` —— 而 Checkbox 自身就是
+              `<button>`，构成 **button 嵌套 button**（无效 HTML）。实测浏览器控制台
+              持续报：
+                In HTML, <button> cannot be a descendant of <button>.
+                This will cause a hydration error.
+              且点击行为不确定（内层按钮会吞掉/冒泡出双重 toggle）。
+              改为外层 div 只做布局、把点击交给 Checkbox 与文字各自承担 ——
+              结构合法，也不再依赖「点哪个都行」的巧合。
+            */}
+            <div className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-muted">
               <Checkbox
                 checked={isAllSelected ? true : isSomeSelected ? "indeterminate" : false}
                 onChange={toggleAll}
                 title={isAllSelected ? "取消全选" : "全选"}
+                testId="trash-toggle-all-check"
               />
-              <span>{isAllSelected ? "取消全选" : "全选"}</span>
-            </button>
+              <button
+                type="button"
+                onClick={toggleAll}
+                data-testid="trash-toggle-all"
+                className="transition-colors hover:text-text"
+              >
+                {isAllSelected ? "取消全选" : "全选"}
+              </button>
+            </div>
           </div>
         )}
       </header>
 
       {/* 批量操作栏 */}
       {selectedCount > 0 && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-line bg-accent/5 px-4 py-2">
-          <span className="text-[13px] text-text">已选 {selectedCount} 项</span>
+        <div className="flex shrink-0 items-center gap-2 border-b border-line bg-accent/5 px-4 py-2" data-testid="trash-bulk-bar">
+          <span className="text-[13px] text-text" data-testid="trash-selected-count">已选 {selectedCount} 项</span>
           <button
+            type="button"
+            data-testid="trash-clear-selection"
             onClick={clearSelection}
             className="rounded-md px-2 py-1 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text"
           >
@@ -366,6 +395,8 @@ export function TrashView({ onBack }: { onBack: () => void }) {
           </button>
           <div className="ml-auto flex items-center gap-2">
             <button
+              type="button"
+              data-testid="trash-batch-restore"
               onClick={handleBatchRestore}
               disabled={busy}
               className="rounded-md border border-line px-2.5 py-1 text-[13px] text-muted transition-colors hover:border-accent/40 hover:text-accent disabled:opacity-50"
@@ -373,6 +404,8 @@ export function TrashView({ onBack }: { onBack: () => void }) {
               批量恢复
             </button>
             <button
+              type="button"
+              data-testid="trash-batch-purge"
               onClick={() => setPendingBatchPurge(true)}
               disabled={busy}
               className="rounded-md border border-danger/40 px-2.5 py-1 text-[13px] text-danger transition-colors hover:bg-danger-soft disabled:opacity-50"
