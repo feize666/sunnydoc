@@ -2163,7 +2163,12 @@ def move_folder(
 
 @router.post("/folders/{folder_id}/pin")
 def pin_folder(folder_id: str, current_user: dict = Depends(get_current_user)):
-    """置顶文件夹（与文档置顶能力对齐）。"""
+    """置顶文件夹（与文档置顶能力对齐）。
+
+    🔴 归属校验（2026-10-21 补上）：`store.set_folder_pinned` 只按 id 改字段、
+    不接收 user_id，若不先校验，任何登录用户都能凭 id 置顶**他人**文件夹。
+    """
+    _require_folder_access(folder_id, current_user)
     if not store.set_folder_pinned(folder_id, True):
         raise HTTPException(status_code=404, detail="文件夹不存在")
     return {"pinned": True}
@@ -2171,7 +2176,12 @@ def pin_folder(folder_id: str, current_user: dict = Depends(get_current_user)):
 
 @router.post("/folders/{folder_id}/unpin")
 def unpin_folder(folder_id: str, current_user: dict = Depends(get_current_user)):
-    """取消置顶文件夹。"""
+    """取消置顶文件夹。
+
+    🔴 与 `pin_folder` 同一缺陷（同一资源两个动词只给一个加校验）：
+    此前无归属校验 → 可跨用户取消他人文件夹的置顶。这里补齐，保持一致。
+    """
+    _require_folder_access(folder_id, current_user)
     if not store.set_folder_pinned(folder_id, False):
         raise HTTPException(status_code=404, detail="文件夹不存在")
     return {"pinned": False}
@@ -2890,7 +2900,16 @@ def pin_document(doc_id: str, current_user: dict = Depends(get_current_user)):
 
 @router.post("/documents/{doc_id}/unpin")
 def unpin_document(doc_id: str, current_user: dict = Depends(get_current_user)):
-    """取消置顶。"""
+    """取消置顶。
+
+    🔴 必须与 `pin` 一样先校验归属（2026-10-21 实测补上）：
+    `store.set_pinned` 只按 doc_id 改字段、**不接收 user_id**，
+    因此此前任何登录用户都能凭 id 取消**他人**文档的置顶
+    （实测 u2 调 u1 文档的 unpin → 200，且 u1 回读 pinned 已变 false）。
+    同一资源的两个动词只给一个加校验，是这类漏洞最常见的成因。
+    """
+    if store.get(doc_id, current_user["id"]) is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
     store.set_pinned(doc_id, False)
     return {"pinned": False}
 
