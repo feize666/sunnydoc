@@ -5,6 +5,7 @@ import { getSharedDoc, type SharedDoc } from "@/lib/api";
 import { renderMarkdown, hydrateCodeBlocks } from "@/lib/markdown";
 import { hydrateEmbeds } from "./DocumentEmbed";
 import { handleCodeBlockCopy } from "./CodeBlock";
+import { LogoMark } from "./LogoMark";
 import { PasswordInput } from "./PasswordInput";
 import { ThemeToggle } from "./ThemeToggle";
 import { Watermark } from "./Watermark";
@@ -76,9 +77,7 @@ export function ShareView({ token }: { token: string }) {
   if (needPassword) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 bg-background">
-        <span className="logo-mark grid h-12 w-12 place-items-center rounded-xl text-xl font-bold">
-          知
-        </span>
+        <LogoMark size={48} rounded="rounded-xl" />
         <div className="text-center">
           <div className="text-base font-semibold text-text">此分享链接需要密码</div>
           <div className="mt-1 text-sm text-faint">请输入访问密码</div>
@@ -135,10 +134,8 @@ export function ShareView({ token }: { token: string }) {
       <Watermark theme={theme} />
 
       <header className="relative z-10 flex h-12 shrink-0 items-center gap-2.5 border-b border-line bg-background px-5">
-        <span className="logo-mark grid h-7 w-7 place-items-center rounded-lg text-sm font-bold">
-          知
-        </span>
-        <span className="text-sm font-semibold text-text">知库 · 分享文档</span>
+        <LogoMark size={28} rounded="rounded-lg" />
+        <span className="text-sm font-semibold text-text">Sunny · 分享文档</span>
         <div className="flex-1" />
         <ThemeToggle
           theme={theme}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { CloseIcon, CheckIcon } from "./icons";
+import { LogoMark } from "./LogoMark";
 import { Tooltip } from "./Tooltip";
 import { useModalFocus } from "@/lib/useModalFocus";
 import { ThemeToggle } from "./ThemeToggle";
@@ -963,11 +964,9 @@ export function SettingsDialog({
           <div className="mt-4 text-[13px] font-semibold text-muted">关于</div>
           <div className="mt-2 rounded-lg border border-line bg-surface px-3 py-3">
             <div className="flex items-center gap-2">
-              <span className="logo-mark grid h-7 w-7 place-items-center rounded-lg text-sm font-bold">
-                知
-              </span>
+              <LogoMark size={28} rounded="rounded-lg" />
               <div className="leading-tight">
-                <div className="text-[14px] font-semibold text-text">知库 sunnydoc</div>
+                <div className="text-[14px] font-semibold text-text">Sunny</div>
                 <div className="text-[12px] text-faint">以文档为核心的私有知识库</div>
               </div>
             </div>

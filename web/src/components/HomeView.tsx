@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Kb, RecentDoc, User, DocMeta, Stats } from "@/lib/api";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { LogoMark } from "./LogoMark";
 import { Tooltip } from "./Tooltip";
 import { UserMenu } from "./UserMenu";
 import { ThemeToggle } from "./ThemeToggle";
@@ -209,12 +210,10 @@ export function HomeView({
     <div className="flex h-full flex-col bg-background">
       <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-line bg-background px-5 select-none">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="logo-mark grid h-8 w-8 shrink-0 place-items-center rounded-lg text-sm font-bold">
-            知
-          </span>
+          <LogoMark size={32} rounded="rounded-lg" />
           <div className="min-w-0 leading-tight">
-            <div className="text-[16px] font-semibold text-text">知库</div>
-            <div className="truncate text-[12px] text-faint">文档知识库</div>
+            <div className="text-[16px] font-semibold text-text">Sunny</div>
+            <div className="truncate text-[12px] text-faint">个人知识库</div>
           </div>
         </div>
 
@@ -402,7 +401,7 @@ export function HomeView({
                     <span className="kb-topline" />
                     <div className="flex items-start justify-between">
                       <span className="kb-badge grid h-9 w-9 place-items-center rounded-lg text-sm font-semibold">
-                        {(kb.name || "知").slice(0, 1)}
+                        {(kb.name || "S").slice(0, 1)}
                       </span>
                       {kb.permission === "owner" ? (
                         <div className="flex items-center gap-0.5">

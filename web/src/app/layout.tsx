@@ -3,12 +3,19 @@ import "./globals.css";
 import { ToastProvider } from "@/components/Toast";
 
 export const metadata: Metadata = {
-  title: "知库 · 文档知识库",
+  title: "Sunny · 个人知识库",
   description: "以文档为核心，支持 AI 问答与引用溯源的私有知识库",
   icons: {
-    icon: "/icon.svg",
-    shortcut: "/icon.svg",
-    apple: "/icon.svg",
+    icon: [
+      // 现代浏览器优先用 SVG（矢量、任意尺寸清晰）
+      { url: "/icon.svg", type: "image/svg+xml" },
+      // 🔴 必须显式给出 ICO：老浏览器、部分爬虫、RSS/预览服务只请求 /favicon.ico。
+      //    实测该路径原先 **404**（只有 /icon.svg 是 200）→ 这些客户端拿到空白图标。
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    shortcut: "/favicon.ico",
+    // iOS 主屏图标：用专门生成的 180×180 PNG（自带浅暖白底，非透明）
+    apple: "/apple-icon.png",
   },
 };
 

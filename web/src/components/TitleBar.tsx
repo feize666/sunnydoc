@@ -1,6 +1,7 @@
 "use client";
 
 import { CloseIcon } from "./icons";
+import { LogoMark } from "./LogoMark";
 import { Tooltip } from "./Tooltip";
 import { ThemeToggle } from "./ThemeToggle";
 import { UserMenu } from "./UserMenu";
@@ -71,11 +72,14 @@ export function TitleBar({
         </Tooltip>
       )}
 
-      <div className="flex items-center gap-1.5 px-1 text-[15px] font-semibold">
-        <span className="logo-mark grid h-5 w-5 place-items-center rounded-md text-[13px] font-bold">
-          知
-        </span>
-        知库
+      <div className="flex min-w-0 items-center gap-1.5 px-1 text-[15px] font-semibold">
+        {/* 🔴 窄屏下品牌文字必须可隐藏，且本容器必须 min-w-0。
+            根因：LogoMark 带 `shrink-0`，且新品牌名比原来的两字名更长 ——
+            375px 视口下品牌区不再收缩，把右侧的 ThemeToggle / UserMenu
+            整体挤出屏幕（实测 UserMenu 的 right=402 > 375，溢出 4 个元素）。
+            `verify_mobile_adaptive.cjs` 抓到了这个回归（HEAD 时是 0 溢出）。 */}
+        <LogoMark size={20} rounded="rounded-md" />
+        <span className="truncate max-[400px]:hidden">Sunny</span>
       </div>
 
       <div className="mx-1 h-5 w-px bg-line" />

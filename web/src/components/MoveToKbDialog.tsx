@@ -115,7 +115,7 @@ export function MoveToKbDialog({
                     className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-hover disabled:opacity-50"
                   >
                     <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-sm font-semibold text-accent">
-                      {(kb.name || "知").slice(0, 1)}
+                      {(kb.name || "S").slice(0, 1)}
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-text">{kb.name}</span>

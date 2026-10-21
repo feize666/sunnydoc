@@ -1,0 +1,83 @@
+{
+  "_comment": "由 docs/brand/export_geom.py 程序生成，请勿手改；改几何请改 sunny_geom.py",
+  "S": 100.0,
+  "cx": 50.0,
+  "cy": 50.0,
+  "R": 26.0,
+  "AMP": 9.0,
+  "rayN": 8,
+  "rayP": 2.4,
+  "phase": 0.0,
+  "peak": 35.0,
+  "valleyPeak": 0.743,
+  "outlineStroke": 3.0,
+  "eyes": [
+    [
+      39.5,
+      43.0
+    ],
+    [
+      60.5,
+      43.0
+    ]
+  ],
+  "eyeRx": 4.8,
+  "eyeRy": 6.3,
+  "glint": [
+    -0.34,
+    -0.34,
+    0.36
+  ],
+  "blushes": [
+    [
+      32.0,
+      55.5
+    ],
+    [
+      68.0,
+      55.5
+    ]
+  ],
+  "blushR": 4.0,
+  "mouthChord": 17.5,
+  "mouthSag": 8.5,
+  "mouthBottomY": 63.0,
+  "mouthHalf": 2.6,
+  "mouthMidX": 50.0,
+  "sunProbe": [
+    50.0,
+    37.0
+  ],
+  "outlineProbe": [
+    50.0,
+    16.0
+  ],
+  "peakProbe": [
+    50.0,
+    15.6
+  ],
+  "valleyProbe": [
+    72.17,
+    40.82
+  ],
+  "cornerProbe": [
+    4.0,
+    4.0
+  ],
+  "faviconCornerProbe": [
+    12.0,
+    12.0
+  ],
+  "colors": {
+    "SUN": "#FFD93D",
+    "OUTLINE": "#7C2D12",
+    "FACE": "#4E342E",
+    "BLUSH": "#F4511E",
+    "BLUSH_BLENDED": "#FAA030"
+  },
+  "minPx20": {
+    "eye": 1.92,
+    "mouth": 1.04,
+    "blush": 1.6
+  }
+}

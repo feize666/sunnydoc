@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { login, setToken, type User } from "@/lib/api";
+import { LogoMark } from "./LogoMark";
 import { PasswordInput } from "./PasswordInput";
 import { AlertIcon } from "./icons";
 
@@ -68,12 +69,10 @@ export function LoginView({ onAuthed }: { onAuthed: (user: User) => void }) {
       {/* —— 左侧品牌区（窄屏隐藏） —— */}
       <aside className="hero-surface hidden w-[46%] max-w-[560px] shrink-0 flex-col justify-between p-10 lg:flex xl:p-12">
         <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--hero-chip)] text-lg font-bold ring-1 ring-[var(--hero-chip-border)] backdrop-blur-sm">
-            知
-          </span>
+          <LogoMark size={40} rounded="rounded-xl" className="ring-1 ring-[var(--hero-chip-border)]" />
           <div className="leading-tight">
-            <div className="text-[17px] font-semibold">知库</div>
-            <div className="text-[12px] text-[var(--hero-ink-faint)]">文档知识库</div>
+            <div className="text-[17px] font-semibold">Sunny</div>
+            <div className="text-[12px] text-[var(--hero-ink-faint)]">个人知识库</div>
           </div>
         </div>
 
@@ -115,12 +114,10 @@ export function LoginView({ onAuthed }: { onAuthed: (user: User) => void }) {
         <div className="anim-rise-in w-[380px] max-w-full">
           {/* 窄屏下的品牌标识（左栏隐藏时兜底） */}
           <div className="mb-7 flex flex-col items-center gap-3 lg:hidden">
-            <span className="logo-mark grid h-14 w-14 place-items-center rounded-2xl text-2xl font-bold">
-              知
-            </span>
+            <LogoMark size={56} rounded="rounded-2xl" />
             <div className="text-center">
-              <div className="text-lg font-semibold text-text">知库</div>
-              <div className="mt-0.5 text-xs text-faint">文档知识库</div>
+              <div className="text-lg font-semibold text-text">Sunny</div>
+              <div className="mt-0.5 text-xs text-faint">个人知识库</div>
             </div>
           </div>
 

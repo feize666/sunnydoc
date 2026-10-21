@@ -19,6 +19,7 @@ import {
   ImportIcon,
   CloseIcon,
 } from "./icons";
+import { LogoMark } from "./LogoMark";
 import { renderMarkdown, hydrateCodeBlocks, mediaUrl } from "@/lib/markdown";
 import { handleCodeBlockCopy } from "./CodeBlock";
 import { Tooltip } from "./Tooltip";
@@ -893,10 +894,8 @@ export function AiPanel({
           >
             {msg.role === "ai" && (
               <div className="flex items-center gap-1.5">
-                <span className="logo-mark grid h-5 w-5 place-items-center rounded-md text-[10px] font-bold">
-                  知
-                </span>
-                <span className="text-[12px] text-faint">知库助手</span>
+                <LogoMark size={20} rounded="rounded-md" />
+                <span className="text-[12px] text-faint">Sunny 助手</span>
                 {msg.content && !msg.error && (
                   <Tooltip content={copiedIndex === i ? "已复制" : "复制回答"}>
                     <button
@@ -1318,7 +1317,7 @@ export function AiPanel({
                       className="flex w-full items-center gap-2 rounded-lg border border-line px-3 py-2 text-left text-[13px] text-text transition-colors hover:bg-hover disabled:opacity-50"
                     >
                       <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-accent-soft text-[12px] font-semibold text-accent">
-                        {(kb.name || "知").slice(0, 1)}
+                        {(kb.name || "S").slice(0, 1)}
                       </span>
                       <span className="truncate">{kb.name}</span>
                     </button>

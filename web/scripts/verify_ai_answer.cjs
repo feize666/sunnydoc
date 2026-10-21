@@ -105,7 +105,12 @@ function extractInPage({ question, CITE_MARKER }) {
     const citeTextIdx = answer.indexOf(CITE_MARKER);
     if (citeTextIdx > 0) answer = answer.slice(0, citeTextIdx);
   }
-  answer = answer.replace(/^(知库助手|复制|重新生成|知|\s)+/, "").trim();
+  // 剥掉面板头部文案（品牌名 + 操作按钮），只留答案正文。
+  // 🔴 这里必须与 `AiPanel.tsx` 的头部实际文案同步：品牌从「知库助手」改成
+  //    「Sunny 助手」后，旧正则里的 `知库助手|知` 就匹配不到了 ——
+  //    后果是答案开头残留「Sunny 助手」四个字，后续按文本比对答案的断言会**静默走偏**。
+  //    另：logo 已改为内联 SVG（无文本），故不再需要剥离「知」字。
+  answer = answer.replace(/^(Sunny\s*助手|Sunny|复制|重新生成|\s)+/, "").trim();
 
   // 本轮引用条数：只数最后一个引用区标记**之后**的引用行（DOM 顺序）
   const allRows = Array.from(panel.querySelectorAll("*")).filter((n) =>

@@ -116,7 +116,7 @@ export function ProfileDialog({
         <div className="max-h-[70vh] overflow-y-auto p-4">
           <div className="mb-4 flex items-center gap-3">
             <span className="grid h-12 w-12 place-items-center rounded-full bg-accent-soft text-lg font-semibold text-accent">
-              {avatar?.trim() || nickname.slice(0, 1) || "知"}
+              {avatar?.trim() || nickname.slice(0, 1) || "S"}
             </span>
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold text-text">

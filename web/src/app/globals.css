@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* ==========================================================================
-   Design Tokens（sunnydoc 知库 · 蓝白科技感）
+   Design Tokens（Sunny · 蓝白科技感）
    命名约定：颜色 -> --color-*，圆角 -> --radius-*，阴影 -> --shadow-*，
             渐变 -> --grad-*，聚焦 -> --focus-ring，玻璃 -> --glass-*。
    所有组件一律引用变量，禁止写裸色值。
@@ -314,13 +314,12 @@ body {
   box-shadow: var(--focus-ring);
 }
 
-/* 品牌标识：渐变蓝底 + 微光 */
-.logo-mark {
-  background-image: var(--accent-grad);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(47, 107, 255, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
-}
+/* 品牌标识的样式**已移除** —— 迁到组件 `LogoMark.tsx`（内联 SVG，几何由
+   `docs/brand/sunny_geom.py` 程序生成）。
+   原 `.logo-mark` 是「蓝渐变底 + 白字」，与黄色太阳冲突：
+   实测 黄 #FFD93D 对蓝底 #2862f4 仅 3.68、描边 #7C2D12 对蓝底 1.85 ——
+   太阳会糊在蓝底里、轮廓直接消失。改透明底后双主题都成立
+   （浅色靠描边 9.37 勾形，深色靠黄对深底 13.59）。 */
 
 /* 头像：蓝→靛渐变 + 微光描边 */
 .avatar-ring {
@@ -1716,7 +1715,7 @@ mark.search-hit {
 /* 「保存」按钮：尺寸收小以适配 20px 高的卡片头。
    ⚠️ 不能直接加 `.btn`（36px 高 / 14px 字）—— 会把卡片头撑坏。
    只借 `.btn-accent` 的渐变底，并补上文字色（`.doc-embed-btn` 默认是 --faint，
-   在蓝底上不可读；与项目里其它强调色底一样用白字，见 .logo-mark）。 */
+   在蓝底上不可读；与项目里其它强调色底一样用白字）。 */
 .doc-embed-btn.is-primary {
   width: auto;
   min-width: 36px;
