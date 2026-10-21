@@ -809,7 +809,14 @@ export function Sidebar({
                   }`}
                 >
                   <span>#{t.name}</span>
-                  <span className={activeTag === t.name ? "text-white/70" : "text-faint"}>
+                  {/*
+                    🔴 计数必须用实色白，不能用 text-white/70（2026-10-21 实测修复）：
+                    激活态底是 bg-accent-solid #2862f4，white/70 合成后 rgb(191,208,252)
+                    对它只有 **3.29**（需 4.5）；实色白是 5.07 ✅。
+                    这正是 DESIGN.md §6.3 写下的物理约束 —— 半透白恒 ≤ 纯白，
+                    底是「实色中深蓝」时靠调 alpha 永远补不回来。
+                  */}
+                  <span className={activeTag === t.name ? "text-white" : "text-faint"}>
                     {t.count}
                   </span>
                 </button>

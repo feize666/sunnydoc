@@ -359,7 +359,11 @@ export function SlideEditor({
           <span data-testid="slide-present-indicator">
             {cur + 1} / {doc.pages.length}
           </span>
-          <span className="text-white/40">← → 翻页 · Esc 退出</span>
+          {/* 🔴 提示文字原为 text-white/40：在 bg-black 上合成色 rgb(102,102,102)
+              只有 **3.66**（需 4.5，2026-10-21 实测）。提到 /50 是 5.32 ✅。
+              注意本条与 Sidebar 的计数不同 —— 那里底是实色蓝，必须用纯白；
+              这里底是纯黑，半透明白是够的，**只需抬一档**，不必改成纯白。 */}
+          <span className="text-white/50">← → 翻页 · Esc 退出</span>
           <button
             type="button"
             data-testid="slide-present-exit"

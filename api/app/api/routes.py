@@ -135,6 +135,13 @@ ALLOWED_ATTACHMENT_EXTS = {
 # 单个附件大小上限（30MB）：附件走内存读取后内容寻址落盘，不设上限会打爆进程
 MAX_ATTACHMENT_BYTES = 30 * 1024 * 1024
 
+# 单次导入文件大小上限（100MB）：导入是**流式落盘**，比内存版的上传更省资源，
+# 因此上限可以放宽一些（zip 批量导入可能含大量 md/pdf）。
+# ⚠️ 但**必须有**：2026-10-21 审计实测该端点此前**完全没有大小校验**
+# （函数体内只判断「文件是否为空」，循环内不累计字节）→ 可无限写盘直到打满磁盘，
+# 而同一产品的图片 10MB / 附件 30MB 都有上限，属明显不对称。
+MAX_IMPORT_BYTES = 100 * 1024 * 1024
+
 # 异步导入任务状态（进程内全局，线程安全）
 _import_tasks: dict[str, dict] = {}
 _import_lock = threading.Lock()
@@ -1459,15 +1466,32 @@ async def import_documents(
     if folder_id:
         _require_folder_access(folder_id, current_user)
 
-    # 流式落盘，不 await file.read() 整读内存
+    # 流式落盘，不 await file.read() 整读内存。
+    # 同时**累计字节数**并在超限时立即中止（2026-10-21 补）：
+    # 此前只判断「是否为空」，没有上限 → 可无限写盘打满磁盘。
+    # 注意必须「边写边判」而不是先写完再判断大小 —— 后者磁盘已经写满了。
     fd, tmp_path = tempfile.mkstemp(dir=str(TMP_DIR))
+    total = 0
     try:
         with os.fdopen(fd, "wb") as out:
             while True:
                 chunk = await file.read(1024 * 1024)
                 if not chunk:
                     break
+                total += len(chunk)
+                if total > MAX_IMPORT_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"文件过大（上限 {MAX_IMPORT_BYTES // 1024 // 1024}MB）",
+                    )
                 out.write(chunk)
+    except HTTPException:
+        # 超限必须清理已落盘的临时文件，否则拒绝请求反而留下垃圾
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
     except Exception:  # noqa: BLE001
         try:
             os.unlink(tmp_path)
@@ -2611,15 +2635,41 @@ def register(req: RegisterRequest, admin: dict = Depends(require_admin)):
 
 
 @router.post("/auth/login")
-def login(req: LoginRequest):
+def login(req: LoginRequest, request: Request):
+    """登录。
+
+    含**节流**（2026-10-21 审计后补）：此前连打 12 次错误密码全部 401、总耗时
+    127ms（约 6000 次/分钟），而密码下限仅 6 位 → 弱口令可被高速枚举。
+    现按「用户名 + 客户端 IP」计数做指数退避；详见 `services/auth.py` 的说明。
+    """
     username = (req.username or "").strip()
     if not username or not req.password:
         raise HTTPException(status_code=400, detail="用户名和密码不能为空")
+
+    # 节流键：用户名 + 客户端 IP。
+    # 只按用户名会被拿来锁死他人账号（攻击者故意打错即可让受害者登不进），
+    # 因此必须带上 IP —— 攻击者最多耗尽自己那条键。
+    client_ip = request.client.host if request.client else "unknown"
+    throttle_key = f"{username.lower()}@{client_ip}"
+
+    wait = auth.login_throttle_check(throttle_key)
+    if wait > 0:
+        raise HTTPException(
+            status_code=429,
+            detail=f"登录尝试过于频繁，请 {wait} 秒后重试",
+            headers={"Retry-After": str(wait)},
+        )
+
     user = store.get_user_by_username(username)
     if user is None or not auth.verify_password(req.password, user["password_hash"]):
+        auth.login_throttle_record_failure(throttle_key)
+        # 注意：错误信息必须与「账号被禁用」以外的情形完全一致，
+        # 否则可用于枚举用户名（此处沿用既有文案，未改动）。
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     if user.get("status") != "active":
         raise HTTPException(status_code=403, detail="账号已被禁用")
+    # 成功即清零，正常用户不会因为历史上打错过就被持续惩罚
+    auth.login_throttle_reset(throttle_key)
     token = auth.issue_token(user["id"])
     return {"token": token, "user": _public_user(user)}
 

@@ -117,3 +117,92 @@ def revoke_token(token: str) -> None:
 def revoke_all_for_user(user_id: str) -> None:
     """吊销某用户所有已签发 token（禁用/删除/改密/重置密码后调用）。"""
     _REVOKED_USERS[user_id] = int(time.time())
+
+
+# ---------------------------------------------------------------------------
+# 登录节流（防在线暴力破解）
+# ---------------------------------------------------------------------------
+#
+# 背景（2026-10-21 审计实测）：登录接口此前**没有任何节流** ——
+# 连打 12 次错误密码全部返回 401、总耗时 127ms（约 6000 次/分钟），
+# 而密码下限仅 6 位且无复杂度要求 → 弱口令可被高速枚举。
+#
+# 设计取舍：
+# - **指数退避 + 临时锁定**，而不是固定窗口计数器：正常用户偶尔输错不受影响
+#   （前 5 次完全放行），只有连续失败才逐步拉长等待。
+# - **按「用户名 + 客户端 IP」双键计数**：只按用户名会被拿来**锁死别人账号**
+#   （攻击者故意打错密码即可把受害者锁在门外，是典型的「可用性反被利用」）；
+#   加上 IP 后，攻击者只能耗尽自己那条键。
+# - 进程内 dict，与 `_REVOKED_TOKENS` 同风格，不引入新依赖。
+#   ⚠️ 与吊销黑名单同一局限：**多 worker 部署下不共享**，重启即清空。
+#   单机自用场景可接受；要上多实例应换成共享存储（Redis）。
+#
+# 参数（5 次以内完全无感，之后逐级退避）：
+#   ≤5   次失败 → 放行
+#   6-7  次     → 等 5s
+#   8-9  次     → 等 15s
+#   10-11 次    → 等 60s
+#   ≥12  次     → 锁定 300s
+FAIL_FREE_ATTEMPTS = 5
+"""低于此次数的连续失败不触发任何等待（正常用户打错密码无感）。"""
+
+FAIL_WINDOW_SECONDS = 900
+"""失败计数窗口（15 分钟）。窗口内无新失败则计数自然过期，不必手工清理。"""
+
+_BACKOFF_STEPS: tuple[tuple[int, int], ...] = (
+    (6, 5),
+    (8, 15),
+    (10, 60),
+    (12, 300),
+)
+"""达到指定失败次数后需要等待的秒数（取满足条件的最后一档）。"""
+
+# key -> {fails: 连续失败次数, first: 首次失败时间戳, until: 解锁时间戳}
+# 不加锁：与同文件的 `_REVOKED_TOKENS` / `_REVOKED_USERS` 保持一致 ——
+# 读改写都在单次 dict 操作内完成，CPython 下足够；此处仅为「节流」，
+# 极端并发下多算/少算一次失败不影响安全性（不能变成放行即可）。
+_LOGIN_FAILURES: dict[str, dict] = {}
+
+
+def _backoff_seconds(fails: int) -> int:
+    """按连续失败次数返回需要等待的秒数（0 = 放行）。"""
+    wait = 0
+    for threshold, secs in _BACKOFF_STEPS:
+        if fails >= threshold:
+            wait = secs
+    return wait
+
+
+def login_throttle_check(key: str) -> int:
+    """返回该键还需等待的秒数（0 = 可尝试）。不改变计数。"""
+    now = time.time()
+    rec = _LOGIN_FAILURES.get(key)
+    if not rec:
+        return 0
+    if now - rec["first"] > FAIL_WINDOW_SECONDS:
+        return 0
+    until = rec.get("until", 0)
+    return max(0, int(until - now)) if until > now else 0
+
+
+def login_throttle_record_failure(key: str) -> int:
+    """记一次失败，返回下次需要等待的秒数。"""
+    now = time.time()
+    rec = _LOGIN_FAILURES.get(key)
+    if not rec or now - rec["first"] > FAIL_WINDOW_SECONDS:
+        rec = {"fails": 0, "first": now, "until": 0}
+        _LOGIN_FAILURES[key] = rec
+    rec["fails"] += 1
+    wait = _backoff_seconds(rec["fails"])
+    rec["until"] = now + wait if wait else 0
+    # 顺手清理过期记录，避免 dict 无限增长（攻击者可用随机用户名刷内存）
+    if len(_LOGIN_FAILURES) > 5000:
+        dead = [k for k, v in _LOGIN_FAILURES.items() if now - v["first"] > FAIL_WINDOW_SECONDS]
+        for k in dead:
+            _LOGIN_FAILURES.pop(k, None)
+    return wait
+
+
+def login_throttle_reset(key: str) -> None:
+    """登录成功后清除该键的失败记录。"""
+    _LOGIN_FAILURES.pop(key, None)

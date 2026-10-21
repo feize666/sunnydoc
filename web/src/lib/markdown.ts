@@ -438,6 +438,45 @@ const LANG_ALIAS: Record<string, string> = {
 const SHIKI_THEME_DARK = "one-dark-pro";
 const SHIKI_THEME_LIGHT = "github-light";
 
+/**
+ * 代码块配色校准（shiki `colorReplacements`）。
+ *
+ * 🔴 为什么需要：shiki 的两个预设主题都是按**它们自己的编辑器底色**调的 ——
+ * `github-light` 假定 `#ffffff`、`one-dark-pro` 假定 `#282c34`。而本项目用
+ * `.md-body pre.shiki { background-color: var(--surface-2) !important }`
+ * 强制改成自己的底色，于是「调色板与底不再匹配」，部分 token 跌破 4.5。
+ *
+ * 实测（2026-10-21，对每个主题全部 tokenColors 前景色逐一算 WCAG 比值）：
+ * - 浅色：`#eef2f7`(=`--surface-2`) 上 **6/12** 不达标
+ *   （注释 `#6a737d`=4.28、关键字 `#d73a49`=4.07、字符串 `#22863a`=4.12、
+ *     数字常量 `#e36209`=3.10）—— 最直观的表现就是代码注释一片发灰。
+ * - 深色：`#1e293b` 上 **4/13** 不达标（`#5c6370`=2.42、`#BE5046`=3.08 …）。
+ *
+ * 修法用 shiki 原生能力，**不改 DOM、不动 CSS**：把不达标的色值替换为
+ * 同色系压深/提亮后的值（替换值均已验算 ≥4.5）。
+ *
+ * 为什么不做成「按主题动态计算」：这些是**固定的设计决定**，写成表更好审阅；
+ * 且 `colorReplacements` 必须是静态对象，动态生成会让 shiki 每块重算。
+ * 若将来改了 `--surface-2`，**必须回头重算本表的达标注**。
+ */
+const SHIKI_COLOR_REPLACEMENTS: Record<string, Record<string, string>> = {
+  // 浅色：github-light 的浅色 token 对 #eef2f7 太浅
+  "github-light": {
+    "#6a737d": "#5b6672", // 注释 / 标点  4.28 → 5.21
+    "#d73a49": "#bf2a38", // 关键字        4.07 → 5.18
+    "#22863a": "#157f3b", // 字符串        4.12 → 4.52
+    "#e36209": "#b1540a", // 数字常量      3.10 → 4.51
+    "#005cc5": "#00449b", // 常量/变量     4.71 → 6.30（留余量）
+  },
+  // 深色：one-dark-pro 的暗色 token 对 #1e293b 太暗
+  "one-dark-pro": {
+    "#5c6370": "#8b93a3", // 注释          2.42 → 4.74
+    "#7f848e": "#a6adb8", // 次级标点      3.90 → 6.47
+    "#f44747": "#ff6b6b", // 错误/删除     4.07 → 5.27
+    "#BE5046": "#e06c75", // 变量          3.08 → 4.58
+  },
+};
+
 // 支持高亮的语言：按需动态 import，避免首屏打包全部语言语法（原本静态引入 15 种
 // 语言会让共享 chunk 增加约 1MB+）。只有文档实际出现该语言代码块时才会下载。
 const LANG_LOADERS: Record<string, () => Promise<{ default: unknown }>> = {
@@ -708,6 +747,8 @@ export function hydrateCodeBlocks(
           const highlighted = highlighter!.codeToHtml(code, {
             lang: normalized,
             theme: shikiTheme,
+            // 按本项目底色校准过的调色板（见 SHIKI_COLOR_REPLACEMENTS 说明）
+            colorReplacements: SHIKI_COLOR_REPLACEMENTS[shikiTheme],
           });
           // 用范围替换：保留 <pre> 的属性与位置，仅换内容，避免整体重建引起跳动
           const doc = pre.ownerDocument;
