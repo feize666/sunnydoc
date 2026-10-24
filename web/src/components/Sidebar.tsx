@@ -315,6 +315,16 @@ export function Sidebar({
   const [focused, setFocused] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
   const [tagsCollapsed, setTagsCollapsed] = useState(false);
+  /**
+   * 树内**名称过滤**关键词（与 `searchQuery` 的全文搜索独立）。
+   * 见渲染处注释：本库需滚 27.5 屏，需要「按名称秒筛、留在树里」的能力。
+   */
+  const [treeFilter, setTreeFilter] = useState("");
+
+  /** 切换知识库时清空过滤 —— 过滤词是针对上一个库的，带过去会得到"空树"。 */
+  useEffect(() => {
+    setTreeFilter("");
+  }, [kbName]);
 
   useEffect(() => {
     try {
@@ -1024,8 +1034,52 @@ export function Sidebar({
                 description="点击上方「导入」或「新建」开始"
               />
             )}
+
+            {/* ── 树内名称过滤（与上方「搜索文档内容…」是两个不同能力）──
+                实测：本库 419 篇文档 + 55 个根层文件夹，树内容高 14,702px /
+                可视 534px ⇒ **需滚 27.5 屏**。上方搜索框走后端全文检索、
+                只返前 50 条、并会切到独立结果视图；而「我知道它叫什么」这个
+                场景需要的是**留在树里、按名称秒筛**。故补此输入框：
+                  · 纯前端过滤，零网络请求；命中项的祖先目录自动保留 + 展开；
+                  · 目录自身命中时保留整棵子树（搜目录名即看其全部内容）。
+                条目少时不显示（避免给简单场景添乱）。 */}
+            {data.length > 12 && (
+              <div className="relative mx-1 mb-1.5">
+                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-faint">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                       stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="m21 21-4.35-4.35M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0z" />
+                  </svg>
+                </span>
+                <input
+                  value={treeFilter}
+                  onChange={(e) => setTreeFilter(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      e.stopPropagation(); // 不要冒泡到全局 Esc（会退出全屏等）
+                      setTreeFilter("");
+                    }
+                  }}
+                  placeholder="在树中按名称筛选…"
+                  aria-label="在文档树中按名称筛选"
+                  data-testid="tree-filter"
+                  className="input input-icon pr-8 text-[13px]"
+                />
+                {treeFilter && (
+                  <button
+                    onClick={() => setTreeFilter("")}
+                    className="absolute right-1 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full text-faint transition-colors hover:bg-hover hover:text-text"
+                    title="清除筛选"
+                    aria-label="清除筛选"
+                  >
+                    <CloseIcon size={13} />
+                  </button>
+                )}
+              </div>
+            )}
             <FileTree
               data={data}
+              filterQuery={treeFilter}
               activeKey={activeKey}
               onSelect={(key) => {
                 onSelect(key);

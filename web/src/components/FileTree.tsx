@@ -211,6 +211,7 @@ function FileTreeNode({
   onToggleSelect,
   siblings = [],
   depth = 0,
+  forceOpen,
 }: {
   node: TreeNode;
   activeKey: string | null;
@@ -249,6 +250,8 @@ function FileTreeNode({
   depth?: number;
   batchedAll?: boolean;
   batchedAt?: number;
+  /** 过滤态下强制展开本节点（见 FileTreeNode 内的说明）。清空过滤后传 undefined 恢复自治。 */
+  forceOpen?: boolean;
 }) {
   // 默认折叠所有节点（与侧栏截图一致：所有节点都是「>」折叠状态）。
   // 仅在「用户对当前知识库点过一次展开」后才展开根节点 —— 这个状态由 batchedAll
@@ -273,6 +276,26 @@ function FileTreeNode({
     if (!userToggled) setOpen(batchedAll);
     // 这里不重置 userToggled —— 一旦用户动过某节点，就永久脱离批量控制。
   }, [batchedAll, batchedAt, userToggled]);
+
+  /**
+   * 过滤态强制展开（来自 `filterQuery`）：
+   * 命中项若藏在折叠目录里，用户「搜到了却看不见」，等于没搜。
+   *
+   * ## 为什么不复用上面的 batchedAll 通道
+   *
+   * `batchedAll` 被「用户是否手动动过该节点」（`userToggled`）一票否决 ——
+   * 这是为了尊重用户在批量展开后的手动调整。但**过滤是临时视图**：
+   * 用户输入关键词就是想看到全部命中，此时不该因为「他曾手动折叠过这个目录」
+   * 而把命中项藏起来。
+   *
+   * ⇒ 因此 `forceOpen=true` 时**无视 userToggled 直接展开**；
+   *    清空关键词后 `forceOpen=undefined`，回到节点自身的偏好（不影响原状态）。
+   */
+  useEffect(() => {
+    if (forceOpen === true && !open) setOpen(true);
+    // forceOpen 变 undefined（清空过滤）时**不主动折叠** ——
+    // 保持展开比"啪一下全部收起"更少突兀，且用户可自行折叠。
+  }, [forceOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const canDrag = !!onReorder;
   const isFolder = node.type === "folder";
@@ -495,6 +518,7 @@ function FileTreeNode({
                 depth={depth + 1}
                 batchedAll={batchedAll}
                 batchedAt={batchedAt}
+                forceOpen={forceOpen}
               />
             ))}
           </div>
@@ -674,11 +698,27 @@ export function FileTree({
   onMoveSelected,
   batchedAll,
   batchedAt,
+  filterQuery,
 }: {
   data: TreeNode[];
   activeKey: string | null;
   onSelect: (key: string) => void;
   folders?: Folder[];
+  /**
+   * 树内**名称过滤**关键词（空/未传 = 不过滤）。
+   *
+   * ## 为什么需要它（与侧栏「搜索文档内容…」的区别）
+   *
+   * 侧栏已有的搜索框是**全文内容搜索**：走后端 `/api/v1/search`、
+   * 只返回前 50 条、且结果呈现在**独立的搜索结果视图**里。
+   * 实测本库有 419 篇文档 + 55 个根层文件夹，树内容高 14,702px / 可视 534px
+   * ⇒ **需要滚动 27.5 屏**才能看到底部。用户「我知道它叫什么，帮我找出来」
+   * 这个场景，全文搜索并不合适（关键词可能命中正文而非标题、且会离开树视图）。
+   *
+   * 本 prop 提供的是**纯前端、按节点名称过滤**的快速通道：
+   * 输入即筛、留在树视图内、不产生任何网络请求。
+   */
+  filterQuery?: string;
   onNew?: (type: NodeType, parentFolderId: string | null) => void;
   onRenameDoc?: (docId: string, name: string) => Promise<void> | void;
   onRenameFolder?: (folderId: string, name: string) => Promise<void> | void;
@@ -737,6 +777,54 @@ export function FileTree({
     walk(data);
     return alive;
   }, [data]);
+
+  /**
+   * 按名称过滤后的树（`filterQuery` 为空时**原样返回 data**，零开销）。
+   *
+   * ## 两条关键规则
+   *
+   * ① **保留命中项的祖先链**：命中的是深层文档时，必须把它的每级父文件夹
+   *    一起留下，否则用户看到一条孤零零的文档、不知道它在哪个目录下。
+   *    实现方式：自底向上递归，子节点有存活项则父节点也存活。
+   *
+   * ② **文件夹自身命中时保留整棵子树**：搜「05-安全」希望看到该目录**及其中
+   *    全部内容**，而不是只剩一个空目录壳。这与文档命中只保留路径的处理不同。
+   *
+   * ## 为什么用 useMemo 而不是过滤后 setState
+   *
+   * 过滤是**纯派生**：data / query 任一变化重算即可。若写成 setState，
+   * 每次输入都会多一次渲染，且在「data 刷新」与「query 未变」时会丢失过滤态。
+   */
+  const filteredData = useMemo(() => {
+    const q = (filterQuery ?? "").trim().toLowerCase();
+    if (!q) return data;
+
+    const filterNodes = (nodes: TreeNode[]): TreeNode[] => {
+      const out: TreeNode[] = [];
+      for (const node of nodes) {
+        const nameHit = (node.name || "").toLowerCase().includes(q);
+        if (node.type === "folder") {
+          // 规则②：目录自身命中 → 保留整棵子树（原样，不再往下筛）
+          if (nameHit) {
+            out.push(node);
+            continue;
+          }
+          // 目录未命中 → 看其子孙有没有命中的；有则保留该目录（路径的一部分）
+          const kids = node.children ? filterNodes(node.children) : [];
+          if (kids.length > 0) out.push({ ...node, children: kids });
+          continue;
+        }
+        // 文档：只按名称匹配
+        if (nameHit) out.push(node);
+      }
+      return out;
+    };
+    return filterNodes(data);
+  }, [data, filterQuery]);
+
+  /** 过滤时是否**一个结果都没有**（用于空态提示，区别于「库本身为空」）。 */
+  const filterActive = (filterQuery ?? "").trim().length > 0;
+  const filterEmpty = filterActive && filteredData.length === 0;
 
   const selectedIds = { docs: [] as string[], folders: [] as string[] };
   for (const [key, kind] of selection) {
@@ -857,8 +945,14 @@ export function FileTree({
 
   return (
     <>
+      {filterEmpty && (
+        // 过滤无结果时的提示（与「库本身为空」的空态区分开）
+        <div className="px-3 py-6 text-center text-[13px] text-faint">
+          没有名称包含「{filterQuery?.trim()}」的文档或文件夹
+        </div>
+      )}
       <nav className="flex flex-col gap-0.5 rounded-md">
-        {(data ?? []).map((node) => (
+        {(filteredData ?? []).map((node) => (
           <FileTreeNode
             key={node.key ?? node.name}
             node={node}
@@ -866,6 +960,9 @@ export function FileTree({
             onSelect={onSelect}
             folders={folders}
             onNew={onNew}
+            /* 过滤态：强制展开命中的目录 —— 否则命中项藏在折叠目录里
+               「搜到了却看不见」，等于没搜。传 undefined 让节点按自身偏好自治。 */
+            forceOpen={filterActive ? true : undefined}
             onRequestRename={setPendingRename}
             onRequestDeleteDoc={onDeleteDoc ? setPendingDeleteDoc : undefined}
             onRequestDeleteFolder={onDeleteFolder ? setPendingDeleteFolder : undefined}

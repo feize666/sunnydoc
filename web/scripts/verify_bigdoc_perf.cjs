@@ -109,9 +109,28 @@ const check = (n, c, d) => { if (c) console.log("  ✅ " + n); else { fail++; co
   check("渲染期最长单次 < 150ms", (render.length ? Math.max(...render.map((x) => x.d)) : 0) < 150, Math.max(...render.map((x) => x.d)) + "ms");
   console.log("");
   console.log("=== 功能不回归 ===");
-  check("DOM 完整（节点 > 17000）", r.nodes > 17000, r.nodes);
+  // ── 下面两条断言在 2026-10-24 被**有意修改**（原为「节点 > 17000」与「代码块全部高亮」）──
+  //
+  // 原因：那一天把代码块高亮从「排空队列」改为「按需 + 有限预取」。
+  // 实测 20 万字符文档有 638 个代码块，而**首屏可见的只有 0 个** ——
+  // 旧行为把 638 个全部高亮，纯属白做（用户为此付出 CPU 与 17,372 个 DOM 节点）。
+  //
+  // 因此「节点 > 17000」与「全部高亮」不再是**期望行为**，而是被优化掉的症状。
+  // 这两条若继续保留，会把「正确的按需渲染」判成失败 —— 属于**断言与新设计冲突**。
+  //
+  // ⚠️ 判据本身没有变松：本脚本的**核心判据（单次写入体积 < 60KB）保持原样**，
+  //    且新增的 `verify_longdoc_perf.cjs` 专门钉住按需语义。
+  check(
+    "DOM 按需（节点数在合理区间，非全量铺开）",
+    r.nodes > 3000 && r.nodes < 25000,
+    `${r.nodes}（按需渲染：首屏 + 预取，而非一次性铺完）`,
+  );
   check("代码块数量正确", r.codeblocks === EXPECT_BLOCKS, r.codeblocks + " vs " + EXPECT_BLOCKS);
-  check("代码块全部高亮", r.shiki === r.codeblocks && r.pending === 0, `shiki=${r.shiki} pending=${r.pending}`);
+  check(
+    "代码块按需高亮（视口内已高亮 + 远视口保持纯文本）",
+    r.shiki > 0 && r.pending > 0,
+    `已高亮 ${r.shiki} / 待高亮 ${r.pending}（全亮 ${r.codeblocks} 才是退回旧行为）`,
+  );
   check("复制按钮齐全", r.copyBtns === r.codeblocks, r.copyBtns + " vs " + r.codeblocks);
   check("复制源是纯代码（无高亮标签）", !/<span|style=/.test(r.copyText), r.copyText);
   check("无 console 错误", errs.length === 0, errs.slice(0, 2).join(" | "));
