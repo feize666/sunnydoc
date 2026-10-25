@@ -52,8 +52,6 @@ const KB = process.env.SUNNYDOC_KB || "fdef57f179384d679b62a3c4bae2d2e3";
 const DOC = process.env.SUNNYDOC_LONGDOC || "e1cf4cb9ed0d463b9edca6d97e194ee3";
 /** 该文档在树中的路径（点击打开需要逐层展开）。 */
 const FOLDER_PATH = (process.env.SUNNYDOC_LONGDOC_PATH || "05-DevOps,05-安全与迁移").split(",");
-/** 树中必须有这么多行才认为「加载完成」。 */
-const MIN_TREE_ROWS = 30;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0;
@@ -92,17 +90,55 @@ const SNAPSHOT = `(() => {
 
   await p.goto(WEB + "/", { waitUntil: "domcontentloaded" });
   await p.evaluate((t) => localStorage.setItem("sunnydoc.token", t), TOKEN);
-  await p.goto(WEB + `/#/kb/${KB}`, { waitUntil: "domcontentloaded" });
+  await p.reload({ waitUntil: "domcontentloaded" });
 
-  // 等树加载完
-  let rows = 0;
+  /**
+   * 进入知识库：**点卡片**，不能直接 goto `/#/kb/xxx`。
+   *
+   * 🔴 hash 路由下浏览器把 `/#/kb/x` 视为**同文档导航**，不会重新执行脚本，
+   *    `domcontentloaded` 也不触发 → 树永远是 0 行。
+   *    （这条与 `verify_prod_perf.cjs` 是同一个坑，实测踩过。）
+   */
+  let cards = 0;
   for (let i = 0; i < 40; i++) {
-    rows = await p.evaluate(() => document.querySelectorAll("[data-tree-kind]").length);
-    if (rows >= MIN_TREE_ROWS) break;
+    cards = await p.evaluate(() => document.querySelectorAll('[data-testid="kb-card"]').length);
+    if (cards > 0) { await sleep(400); break; }
     await sleep(300);
   }
-  check(`文档树已加载（≥${MIN_TREE_ROWS} 行）`, rows >= MIN_TREE_ROWS, `实际 ${rows} 行`);
-  if (rows < MIN_TREE_ROWS) { await b.close(); process.exit(1); }
+  const entered = await p.evaluate((kb) => {
+    const all = Array.from(document.querySelectorAll('[data-testid="kb-card"]'));
+    const c = all.find((x) => x.getAttribute("data-kb-id") === kb)
+      || all.find((x) => (x.innerText || "").includes("云计算"))
+      || all[0];
+    if (!c) return false;
+    const r = c.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    c.scrollIntoView({ block: "center" });
+    c.click();
+    return true;
+  }, KB);
+  if (!entered) {
+    console.log("  ⚠️ 未能点击知识库卡片，尝试直接 goto hash 作为回退");
+    await p.goto(WEB + `/#/kb/${KB}`, { waitUntil: "domcontentloaded" });
+  }
+
+  /**
+   * 等树加载。
+   *
+   * 🔴 判据**不能硬编码行数**（首版 `MIN_TREE_ROWS = 30`）：
+   *    夹具清理后本机只剩 1 个知识库、根层文件夹少 → 行数达不到 30，
+   *    于是 40 次轮询全部落空、白白多花 12 秒，且失败原因被引向错误方向。
+   *    改为**自适应**：出现任意行且数量稳定即算加载完。
+   */
+  let rows = 0, prev = -1, stable = 0;
+  for (let i = 0; i < 60; i++) {
+    rows = await p.evaluate(() => document.querySelectorAll("[data-tree-kind]").length);
+    if (rows > 0 && rows === prev) { if (++stable >= 3) break; } else stable = 0;
+    prev = rows;
+    await sleep(300);
+  }
+  check("文档树已加载（出现行且数量稳定）", rows > 0, `实际 ${rows} 行`);
+  if (rows === 0) { await b.close(); process.exit(1); }
 
   // 用「树内过滤」快速定位目标文档（这也是本轮新增的能力）
   const filterBox = await p.$('[data-testid="tree-filter"]');
