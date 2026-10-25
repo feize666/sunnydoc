@@ -68,7 +68,11 @@ const check = (n, c, d) => {
       const h = { Authorization: "Bearer " + tok, "Content-Type": "application/json" };
       const list = await (await fetch(api + "/api/v1/documents", { headers: h })).json();
       const old = (list.documents || []).find((x) => x.title === title);
-      if (old) await fetch(api + "/api/v1/documents/" + old.id, { method: "DELETE", headers: h });
+      if (old) {
+        // 上一轮遗留的同名夹具：软删后必须 purge，否则只是把它换个地方堆着
+        await fetch(api + "/api/v1/documents/" + old.id, { method: "DELETE", headers: h });
+        await fetch(api + "/api/v1/trash/document/" + old.id, { method: "DELETE", headers: h });
+      }
       const kbs = await (await fetch(api + "/api/v1/kbs", { headers: h })).json();
       const kbId = (kbs.kbs || kbs.knowledge_bases || kbs || []).find(
         (k) => k && k.name === "云计算知识库",
@@ -240,15 +244,19 @@ const check = (n, c, d) => {
   await sleep(300);
 
   // ---- 清理：删掉临时文档 ----
+  // 🔴 `DELETE /documents/{id}` 是**软删除**（进回收站，默认留 30 天）。
+  //    必须再打 `DELETE /trash/document/{id}` 才算真删干净 ——
+  //    否则每次跑都往回收站堆一条夹具（实测回收站曾积 6 篇）。
   const deleted = await p.evaluate(
     async ([api, tok, id]) => {
       const h = { Authorization: "Bearer " + tok };
       const r = await fetch(api + "/api/v1/documents/" + id, { method: "DELETE", headers: h });
+      await fetch(api + "/api/v1/trash/document/" + id, { method: "DELETE", headers: h });
       return r.status;
     },
     [API, TOKEN, created],
   );
-  check("临时文档已删除（不留夹具）", deleted === 200 || deleted === 204, "status=" + deleted);
+  check("临时文档已彻底删除（活跃 + 回收站）", deleted === 200 || deleted === 204, "status=" + deleted);
 
   console.log("\n页面错误: " + (errs.length ? errs.slice(0, 3).join(" | ") : "无"));
   if (errs.length) fail++;

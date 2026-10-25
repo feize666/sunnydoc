@@ -80,6 +80,21 @@ const purgeDoc = async (id) => {
   return r;
 };
 
+/**
+ * 彻底删除 文件夹 / 知识库（软删 + 从回收站 purge）。
+ *
+ * 🔴 **`DELETE /folders/{id}` 与 `DELETE /kbs/{id}` 同样是软删除**（进回收站）。
+ *    2026-10-25 实测：脚本只软删，于是每次跑都往回收站堆 1 个 `BMV-夹具目录`
+ *    + 1 个 `BMV-目标库`；本机因此积了 35 个文件夹 + 28 个知识库，
+ *    而「零残留」断言只查活跃列表 → **既没清干净、断言也看不见**。
+ *    （与 purgeDoc 上面那个「软删陷阱」是同一类错误，第二次踩。）
+ */
+const purgeKind = async (kind, path, id) => {
+  if (!id) return;
+  await api(path + "/" + id, "DELETE").catch(() => {});
+  await api("/api/v1/trash/" + kind + "/" + id, "DELETE").catch(() => {});
+};
+
   const b = await chromium.launch({
     headless: true,
     args: ["--no-proxy-server"],
@@ -128,289 +143,311 @@ const purgeDoc = async (id) => {
     }
     const F = await api("/api/v1/folders?kb_id=" + KB);
     for (const f of F.json.folders || []) {
-      if (f.name === TEST_FOLDER) await api("/api/v1/folders/" + f.id, "DELETE");
+      if (f.name === TEST_FOLDER) await purgeKind("folder", "/api/v1/folders", f.id);
     }
     const K = await api("/api/v1/kbs");
     for (const k of K.json.kbs || []) {
-      if (k.name === TEST_KB) await api("/api/v1/kbs/" + k.id, "DELETE");
+      if (k.name === TEST_KB) await purgeKind("kb", "/api/v1/kbs", k.id);
     }
   };
   await cleanup();
 
-  const targetKb = await api("/api/v1/kbs", "POST", { name: TEST_KB, description: "验证用" });
-  const targetKbId = targetKb.json?.id;
+  // 🔴 夹具清理必须放进 finally —— 此前清理只在「跑到第 10 步」时执行，
+  //    中途任何异常/超时都会带着 BMV-目标库 退出。实测本机曾积压 **26 个**
+  //    空知识库（时间戳各不相同 = 每次中断留一个），首页因此几乎全是空卡。
+  //    教训：「零残留」断言只在正常路径才跑得到，必须由 finally 兜底。
+  let fatal = null;
+  try {
+    const targetKb = await api("/api/v1/kbs", "POST", { name: TEST_KB, description: "验证用" });
+    const targetKbId = targetKb.json?.id;
 
-  const docs = [];
-  for (let i = 1; i <= 3; i++) {
-    const c = await api("/api/v1/documents", "POST", {
-      title: `${PREFIX}文档${i}`,
-      content: `内容 ${i}`,
-      type: "doc",
+    const docs = [];
+    for (let i = 1; i <= 3; i++) {
+      const c = await api("/api/v1/documents", "POST", {
+        title: `${PREFIX}文档${i}`,
+        content: `内容 ${i}`,
+        type: "doc",
+        kb_id: KB,
+      });
+      docs.push(c.json);
+    }
+    const folder = await api("/api/v1/folders", "POST", {
+      name: TEST_FOLDER,
+      parent_id: null,
       kb_id: KB,
     });
-    docs.push(c.json);
-  }
-  const folder = await api("/api/v1/folders", "POST", {
-    name: TEST_FOLDER,
-    parent_id: null,
-    kb_id: KB,
-  });
 
-  // ---------- 1) 进知识库 ----------
-  // ⚠️ 顺序很关键：必须**在进入知识库之前**建好夹具（含目标库）。
-  //    因为 `kbs` state 只在 `enterKb`/`goHome` 时刷新（`refresh-doc-list` 不刷它），
-  //    先进 KB 再建库的话，新库不会出现在 MoveToKbDialog 的目标列表里
-  //    —— 上一版就因此走了 API 兜底，UI 层其实没验到移动链路。
-  const kbCard = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
-  if (await kbCard.count()) {
-    await kbCard.click({ force: true });
-  } else {
-    const kb = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
-    if (await kb.count()) await kb.click({ force: true });
-  }
-  const inKb = await waitFor(
-    async () => (await p.locator("[data-tree-kind]").count()) > 0,
-    10000,
-    "进入知识库视图",
-  );
-  check("进入知识库视图（文档树出现）", inKb, "文档树锚点数为 0");
-
-  // 刷新 + 展开全部，让夹具可见
-  const refresh = p.locator('[data-testid="refresh-doc-list"]').first();
-  if (await refresh.count()) {
-    await refresh.click({ force: true });
-    await sleep(3000);
-  }
-  const toggle = p.locator('[data-testid="toggle-batched-all"]').first();
-  if ((await toggle.getAttribute("aria-pressed")) !== "true") {
-    await toggle.click({ force: true });
-    await sleep(1500);
-  }
-
-  // ---------- 2/3) 进入多选 ----------
-  // 侧栏「多选」入口按钮（title 含"多选"或"批量"）
-  const selBtn = p
-    .locator("button")
-    .filter({ hasText: /^(选择|多选|批量)$/ })
-    .first();
-  let selectionOn = false;
-  if (await selBtn.count()) {
-    await selBtn.click({ force: true });
-    selectionOn = await waitFor(
-      async () => (await p.locator('button[title="选择"], button[title="取消选择"]').count()) > 0,
-      5000,
-      "出现选择框",
+    // ---------- 1) 进知识库 ----------
+    // ⚠️ 顺序很关键：必须**在进入知识库之前**建好夹具（含目标库）。
+    //    因为 `kbs` state 只在 `enterKb`/`goHome` 时刷新（`refresh-doc-list` 不刷它），
+    //    先进 KB 再建库的话，新库不会出现在 MoveToKbDialog 的目标列表里
+    //    —— 上一版就因此走了 API 兜底，UI 层其实没验到移动链路。
+    const kbCard = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
+    if (await kbCard.count()) {
+      await kbCard.click({ force: true });
+    } else {
+      const kb = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
+      if (await kb.count()) await kb.click({ force: true });
+    }
+    const inKb = await waitFor(
+      async () => (await p.locator("[data-tree-kind]").count()) > 0,
+      10000,
+      "进入知识库视图",
     );
-  }
-  // 兜底：直接点第一行文档左侧的选择框（进入多选模式）
-  if (!selectionOn) {
-    const docRow = p.locator('[data-tree-kind="doc"]').first();
-    if (await docRow.count()) {
-      await docRow.hover();
-      await sleep(400);
-      await p
-        .locator('button[title="选择"]')
-        .first()
-        .click({ force: true })
-        .catch(() => {});
-      selectionOn = await waitFor(
-        async () => (await p.locator('[data-testid="batch-move"]').count()) > 0,
-        5000,
-        "多选工具条出现",
-      );
-    }
-  }
-  check("可进入多选模式", selectionOn, "未出现选择框 / 工具条");
+    check("进入知识库视图（文档树出现）", inKb, "文档树锚点数为 0");
 
-  // ---------- 4) 工具条有「移动」按钮 ----------
-  const moveBtn = p.locator('[data-testid="batch-move"]').first();
-  check("多选工具条出现「移动」按钮（本轮新增）", (await moveBtn.count()) > 0, "未找到 batch-move");
-
-  // ---------- 5) 选中文件夹时移动按钮禁用 ----------
-  // 选中一个文件夹 + 看按钮是否 disabled
-  const folderRow = p.locator(`[data-tree-kind="folder"][data-tree-key]`).filter({ hasText: TEST_FOLDER }).first();
-  let folderDisabled = null;
-  if (await folderRow.count()) {
-    await folderRow.hover();
-    await sleep(400);
-    const fbox = folderRow.locator('button[title="选择"]').first();
-    if (await fbox.count()) {
-      await fbox.click({ force: true });
-      await sleep(600);
-      folderDisabled = await moveBtn.isDisabled();
-    }
-  }
-  if (folderDisabled !== null) {
-    check(
-      "选中文件夹时「移动」被禁用（跨库移动只支持文档）",
-      folderDisabled === true,
-      "disabled=" + folderDisabled,
-    );
-  }
-
-  // ⚠️ 必须**彻底清空选择**再进下一步：只点文件夹的「取消选择」不够稳
-  //    （上一版就读到 selected=4，文件夹仍在选，导致移动按钮一直 disabled
-  //      → 点它无效 → 对话框打不开，是脚本状态没清干净，不是产品问题）。
-  //    用工具条上的「取消」（退出多选）最可靠，然后重新进入多选。
-  const cancelBtn = p.locator("button").filter({ hasText: /^取消$/ }).first();
-  if (await cancelBtn.count()) {
-    await cancelBtn.click({ force: true });
-    await sleep(800);
-  }
-  // 重新进入多选（点第一篇文档的选择框）
-  const seedRow = p.locator(`[data-tree-kind="doc"][data-tree-key="${docs[0].id}"]`).first();
-  if (await seedRow.count()) {
-    await seedRow.hover();
-    await sleep(400);
-    const sbox = seedRow.locator('button[title="选择"]').first();
-    if (await sbox.count()) await sbox.click({ force: true });
-    await sleep(600);
-  }
-
-  // ---------- 6) 选中 3 篇文档 → 点移动 ----------
-  // 第一篇已在「重新进入多选」时选中，这里只补第 2、3 篇
-  // （再点一次已选中的行会**取消**它，上一版就在这类重复操作上踩过）。
-  for (const d of docs.slice(1)) {
-    const row = p.locator(`[data-tree-kind="doc"][data-tree-key="${d.id}"]`).first();
-    if (await row.count()) {
-      await row.hover();
-      await sleep(300);
-      const box = row.locator('button[title="选择"]').first();
-      if (await box.count()) await box.click({ force: true });
-      await sleep(400);
-    }
-  }
-  const selectedCount = await p.evaluate(() => {
-    const m = (document.body.innerText || "").match(/已选\s*(\d+)\s*项/);
-    return m ? Number(m[1]) : -1;
-  });
-  check(`已选中 3 篇文档（实际 ${selectedCount}）`, selectedCount === 3, "selected=" + selectedCount);
-
-  await moveBtn.click({ force: true });
-  const dlgOpen = await waitFor(
-    async () => (await p.locator("text=移动到知识库").count()) > 0,
-    5000,
-    "MoveToKbDialog 打开",
-  );
-  check("点「移动」打开「移动到知识库」对话框", dlgOpen, "对话框未出现");
-
-  // ---------- 7) 对话框文案是批量语义 ----------
-  const dlgText = await p.evaluate(() => document.body.innerText || "");
-  check(
-    "对话框文案是批量语义（「3 篇文档」而非单个标题）",
-    /3\s*篇文档/.test(dlgText),
-    "文案片段：" + (dlgText.match(/将选中的[^\n]{0,40}/) || ["<无>"])[0],
-  );
-
-  // ---------- 8) 真的移动成功（走 UI，点目标知识库） ----------
-  // 目标库是脚本刚建的，前端 `kbs` state 里可能还没有 —— 让对话框拿到它。
-  // 手段：对话框的 targets 来自页面 state，而 state 在进 KB 视图时刷新过；
-  // 这里重新进一次知识库（点刷新按钮会 refreshKbs）以确保列表最新。
-  const noTarget = await p.evaluate(() =>
-    /没有可移动的目标知识库/.test(document.body.innerText || ""),
-  );
-  if (noTarget) {
-    // 关掉对话框，回首页再进 KB（重走 openKb 会 refreshKbs）后重试
-    await p.keyboard.press("Escape");
-    await sleep(600);
-    const homeBtn = p.locator("button").filter({ hasText: /首页|返回首页/ }).first();
-    if (await homeBtn.count()) {
-      await homeBtn.click({ force: true }).catch(() => {});
-      await sleep(2000);
-      const kbCard2 = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
-      if (await kbCard2.count()) await kbCard2.click({ force: true });
+    // 刷新 + 展开全部，让夹具可见
+    const refresh = p.locator('[data-testid="refresh-doc-list"]').first();
+    if (await refresh.count()) {
+      await refresh.click({ force: true });
       await sleep(3000);
     }
-    // 重新多选 + 打开对话框
-    const seed2 = p.locator(`[data-tree-kind="doc"][data-tree-key="${docs[0].id}"]`).first();
-    if (await seed2.count()) {
-      await seed2.hover();
-      await sleep(300);
-      const bx = seed2.locator('button[title="选择"]').first();
-      if (await bx.count()) await bx.click({ force: true });
-      await sleep(500);
+    const toggle = p.locator('[data-testid="toggle-batched-all"]').first();
+    if ((await toggle.getAttribute("aria-pressed")) !== "true") {
+      await toggle.click({ force: true });
+      await sleep(1500);
     }
+
+    // ---------- 2/3) 进入多选 ----------
+    // 侧栏「多选」入口按钮（title 含"多选"或"批量"）
+    const selBtn = p
+      .locator("button")
+      .filter({ hasText: /^(选择|多选|批量)$/ })
+      .first();
+    let selectionOn = false;
+    if (await selBtn.count()) {
+      await selBtn.click({ force: true });
+      selectionOn = await waitFor(
+        async () => (await p.locator('button[title="选择"], button[title="取消选择"]').count()) > 0,
+        5000,
+        "出现选择框",
+      );
+    }
+    // 兜底：直接点第一行文档左侧的选择框（进入多选模式）
+    if (!selectionOn) {
+      const docRow = p.locator('[data-tree-kind="doc"]').first();
+      if (await docRow.count()) {
+        await docRow.hover();
+        await sleep(400);
+        await p
+          .locator('button[title="选择"]')
+          .first()
+          .click({ force: true })
+          .catch(() => {});
+        selectionOn = await waitFor(
+          async () => (await p.locator('[data-testid="batch-move"]').count()) > 0,
+          5000,
+          "多选工具条出现",
+        );
+      }
+    }
+    check("可进入多选模式", selectionOn, "未出现选择框 / 工具条");
+
+    // ---------- 4) 工具条有「移动」按钮 ----------
+    const moveBtn = p.locator('[data-testid="batch-move"]').first();
+    check("多选工具条出现「移动」按钮（本轮新增）", (await moveBtn.count()) > 0, "未找到 batch-move");
+
+    // ---------- 5) 选中文件夹时移动按钮禁用 ----------
+    // 选中一个文件夹 + 看按钮是否 disabled
+    const folderRow = p.locator(`[data-tree-kind="folder"][data-tree-key]`).filter({ hasText: TEST_FOLDER }).first();
+    let folderDisabled = null;
+    if (await folderRow.count()) {
+      await folderRow.hover();
+      await sleep(400);
+      const fbox = folderRow.locator('button[title="选择"]').first();
+      if (await fbox.count()) {
+        await fbox.click({ force: true });
+        await sleep(600);
+        folderDisabled = await moveBtn.isDisabled();
+      }
+    }
+    if (folderDisabled !== null) {
+      check(
+        "选中文件夹时「移动」被禁用（跨库移动只支持文档）",
+        folderDisabled === true,
+        "disabled=" + folderDisabled,
+      );
+    }
+
+    // ⚠️ 必须**彻底清空选择**再进下一步：只点文件夹的「取消选择」不够稳
+    //    （上一版就读到 selected=4，文件夹仍在选，导致移动按钮一直 disabled
+    //      → 点它无效 → 对话框打不开，是脚本状态没清干净，不是产品问题）。
+    //    用工具条上的「取消」（退出多选）最可靠，然后重新进入多选。
+    const cancelBtn = p.locator("button").filter({ hasText: /^取消$/ }).first();
+    if (await cancelBtn.count()) {
+      await cancelBtn.click({ force: true });
+      await sleep(800);
+    }
+    // 重新进入多选（点第一篇文档的选择框）
+    const seedRow = p.locator(`[data-tree-kind="doc"][data-tree-key="${docs[0].id}"]`).first();
+    if (await seedRow.count()) {
+      await seedRow.hover();
+      await sleep(400);
+      const sbox = seedRow.locator('button[title="选择"]').first();
+      if (await sbox.count()) await sbox.click({ force: true });
+      await sleep(600);
+    }
+
+    // ---------- 6) 选中 3 篇文档 → 点移动 ----------
+    // 第一篇已在「重新进入多选」时选中，这里只补第 2、3 篇
+    // （再点一次已选中的行会**取消**它，上一版就在这类重复操作上踩过）。
     for (const d of docs.slice(1)) {
       const row = p.locator(`[data-tree-kind="doc"][data-tree-key="${d.id}"]`).first();
       if (await row.count()) {
         await row.hover();
-        await sleep(250);
-        const bx = row.locator('button[title="选择"]').first();
-        if (await bx.count()) await bx.click({ force: true });
-        await sleep(350);
+        await sleep(300);
+        const box = row.locator('button[title="选择"]').first();
+        if (await box.count()) await box.click({ force: true });
+        await sleep(400);
       }
     }
-    const mb2 = p.locator('[data-testid="batch-move"]').first();
-    if (await mb2.count()) {
-      await mb2.click({ force: true });
-      await sleep(1500);
-    }
-  }
-
-  // 点目标知识库（用夹具库名精确匹配）
-  let moved = false;
-  let movedVia = "";
-  const tgtBtn = p.locator("button").filter({ hasText: TEST_KB }).first();
-  if (await tgtBtn.count()) {
-    await tgtBtn.click({ force: true });
-    await sleep(4000);
-    const after = await Promise.all(docs.map((d) => api("/api/v1/documents/" + d.id)));
-    moved = after.every((a) => a.json.kb_id === targetKbId);
-    movedVia = "UI（点夹具目标库）";
-  } else {
-    // 兜底：API 层验能力（UI 层已验证到打开对话框 + 批量文案）
-    const res = await api("/api/v1/documents/batch-move", "POST", {
-      doc_ids: docs.map((d) => d.id),
-      kb_id: targetKbId,
-      folder_id: null,
+    const selectedCount = await p.evaluate(() => {
+      const m = (document.body.innerText || "").match(/已选\s*(\d+)\s*项/);
+      return m ? Number(m[1]) : -1;
     });
-    moved = res.status === 200 && res.json.count === 3;
-    movedVia = "API（UI 未找到目标库项）";
+    check(`已选中 3 篇文档（实际 ${selectedCount}）`, selectedCount === 3, "selected=" + selectedCount);
+
+    await moveBtn.click({ force: true });
+    const dlgOpen = await waitFor(
+      async () => (await p.locator("text=移动到知识库").count()) > 0,
+      5000,
+      "MoveToKbDialog 打开",
+    );
+    check("点「移动」打开「移动到知识库」对话框", dlgOpen, "对话框未出现");
+
+    // ---------- 7) 对话框文案是批量语义 ----------
+    const dlgText = await p.evaluate(() => document.body.innerText || "");
+    check(
+      "对话框文案是批量语义（「3 篇文档」而非单个标题）",
+      /3\s*篇文档/.test(dlgText),
+      "文案片段：" + (dlgText.match(/将选中的[^\n]{0,40}/) || ["<无>"])[0],
+    );
+
+    // ---------- 8) 真的移动成功（走 UI，点目标知识库） ----------
+    // 目标库是脚本刚建的，前端 `kbs` state 里可能还没有 —— 让对话框拿到它。
+    // 手段：对话框的 targets 来自页面 state，而 state 在进 KB 视图时刷新过；
+    // 这里重新进一次知识库（点刷新按钮会 refreshKbs）以确保列表最新。
+    const noTarget = await p.evaluate(() =>
+      /没有可移动的目标知识库/.test(document.body.innerText || ""),
+    );
+    if (noTarget) {
+      // 关掉对话框，回首页再进 KB（重走 openKb 会 refreshKbs）后重试
+      await p.keyboard.press("Escape");
+      await sleep(600);
+      const homeBtn = p.locator("button").filter({ hasText: /首页|返回首页/ }).first();
+      if (await homeBtn.count()) {
+        await homeBtn.click({ force: true }).catch(() => {});
+        await sleep(2000);
+        const kbCard2 = p.locator('[data-testid="kb-card"]').filter({ hasText: "云计算知识库" }).first();
+        if (await kbCard2.count()) await kbCard2.click({ force: true });
+        await sleep(3000);
+      }
+      // 重新多选 + 打开对话框
+      const seed2 = p.locator(`[data-tree-kind="doc"][data-tree-key="${docs[0].id}"]`).first();
+      if (await seed2.count()) {
+        await seed2.hover();
+        await sleep(300);
+        const bx = seed2.locator('button[title="选择"]').first();
+        if (await bx.count()) await bx.click({ force: true });
+        await sleep(500);
+      }
+      for (const d of docs.slice(1)) {
+        const row = p.locator(`[data-tree-kind="doc"][data-tree-key="${d.id}"]`).first();
+        if (await row.count()) {
+          await row.hover();
+          await sleep(250);
+          const bx = row.locator('button[title="选择"]').first();
+          if (await bx.count()) await bx.click({ force: true });
+          await sleep(350);
+        }
+      }
+      const mb2 = p.locator('[data-testid="batch-move"]').first();
+      if (await mb2.count()) {
+        await mb2.click({ force: true });
+        await sleep(1500);
+      }
+    }
+
+    // 点目标知识库（用夹具库名精确匹配）
+    let moved = false;
+    let movedVia = "";
+    const tgtBtn = p.locator("button").filter({ hasText: TEST_KB }).first();
+    if (await tgtBtn.count()) {
+      await tgtBtn.click({ force: true });
+      await sleep(4000);
+      const after = await Promise.all(docs.map((d) => api("/api/v1/documents/" + d.id)));
+      moved = after.every((a) => a.json.kb_id === targetKbId);
+      movedVia = "UI（点夹具目标库）";
+    } else {
+      // 兜底：API 层验能力（UI 层已验证到打开对话框 + 批量文案）
+      const res = await api("/api/v1/documents/batch-move", "POST", {
+        doc_ids: docs.map((d) => d.id),
+        kb_id: targetKbId,
+        folder_id: null,
+      });
+      moved = res.status === 200 && res.json.count === 3;
+      movedVia = "API（UI 未找到目标库项）";
+    }
+    check(
+      `批量移动真的生效（后端 kb_id 已变为目标库）· 经由 ${movedVia}`,
+      moved,
+      JSON.stringify({ moved, movedVia, targetKbId }),
+    );
+
+    // ---------- 9) 混入无效 id 时跳过而非整批失败 ----------
+    // 移回原库 + 混入一个不存在的 id
+    const res2 = await api("/api/v1/documents/batch-move", "POST", {
+      doc_ids: [docs[0].id, "no-such-doc-id"],
+      kb_id: KB,
+    });
+    const skipOk =
+      res2.status === 200 &&
+      res2.json.count === 1 &&
+      (res2.json.skipped || []).some((s) => s.id === "no-such-doc-id");
+    check(
+      "混入无效 id 时跳过而非整批失败（moved=1, skipped=1）",
+      skipOk,
+      JSON.stringify(res2.json),
+    );
+
+    // ---------- 10) 零残留 ----------
+    await cleanup();
+    const L = await api("/api/v1/documents?limit=500");
+    const left = (L.json.documents || []).filter((d) => d.title && d.title.startsWith(PREFIX));
+    const F = await api("/api/v1/folders?kb_id=" + KB);
+    const leftF = (F.json.folders || []).filter((f) => f.name === TEST_FOLDER);
+    const K = await api("/api/v1/kbs");
+    const leftK = (K.json.kbs || []).filter((k) => k.name === TEST_KB);
+    // 🔴 **必须同时核对回收站**：软删的夹具在活跃列表里看不见，
+    //    只查活跃列表会让「清理没清干净」这一事实对断言完全不可见
+    //    （实测：本机回收站曾积 35 文件夹 + 28 知识库，而这里是全绿的）。
+    const T = await api("/api/v1/trash");
+    const trashD = (T.json.documents || []).filter((d) => d.title && d.title.startsWith(PREFIX));
+    const trashF = (T.json.folders || []).filter((f) => f.name === TEST_FOLDER);
+    const trashK = (T.json.kbs || []).filter((k) => k.name === TEST_KB);
+    const cleanAll =
+      left.length === 0 && leftF.length === 0 && leftK.length === 0 &&
+      trashD.length === 0 && trashF.length === 0 && trashK.length === 0;
+    check(
+      "零残留（活跃 + 回收站：文档 + 文件夹 + 目标知识库）",
+      cleanAll,
+      JSON.stringify({
+        live: { docs: left.map((d) => d.title), folders: leftF.map((f) => f.name), kbs: leftK.map((k) => k.name) },
+        trash: { docs: trashD.map((d) => d.title), folders: trashF.map((f) => f.name), kbs: trashK.map((k) => k.name) },
+      }),
+    );
+
+    // ---------- 11) 无异常 ----------
+    check("运行期无未捕获页面异常", errs.length === 0, errs.join(" | "));
+  } catch (e) {
+    fatal = e;
+    console.log("\n❌ 运行期异常中断: " + (e && e.stack ? e.stack.split("\n").slice(0, 3).join(" | ") : String(e)));
+  } finally {
+    // 无论成功、断言失败还是异常中断，夹具一律清掉（清理自身失败不应掩盖主错误）
+    await cleanup().catch(() => {});
   }
-  check(
-    `批量移动真的生效（后端 kb_id 已变为目标库）· 经由 ${movedVia}`,
-    moved,
-    JSON.stringify({ moved, movedVia, targetKbId }),
-  );
 
-  // ---------- 9) 混入无效 id 时跳过而非整批失败 ----------
-  // 移回原库 + 混入一个不存在的 id
-  const res2 = await api("/api/v1/documents/batch-move", "POST", {
-    doc_ids: [docs[0].id, "no-such-doc-id"],
-    kb_id: KB,
-  });
-  const skipOk =
-    res2.status === 200 &&
-    res2.json.count === 1 &&
-    (res2.json.skipped || []).some((s) => s.id === "no-such-doc-id");
-  check(
-    "混入无效 id 时跳过而非整批失败（moved=1, skipped=1）",
-    skipOk,
-    JSON.stringify(res2.json),
-  );
-
-  // ---------- 10) 零残留 ----------
-  await cleanup();
-  const L = await api("/api/v1/documents?limit=500");
-  const left = (L.json.documents || []).filter((d) => d.title && d.title.startsWith(PREFIX));
-  const F = await api("/api/v1/folders?kb_id=" + KB);
-  const leftF = (F.json.folders || []).filter((f) => f.name === TEST_FOLDER);
-  const K = await api("/api/v1/kbs");
-  const leftK = (K.json.kbs || []).filter((k) => k.name === TEST_KB);
-  check(
-    "零残留（文档 + 文件夹 + 目标知识库）",
-    left.length === 0 && leftF.length === 0 && leftK.length === 0,
-    JSON.stringify({
-      docs: left.map((d) => d.title),
-      folders: leftF.map((f) => f.name),
-      kbs: leftK.map((k) => k.name),
-    }),
-  );
-
-  // ---------- 11) 无异常 ----------
-  check("运行期无未捕获页面异常", errs.length === 0, errs.join(" | "));
-
-  console.log("\n" + (fail === 0 ? "全部通过 ✅" : `失败 ${fail} 项 ❌`));
+  console.log("\n" + (fail === 0 && !fatal ? "全部通过 ✅" : `失败 ${fail} 项 ❌`));
   await b.close();
-  process.exit(fail === 0 ? 0 : 1);
+  process.exit(fail === 0 && !fatal ? 0 : 1);
 })();

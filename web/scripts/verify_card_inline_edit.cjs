@@ -71,6 +71,22 @@ async function apiDelete(ids) {
   } catch (e) {
     console.warn(`  ⚠️ 夹具清理异常（可能残留）：${e.message}`);
   }
+  // 🔴 `batch-delete` 是**软删除**（进回收站留 30 天）——必须再 purge 才算真删掉。
+  //    实测：只软删会在回收站累积（曾达 284 条），而「零残留」断言查的是活跃列表，看不见。
+  for (const id of ids.filter(Boolean)) {
+    await fetch(`${API}/trash/document/${id}`, { method: "DELETE", headers: H }).catch(() => {});
+  }
+}
+
+/** 按标题前缀查**回收站**里的残留（软删残留就藏在这里）。 */
+async function apiTrashByPrefix(prefix) {
+  try {
+    const r = await fetch(`${API}/trash`, { headers: H });
+    const all = (await r.json()).documents || [];
+    return all.filter((d) => (d.title || "").startsWith(prefix)).map((d) => d.title);
+  } catch {
+    return ["(查询失败，无法复核)"];
+  }
 }
 
 /** 本次运行创建的文档，结束时清理。 */
@@ -113,10 +129,12 @@ async function buildFixture() {
 }
 
 (async () => {
-  // 自建夹具（无论断言成败都要清理）
-  const [FID, MID, TID, CID] = await buildFixture();
-  console.log("夹具已建: 流程=" + FID.slice(0, 8) + " 导图=" + MID.slice(0, 8) +
-    " 表格=" + TID.slice(0, 8) + " 容器=" + CID.slice(0, 8));
+  // 🔴 夹具 id 先在**外层**声明：`buildFixture()` 自己会抛异常（`apiCreate` 失败即 throw），
+  //    而它此前位于 `try` 之外 —— 于是「建到一半抛错」时，已建的夹具全部绕过 finally，
+  //    永久留在库里。
+  //    实测证据（2026-10-25）：本机曾积 37 个「夹具-容器」+ 37 个「夹具-流程图」，
+  //    但只有 18 个「夹具-表格」。**数量不均**恰好说明是中途抛错，而不是"忘了清"。
+  let FID, MID, TID, CID;
 
   // 夹具建在根级，可直接在文件树点到（不需要搜索，避免走「搜索态一次性渲染」）
   const CONTAINER_TITLE = "夹具-容器";
@@ -132,6 +150,12 @@ async function buildFixture() {
   p.on("pageerror", (e) => errs.push(String(e).slice(0, 150)));
 
   try {
+  // 夹具创建移进 try：这样「建到一半抛错」也会走 finally 清理
+  // （`created` 数组由 buildFixture 逐个 push，已建的部分能被清掉）
+  [FID, MID, TID, CID] = await buildFixture();
+  console.log("夹具已建: 流程=" + FID.slice(0, 8) + " 导图=" + MID.slice(0, 8) +
+    " 表格=" + TID.slice(0, 8) + " 容器=" + CID.slice(0, 8));
+
   await p.goto((process.env.SUNNYDOC_WEB || "http://localhost:3001"), { waitUntil: "domcontentloaded" });
   await p.evaluate((t) => localStorage.setItem("sunnydoc.token", t), TOKEN);
   await p.reload({ waitUntil: "domcontentloaded" });
@@ -322,12 +346,16 @@ async function buildFixture() {
     await apiDelete(created);
     // 主动复核一次：删除接口是「逐项容错」的（不存在/无权限的进 skipped 而非报错），
     // 所以不能只看删除请求成功，必须回来查一遍是否真的没了。
+    // 🔴 **同时核对回收站**：`batch-delete` 是**软删除**，
+    //    只查活跃列表会让「清理没清干净」对断言完全不可见（实测回收站曾积 284 条）。
     const leftover = await apiFindByPrefix("夹具-");
-    if (leftover.length) {
+    const trashLeft = await apiTrashByPrefix("夹具-");
+    if (leftover.length || trashLeft.length) {
       fail++;
-      console.log("  ❌ 夹具清理后仍有残留: " + JSON.stringify(leftover));
+      console.log("  ❌ 夹具清理后仍有残留: " +
+        JSON.stringify({ live: leftover, trash: trashLeft }));
     } else {
-      console.log("  ✅ 夹具已清理干净（复核 0 残留）");
+      console.log("  ✅ 夹具已彻底清理（活跃 + 回收站均 0 残留）");
     }
   }
   console.log("\n" + (fail ? "❌ FAIL = " + fail : "✅ ALL PASS"));

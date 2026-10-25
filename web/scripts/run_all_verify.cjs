@@ -93,4 +93,31 @@ if (failedList.length) {
   console.log("\n失败清单：");
   failedList.forEach((r) => console.log(`  ❌ ${r.file}  —  ${r.note || "未通过"}`));
 }
+
+// ---------- 收尾清扫 ----------
+// 🔴 为什么必须在 runner 层面做（而不是只靠各脚本自己清）：
+//   脚本内的 `finally` 覆盖不到三种情况 ——
+//     ① 建夹具的代码在 try 之外时，抛异常就绕过清理；
+//     ② runner 超时 SIGKILL 杀进程，`finally` 根本不会跑；
+//     ③ 新脚本忘了清。
+//   实测代价（2026-10-25）：本机积了 **165 篇夹具文档**（在活跃列表里，
+//   用户打开知识库满屏垃圾）+ 28 个空 BMV-目标库 + 回收站 35 文件夹/28 知识库，
+//   而各脚本的「零残留」断言**全绿** —— 因为泄漏发生在它们自己看不见的路径上。
+//   清扫只删「确有把握是夹具」的项，判据见 fixture_sweep.cjs 头部。
+if (!skip || !skip.split(",").some((k) => k.trim() === "sweep")) {
+  console.log("\n" + "=".repeat(56));
+  try {
+    execFileSync(process.execPath, [path.join(SCRIPTS_DIR, "fixture_sweep.cjs")], {
+      cwd: path.resolve(SCRIPTS_DIR, ".."),
+      // 显式放行：清扫有「防误删正在运行的回归」保护，runner 内部调用属安全场景
+      env: { ...process.env, SUNNYDOC_SWEEP_FORCE: "1" },
+      timeout: 120_000,
+      encoding: "utf8",
+      stdio: "inherit",
+    });
+  } catch (e) {
+    console.log("⚠️ 夹具清扫未能完成（不影响上面的验证结论）：" + (e.message || "").split("\n")[0]);
+  }
+}
+
 process.exit(failedList.length === 0 ? 0 : 1);
