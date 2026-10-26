@@ -2013,11 +2013,63 @@ def update_user(
 
 
 def delete_user(user_id: str) -> bool:
+    """删除用户，并**级联清理其全部数据**。
+
+    🔴 为什么必须级联（2026-10-26 实测发现）：
+        原先只 `DELETE FROM users`，留下一堆 **owner 已不存在的孤儿数据**。
+        后果比"占空间"严重得多 —— 这些数据**任何用户都看不到也删不掉**：
+        `list_trash(user_id)` / 文档列表查询都按 `user_id` 过滤，
+        而该 user_id 已不存在，于是它们成了**永久不可见的幽灵**。
+        实测本机因此积了 17 个孤儿知识库 + 15 个孤儿文件夹 + 1 篇无主文档
+        （回收站接口返回 0 条，但库表里躺着 17 条），排查时极易误判成"已清干净"。
+
+    `delete_kb` / `delete_folder` 早就做了级联（软删下辖内容），
+    **只有 delete_user 漏了** —— 属遗漏，不是设计选择。
+
+    级联范围（覆盖所有引用 user_id 的表，见 information_schema 审计）：
+        内容类：documents / folders / knowledge_bases（连同其分片）
+        关系类：favorites / recent_views / notifications / comments /
+               kb_shares / audit_logs
+    关系类直接硬删（它们是「用户与该对象的关联」，用户没了就无意义）；
+    内容类也硬删 —— 用户账号已删，其内容不应继续留在库里（软删只会再造孤儿）。
+    """
     conn = _connect()
-    with conn.cursor() as cur:
-        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
-        deleted = cur.rowcount > 0
-    conn.commit()
+    with conn.transaction():
+        with conn.cursor() as cur:
+            # 先记下该用户的文档 id，用于清理向量分片
+            cur.execute("SELECT id FROM documents WHERE user_id = %s", (user_id,))
+            doc_ids = [r[0] for r in cur.fetchall()]
+
+            # 内容类：文档 / 文件夹 / 知识库
+            if doc_ids:
+                cur.execute("DELETE FROM chunks WHERE doc_id = ANY(%s)", (doc_ids,))
+            cur.execute("DELETE FROM documents WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM folders WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM knowledge_bases WHERE user_id = %s", (user_id,))
+
+            # 关系类：全部硬删（用户不存在后这些关联无意义）
+            for table in (
+                "favorites",
+                "recent_views",
+                "notifications",
+                "comments",
+                "kb_shares",
+            ):
+                cur.execute(f"DELETE FROM {table} WHERE user_id = %s", (user_id,))
+            # notifications.actor_id 也指向用户（"谁触发了这条通知"）——
+            # 若不清理，别人收到的通知会指向一个已不存在的用户。
+            cur.execute("DELETE FROM notifications WHERE actor_id = %s", (user_id,))
+
+            # 🔴 **audit_logs 刻意保留**（不随用户删除）：
+            #    审计追溯是合规要求 —— 「某账号在其存续期内做过什么」必须可查，
+            #    删了用户就把操作痕迹抹掉了，那正是审计最需要保留的场景。
+            #    留下的 user_id 会指向已删用户，这是**有意为之**，
+            #    读取时按「用户名已注销」展示即可。
+            #    ⇒ 因此 verify_user_cascade 断言审计日志为「孤儿」是错的判据，
+            #      已从断言中排除（见该脚本注释）。
+
+            cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+            deleted = cur.rowcount > 0
     return deleted
 
 

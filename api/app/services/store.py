@@ -1587,10 +1587,37 @@ class DocStore:
             return db.delete_user(user_id)
         before = len(self._users)
         self._users = [u for u in self._users if u["id"] != user_id]
-        if len(self._users) != before:
-            self._save()
-            return True
-        return False
+        if len(self._users) == before:
+            return False
+        # 🔴 级联清理：只删 users 会留下 **owner 已不存在的孤儿数据**，
+        #    而它们**任何用户都看不到也删不掉**（查询按 user_id 过滤，
+        #    该 id 已不存在 → 永久不可见的幽灵）。
+        #    对照：db 后端同问题（本机曾积 17 孤儿知识库），已一并修复。
+        self._docs = [d for d in self._docs if d.get("user_id") != user_id]
+        self._folders = [f for f in self._folders if f.get("user_id") != user_id]
+        self._kbs = [k for k in self._kbs if k.get("user_id") != user_id]
+        for attr in (
+            "_recent",
+            "_shares",
+            "_favorites",
+            "_comments",
+            "_notifications",
+            # 🔴 `_audit_logs` 刻意不在此列 —— 审计追溯是合规要求，
+            #    「某账号存续期内做过什么」必须留痕，不能随账号删除而抹掉。
+        ):
+            items = getattr(self, attr)
+            # notifications 另有 actor_id 指向用户，两处都要清
+            setattr(
+                self,
+                attr,
+                [
+                    x
+                    for x in items
+                    if x.get("user_id") != user_id and x.get("actor_id") != user_id
+                ],
+            )
+        self._save()
+        return True
 
     # ---------- 文档评论/批注 ----------
 

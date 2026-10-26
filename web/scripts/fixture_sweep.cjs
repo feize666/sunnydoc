@@ -29,12 +29,103 @@
  */
 const fs = require("fs");
 const path = require("path");
+const { execFileSync } = require("child_process");
 
 const API = process.env.SUNNYDOC_API || "http://127.0.0.1:8000";
 const TOKEN =
   process.env.SUNNYDOC_TOKEN ||
   fs.readFileSync(process.env.SUNNYDOC_TOKEN_FILE || "/tmp/sunnydoc-token.txt", "utf8").trim();
 const DRY = process.argv.includes("--dry");
+
+/**
+ * Python 解释器（孤儿检测/清理需要直连 PostgreSQL，走 psycopg）。
+ *
+ * 优先用环境变量；否则探测**项目 venv**（`.venv/bin/python`）——
+ * 它一定装了 psycopg（后端依赖）。直接调 `python3` 有可能指向系统解释器、
+ * 没有 psycopg 而静默失败（那样孤儿检测会被跳过，等于白做）。
+ */
+function resolvePython() {
+  if (process.env.SUNNYDOC_PY) return process.env.SUNNYDOC_PY;
+  const venv = path.resolve(__dirname, "../../api/.venv/bin/python");
+  if (fs.existsSync(venv)) return venv;
+  return "python3";
+}
+const PY = resolvePython();
+
+/**
+ * 检测**孤儿数据**：`user_id` 指向已不存在的用户。
+ *
+ * 🔴 为什么必须单独查库、不能靠 API：这类数据**任何用户都看不到也删不掉** ——
+ *    所有列表/回收站查询都按 `user_id` 过滤，而该 user_id 已不存在，
+ *    于是它们成了**永久不可见的幽灵**。API 返回 `kbs: []` 时库里可能躺着 17 条。
+ *    实测（2026-10-26）：本机因此积了 17 个孤儿知识库 + 15 个孤儿文件夹 + 1 篇无主文档，
+ *    而回收站接口一切正常 —— 只看接口会误判成「已清干净」。
+ *
+ * `audit_logs` **故意排除**：审计追溯是合规要求，
+ * 「某账号存续期内做过什么」必须留痕，不随账号删除而抹掉。
+ */
+function countOrphans() {
+  const py = `
+import json, psycopg
+url = None
+for line in open("${path.resolve(__dirname, "../../api/.env")}"):
+    if line.startswith("DATABASE_URL="):
+        url = line.split("=", 1)[1].strip()
+url = url.replace("postgresql+psycopg://", "postgresql://")
+tables = ["documents", "folders", "knowledge_bases", "favorites",
+          "recent_views", "comments", "kb_shares", "notifications"]
+out = {}
+try:
+    with psycopg.connect(url, connect_timeout=5) as c:
+        with c.cursor() as cur:
+            for t in tables:
+                cur.execute(
+                    f"SELECT count(*) FROM {t} x WHERE NOT EXISTS "
+                    f"(SELECT 1 FROM users u WHERE u.id = x.user_id)"
+                )
+                out[t] = cur.fetchone()[0]
+except Exception as e:
+    out["error"] = str(e)[:150]
+print(json.dumps(out))
+`;
+  try {
+    const out = execFileSync(PY, ["-c", py], { encoding: "utf8", timeout: 30000 });
+    return JSON.parse(out.trim());
+  } catch (e) {
+    return { error: String(e.message || e).slice(0, 150) };
+  }
+}
+
+/** 清理孤儿数据（直接删库：API 层够不着它们）。 */
+function purgeOrphans() {
+  const py = `
+import psycopg
+url = None
+for line in open("${path.resolve(__dirname, "../../api/.env")}"):
+    if line.startswith("DATABASE_URL="):
+        url = line.split("=", 1)[1].strip()
+url = url.replace("postgresql+psycopg://", "postgresql://")
+n = 0
+with psycopg.connect(url, connect_timeout=5) as c:
+    with c.cursor() as cur:
+        # 先清孤儿文档的向量分片
+        cur.execute("DELETE FROM chunks WHERE doc_id IN (SELECT id FROM documents d "
+                    "WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = d.user_id))")
+        for t in ("documents", "folders", "knowledge_bases", "favorites",
+                  "recent_views", "comments", "kb_shares", "notifications"):
+            cur.execute(f"DELETE FROM {t} x WHERE NOT EXISTS "
+                        f"(SELECT 1 FROM users u WHERE u.id = x.user_id)")
+            n += cur.rowcount
+    c.commit()
+print(n)
+`;
+  try {
+    const out = execFileSync(PY, ["-c", py], { encoding: "utf8", timeout: 60000 });
+    return parseInt(out.trim(), 10) || 0;
+  } catch {
+    return -1;
+  }
+}
 
 /**
  * 夹具文档标题前缀 —— **从各脚本源码自动提取**，而非硬编码列表。
@@ -153,11 +244,30 @@ const isFixtureDoc = (d) => {
       `知识库 ${(tr.kbs || []).length}（夹具 ${trKbs.length}）`,
   );
 
+  // 孤儿数据（owner 用户已不存在）—— **API 层完全看不到**，只能直查库。
+  const orphansBefore = countOrphans();
+  const orphanTotal = orphansBefore.error
+    ? -1
+    : Object.values(orphansBefore).reduce((a, b) => a + b, 0);
+  if (orphanTotal > 0) {
+    console.log(
+      `\n🔴 孤儿数据 ${orphanTotal} 条（owner 用户已不存在）: ` +
+        Object.entries(orphansBefore)
+          .filter(([, v]) => v > 0)
+          .map(([k, v]) => `${k}=${v}`)
+          .join(" · "),
+    );
+    console.log("    这类数据**任何用户都看不到也删不掉**（查询按 user_id 过滤）");
+  } else if (orphansBefore.error) {
+    console.log(`⚠️ 孤儿检测跳过（无法连库）: ${orphansBefore.error.slice(0, 80)}`);
+  }
+
   if (DRY) {
     console.log("\n--dry：以下将被删除");
     for (const d of targets.slice(0, 40)) console.log(`  文档 ${JSON.stringify(d.title)}`);
     if (targets.length > 40) console.log(`  ... 另 ${targets.length - 40} 篇`);
     for (const k of kbTargets) console.log(`  知识库 ${k.name}`);
+    if (orphanTotal > 0) console.log(`  孤儿数据 ${orphanTotal} 条（直查库删除）`);
     return;
   }
 
@@ -181,6 +291,12 @@ const isFixtureDoc = (d) => {
   for (const d of trDocs) bump((await j("/api/v1/trash/document/" + d.id, "DELETE")).status < 400);
   for (const f of trFolds) bump((await j("/api/v1/trash/folder/" + f.id, "DELETE")).status < 400);
   for (const k of trKbs) bump((await j("/api/v1/trash/kb/" + k.id, "DELETE")).status < 400);
+  // 4) 孤儿数据：API 够不着，直查库删除
+  if (orphanTotal > 0) {
+    const n = purgeOrphans();
+    console.log(`孤儿数据清除 ${n < 0 ? "失败" : n + " 条"}`);
+    bump(n > 0);
+  }
 
   console.log(`\n清除 ${ok} 项${bad ? `，失败 ${bad} 项` : ""}`);
 
@@ -195,9 +311,17 @@ const isFixtureDoc = (d) => {
   const leftKb = ((await j("/api/v1/kbs")).json?.kbs || []).filter(
     (k) => FIXTURE_KB_NAMES.has(k.name) && !(k.doc_count || 0),
   ).length;
+  // 孤儿复核：API 复核看不到它们，必须再直查一次库
+  const orphansAfter = countOrphans();
+  const orphanLeft = orphansAfter.error
+    ? 0
+    : Object.values(orphansAfter).reduce((a, b) => a + b, 0);
 
-  console.log(`复核: 活跃夹具 ${leftDocs.length} 篇 · 活跃夹具库 ${leftKb} 个 · 回收站夹具 ${leftTr} 项`);
-  if (leftDocs.length || leftKb || leftTr) {
+  console.log(
+    `复核: 活跃夹具 ${leftDocs.length} 篇 · 活跃夹具库 ${leftKb} 个 · ` +
+      `回收站夹具 ${leftTr} 项 · 孤儿数据 ${orphanLeft} 条`,
+  );
+  if (leftDocs.length || leftKb || leftTr || orphanLeft) {
     console.log("⚠️ 仍有残留（见上）");
     process.exit(1);
   }
