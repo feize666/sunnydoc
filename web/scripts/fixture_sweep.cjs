@@ -154,6 +154,11 @@ function extractFixtureNames() {
       let m;
       while ((m = re.exec(s))) names.add(m[1]);
     }
+    // 上传类夹具：标题来自**文件名**（如 `form.append("file", ..., "import-ok.md")`
+    // → 导入后文档标题就是 `import-ok`）。这类值不在变量赋值里，需单独扫。
+    const fileArg = /append\(\s*"file"[\s\S]{0,120}?"([A-Za-z0-9._-]+)\.(md|txt|csv|xlsx?|json)"\s*\)/g;
+    let fm;
+    while ((fm = fileArg.exec(s))) names.add(fm[1]);
   }
   // 过滤噪音：UI 文案（纯短词、无分隔符、非前缀式命名）一律排除。
   // 夹具命名的可辨识特征是「含分隔符」或「长度 ≥4 且带测试意图词」。
@@ -166,16 +171,31 @@ function extractFixtureNames() {
 }
 
 const DOC_PREFIXES = [
-  // 兜底：即使源码提取失败也保留这组（来自历史脚本的已知夹具）
+  // 兜底：即使源码提取失败也保留这组（来自历史脚本的已知夹具）。
+  // ⚠️ 这里只放**确有把握是夹具**的：
+  //    - `import-ok` 来自上传验证的文件名（已积 14 篇）
+  //    - `TAG-fix-` / `TAGDBG-` / `TMP-` / `SHARE2-TMP` 来自标签与分享脚本
+  //    - `note` / `page` 来自模板/页面脚本（**精确匹配**，见 DOC_EXACT）
   "夹具-", "嵌入测试-", "slash验证-", "锚点验证-", "BMV-", "IDZ-", "verify-", "验证-",
+  "卡片远置测试-", "卡片迟到测试-", "卡片高度测试-", "远置-", "切换测试-",
+  "import-ok", "TAG-fix-", "TAGDBG-", "TMP-", "SHARE2-TMP", "大文档卡片来源",
   ...extractFixtureNames(),
 ];
+/**
+ * **精确匹配**（不是前缀）的夹具标题。
+ *
+ * 为什么与 DOC_PREFIXES 分开：`note`、`page`、`strict` 这类**短且通用**的词，
+ * 用前缀匹配会误伤用户真实文档（如「notebook 使用笔记」）。
+ * 实测教训：本机有用户的真实运维文档 `01-Git` / `02-CDN` / `vcenter`，
+ * 与夹具混在同一批"非中文标题"里 —— 判据必须能区分它们。
+ */
+const DOC_EXACT = new Set(["import-ok", "note", "page", "strict"]);
 /** 「未命名 xxx」类夹具：仅当内容极短时才认（避免误删用户新建的真空文档）。 */
 const UNNAMED_PREFIXES = ["未命名表格", "未命名文档"];
 const UNNAMED_MAX_LEN = 60;
 /** 夹具知识库 / 文件夹名（精确匹配，且必须 0 篇文档）。 */
 const FIXTURE_KB_NAMES = new Set(["BMV-目标库", "IDZ-KB", "verify-KB"]);
-const FIXTURE_FOLDER_NAMES = new Set(["BMV-夹具目录"]);
+const FIXTURE_FOLDER_NAMES = new Set(["BMV-夹具目录", "IDZ-FLD", "FLD-TEST"]);
 
 const H = { Authorization: "Bearer " + TOKEN, "Content-Type": "application/json" };
 
@@ -195,7 +215,11 @@ async function j(path, method = "GET", body) {
 
 const isFixtureDoc = (d) => {
   const t = String(d.title || "");
-  if (DOC_PREFIXES.some((p) => t.startsWith(p))) return true;
+  // 去掉「(2)」这类自动去重后缀 —— 新建同名文档时后端会加，夹具因此越积越多
+  // （实测 `import-ok` 积到 `import-ok(14)`）
+  const base = t.replace(/\(\d+\)$/, "").trim();
+  if (DOC_PREFIXES.some((p) => t.startsWith(p) || base.startsWith(p))) return true;
+  if (DOC_EXACT.has(base)) return true;
   if (UNNAMED_PREFIXES.some((p) => t.startsWith(p)) && String(d.text || "").length <= UNNAMED_MAX_LEN) {
     return true;
   }
