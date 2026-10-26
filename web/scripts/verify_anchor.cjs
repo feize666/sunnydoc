@@ -379,11 +379,27 @@ const purgeDoc = async (id) => {
     .dispatchEvent("click");
   await sleep(1500);
   const m5 = await marks();
-  const plainCount = await p.evaluate(
-    () => document.querySelectorAll("aside.fixed li[data-comment-id]").length,
-  );
   check("普通评论（无引用）不在正文打标", m5.length === 0, JSON.stringify(m5));
-  check("普通评论仍进入评论列表", plainCount >= 2, "评论数 = " + plainCount);
+  // 🔴 必须**轮询等待**列表更新，不能只等固定时长后再数一次。
+  //    发布后前端要重新拉 `listComments` 并重渲染，固定 1500ms 在慢环境/夹具多时
+  //    会数到旧值（实测出现过「评论数 = 1」的假失败，而库里其实已有 2 条）。
+  //    判据本身没错，错在"只采样一次"——改为采到期望值或超时。
+  const plainCount = await (async () => {
+    let n = 0;
+    for (let i = 0; i < 24; i++) {
+      n = await p.evaluate(
+        () => document.querySelectorAll("aside.fixed li[data-comment-id]").length,
+      );
+      if (n >= 2) break;
+      await sleep(300);
+    }
+    return n;
+  })();
+  check(
+    "普通评论仍进入评论列表",
+    plainCount >= 2,
+    `评论数 = ${plainCount}（轮询约 7s 后仍不足 2 —— 若库里确有 2 条，说明渲染未跟上）`,
+  );
 
   } catch (e) {
     fail++;

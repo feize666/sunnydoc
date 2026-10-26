@@ -84,6 +84,14 @@ try:
                     f"(SELECT 1 FROM users u WHERE u.id = x.user_id)"
                 )
                 out[t] = cur.fetchone()[0]
+            # 孤儿评论：**文档已删除**但评论还在。
+            # 严格说这不算「用户孤儿」，但同属"指向已消失对象"的残留，
+            # 且实测会误导后续断言（评论数对不上）。一起统计。
+            cur.execute(
+                "SELECT count(*) FROM comments cm WHERE NOT EXISTS "
+                "(SELECT 1 FROM documents d WHERE d.id = cm.doc_id AND d.deleted_at IS NULL)"
+            )
+            out["orphan_comments"] = cur.fetchone()[0]
 except Exception as e:
     out["error"] = str(e)[:150]
 print(json.dumps(out))
@@ -116,6 +124,10 @@ with psycopg.connect(url, connect_timeout=5) as c:
             cur.execute(f"DELETE FROM {t} x WHERE NOT EXISTS "
                         f"(SELECT 1 FROM users u WHERE u.id = x.user_id)")
             n += cur.rowcount
+        # 孤儿评论（指向已删除文档）
+        cur.execute("DELETE FROM comments cm WHERE NOT EXISTS "
+                    "(SELECT 1 FROM documents d WHERE d.id = cm.doc_id AND d.deleted_at IS NULL)")
+        n += cur.rowcount
     c.commit()
 print(n)
 `;
@@ -178,7 +190,8 @@ const DOC_PREFIXES = [
   //    - `note` / `page` 来自模板/页面脚本（**精确匹配**，见 DOC_EXACT）
   "夹具-", "嵌入测试-", "slash验证-", "锚点验证-", "BMV-", "IDZ-", "verify-", "验证-",
   "卡片远置测试-", "卡片迟到测试-", "卡片高度测试-", "远置-", "切换测试-",
-  "import-ok", "TAG-fix-", "TAGDBG-", "TMP-", "SHARE2-TMP", "大文档卡片来源",
+  "卡片观感-", "卡片五类型-", "卡片容器文档", "大文档卡片来源",
+  "import-ok", "TAG-fix-", "TAGDBG-", "TMP-", "SHARE2-TMP",
   ...extractFixtureNames(),
 ];
 /**
