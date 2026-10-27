@@ -210,6 +210,19 @@ const UNNAMED_MAX_LEN = 60;
 const FIXTURE_KB_NAMES = new Set(["BMV-目标库", "IDZ-KB", "verify-KB"]);
 const FIXTURE_FOLDER_NAMES = new Set(["BMV-夹具目录", "IDZ-FLD", "FLD-TEST"]);
 
+/**
+ * 夹具**标签**名（前缀匹配）。
+ *
+ * 为什么单独一套判据：标签是独立实体（存在 `documents.tags` 里），
+ * 不在文档标题空间 —— 文档清扫覆盖不到它。
+ * 实测（2026-10-27）：侧栏一直挂着一个 `TAGD-标签`（标签脚本的残留），
+ * 而清扫脚本此前**完全不处理标签**，所以它长期没人清。
+ *
+ * 判据要求「带分隔符的测试前缀」：`TAGD-` / `TGM-` / `TAG-`，
+ * 避免误伤用户自己打的中文标签（如「监控」「数据库」）。
+ */
+const FIXTURE_TAG_PREFIXES = ["TAGD-", "TGM-", "TAG-", "TAGDBG-", "TAG-fix-", "TMP-TAG"];
+
 const H = { Authorization: "Bearer " + TOKEN, "Content-Type": "application/json" };
 
 async function j(path, method = "GET", body) {
@@ -260,6 +273,15 @@ const isFixtureDoc = (d) => {
   const targets = docs.filter(isFixtureDoc);
   console.log(`活跃文档 ${docs.length} 篇，其中判定为夹具 ${targets.length} 篇`);
 
+  // 夹具**标签**：独立实体，文档清扫覆盖不到。
+  // 标签通过文档的 `tags` 字段关联，清除方式是从所有文档上摘掉该标签。
+  const tagResp = (await j("/api/v1/tags")).json || {};
+  const allTags = (tagResp.tags || []).map((t) => (typeof t === "string" ? t : t.name));
+  const tagTargets = allTags.filter((n) => FIXTURE_TAG_PREFIXES.some((p) => String(n).startsWith(p)));
+  if (allTags.length || tagTargets.length) {
+    console.log(`标签 ${allTags.length} 个，其中夹具 ${tagTargets.length} 个${tagTargets.length ? "：" + tagTargets.join(" / ") : ""}`);
+  }
+
   const kbs = (await j("/api/v1/kbs")).json?.kbs || [];
   const kbTargets = kbs.filter((k) => FIXTURE_KB_NAMES.has(k.name) && !(k.doc_count || 0));
   const kbProtected = kbs.filter((k) => FIXTURE_KB_NAMES.has(k.name) && (k.doc_count || 0) > 0);
@@ -304,6 +326,7 @@ const isFixtureDoc = (d) => {
     for (const d of targets.slice(0, 40)) console.log(`  文档 ${JSON.stringify(d.title)}`);
     if (targets.length > 40) console.log(`  ... 另 ${targets.length - 40} 篇`);
     for (const k of kbTargets) console.log(`  知识库 ${k.name}`);
+    for (const t of tagTargets) console.log(`  标签 ${JSON.stringify(t)}`);
     if (orphanTotal > 0) console.log(`  孤儿数据 ${orphanTotal} 条（直查库删除）`);
     return;
   }
@@ -334,6 +357,28 @@ const isFixtureDoc = (d) => {
     console.log(`孤儿数据清除 ${n < 0 ? "失败" : n + " 条"}`);
     bump(n > 0);
   }
+  // 5) 夹具标签：标签不是独立记录，而是挂在文档的 `tags` 字段上
+  //    ⇒ 逐个文档摘掉命中前缀的标签（用 PUT /documents/{id}/tags 覆写整份标签数组）
+  //
+  // 🔴 **一次遍历删掉全部命中标签，不能「按标签逐个遍历」**。
+  //    实测踩过（2026-10-27）：先删 A 再删 B 时，两次 PUT 都基于**同一份旧快照**
+  //    `[A, B, 用户标签]` —— 删 A 时写回 `[B, 用户标签]`，
+  //    删 B 时又写回 `[A, 用户标签]`，把 A 复活了。
+  //    表现为"日志说摘除了，实际还在"，且**复核能抓到**（吊销 1 个残留标签）。
+  //    ⇒ 每篇文档只写一次，写入值是「去掉全部夹具标签后的剩余」。
+  const isFixtureTag = (t) => FIXTURE_TAG_PREFIXES.some((p) => String(t).startsWith(p));
+  if (tagTargets.length) {
+    let touched = 0;
+    for (const d of docs) {
+      const tags = Array.isArray(d.tags) ? d.tags : [];
+      const kept = tags.filter((t) => !isFixtureTag(t));
+      if (kept.length === tags.length) continue; // 没有夹具标签，跳过（避免无谓写）
+      const r = await j(`/api/v1/documents/${d.id}/tags`, "PUT", { tags: kept });
+      if (r.status < 400) touched++;
+    }
+    console.log(`已从 ${touched} 篇文档摘除夹具标签（共 ${tagTargets.length} 种）`);
+    bump(touched > 0);
+  }
 
   console.log(`\n清除 ${ok} 项${bad ? `，失败 ${bad} 项` : ""}`);
 
@@ -353,12 +398,17 @@ const isFixtureDoc = (d) => {
   const orphanLeft = orphansAfter.error
     ? 0
     : Object.values(orphansAfter).reduce((a, b) => a + b, 0);
+  // 标签复核：夹具标签应已从所有文档上摘除
+  const tagsAfter = ((await j("/api/v1/tags")).json?.tags || []).map((t) =>
+    typeof t === "string" ? t : t.name,
+  );
+  const tagLeft = tagsAfter.filter((n) => FIXTURE_TAG_PREFIXES.some((p) => String(n).startsWith(p)));
 
   console.log(
     `复核: 活跃夹具 ${leftDocs.length} 篇 · 活跃夹具库 ${leftKb} 个 · ` +
-      `回收站夹具 ${leftTr} 项 · 孤儿数据 ${orphanLeft} 条`,
+      `回收站夹具 ${leftTr} 项 · 孤儿数据 ${orphanLeft} 条 · 夹具标签 ${tagLeft.length} 个`,
   );
-  if (leftDocs.length || leftKb || leftTr || orphanLeft) {
+  if (leftDocs.length || leftKb || leftTr || orphanLeft || tagLeft.length) {
     console.log("⚠️ 仍有残留（见上）");
     process.exit(1);
   }
