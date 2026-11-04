@@ -520,6 +520,39 @@ _SEARCH_TERM_MIN = 2
 # 是否含中日韩统一表意文字 —— 决定该片段走「分词 OR」还是「精确子串」
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 
+# 疑问/口语填充词：这些词**本身不承载检索意图**，但散落在查询里时
+# 会作为一个 AND 分组把结果全部过滤掉。
+#
+# 🔴 实测缺陷（2026-11-04）：
+#    「怎么用 traefik 做入口路由」→ **0 条**，而「traefik」单独 → 13 条；
+#    「ansible playbook 怎么写」→ **0 条**，而「ansible playbook」→ 9 条。
+#    根因是**按空白分组做 AND**，而中文用户习惯在问句里带上「怎么写」「怎么用」
+#    「做…」这类口语成分 —— 文档正文里当然不会出现「怎么写」，
+#    于是这一组恒定无命中，整条查询被 AND 归零。
+#
+#    更隐蔽的一条链路：`怎么写` 被 jieba 切成 `['怎么','写']`，
+#    「怎么」被停用词过滤、只剩单字「写」又被 `_SEARCH_TERM_MIN` 滤掉，
+#    于是 559 行那条「分组空了就退回原串」的兜底把它还原成 `['怎么写']`
+#    —— **兜底把已经被正确丢弃的词又救回来了**。
+_QUERY_FILLERS = {
+    "怎么写", "怎么用", "怎么写", "怎用", "怎么搞", "怎么弄", "怎么做",
+    "如何写", "如何用", "如何做", "如何搞",
+    "怎么回事", "是什么", "有哪些", "有什么",
+    "一下", "帮忙", "帮忙看", "请问", "请教", "想问",
+    "做", "用", "搞", "弄", "写",
+}
+
+
+def _is_filler(term: str) -> bool:
+    """该词是否只是口语填充、不承载检索意图。"""
+    t = term.strip().lower()
+    if not t:
+        return True
+    if t in _QUERY_FILLERS:
+        return True
+    # 纯虚词组合（如「怎么用」再切一次仍是 filler）
+    return all(ch in "怎么如何用写作搞弄吗呢吧的啊" for ch in t)
+
 
 def _search_groups(query: str) -> list[list[str]]:
     """把查询拆成「AND 分组」，每组内是「OR 候选词」。
@@ -555,6 +588,7 @@ def _search_groups(query: str) -> list[list[str]]:
     引号包裹的片段整段保留为一个词（给用户一条显式的原样匹配途径）。
     """
     groups: list[list[str]] = []
+    filler_groups: list[list[str]] = []  # 被丢弃的口语填充分组（全空时还原用）
     quoted = re.findall(r'"([^"]+)"', query)
     rest = re.sub(r'"[^"]*"', " ", query)
 
@@ -572,13 +606,22 @@ def _search_groups(query: str) -> list[list[str]]:
             terms = [raw]
         # 去重但保序（同一词多次出现不重复计分）
         seen: set[str] = set()
-        groups.append([t for t in terms if not (t in seen or seen.add(t))])
+        group = [t for t in terms if not (t in seen or seen.add(t))]
+        # 丢弃「纯口语填充」分组（见 `_QUERY_FILLERS` 处的实测说明）。
+        # ⚠️ 但要记下它，最后若**所有分组都被丢弃**则整套还原 ——
+        #    否则用户只输入「怎么写」这种查询会得到「无条件全匹配」的荒谬结果。
+        if all(_is_filler(t) for t in group):
+            filler_groups.append(group)
+            continue
+        groups.append(group)
 
     for q in quoted:
         t = q.strip().lower()
         if t:
             groups.append([t])
-    return groups
+    # 全被填充词吃掉时（如只搜「怎么写」）→ 退回未过滤的版本，
+    # 保持「输入什么就搜什么」的可预期语义，绝不退化成"匹配全部"。
+    return groups or filler_groups
 
 
 def _search_terms(groups: list[list[str]]) -> list[str]:
