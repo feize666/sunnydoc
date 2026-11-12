@@ -4,10 +4,33 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
+
+# 🔴 **超时必须是「总时长」语义，不能只给一个 60.0**
+#
+# 实测缺陷（2026-11-10）：并发问 4 个问题时，其中一个
+# 「nginx 做负载均衡有哪些调度算法？」卡了 **1352 秒（22.5 分钟）**，
+# 其余三个 5~8 秒。查下来根因是 `timeout=60.0` 的语义被误解：
+#
+#   httpx.Timeout(60.0)  →  connect=60, read=60, write=60, pool=60
+#
+# 这是**分阶段**超时：`read=60` 是「**每次**从 socket 读的间隔上限」，
+# 不是整条请求的总时长。只要服务端每 59 秒吐一个 token，
+# 请求就**永远不会超时**（流式场景尤其致命；非流式在慢吐字/网关抖动时同样会拖到分钟级）。
+#
+# ⇒ 非流式请求限制 `read` 间隔 **并且**在外层用 `_call_deadline()` 兜总时长。
+#    流式不能砍总时长（长回答本就该耗时），但 `read` 收紧到 45s：
+#    正常的 token 间隔是毫秒级，45 秒没有任何数据进来就是真的卡住了。
+LLM_TIMEOUT = httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=10.0)
+LLM_STREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=45.0, write=30.0, pool=10.0)
+# 非流式调用的**总时长**上限（秒）。超过即判失败并降级，
+# 绝不让一次问答把线程占住几分钟。
+LLM_TOTAL_DEADLINE = 120.0
 
 from app.core.config import ai_config
 
@@ -127,6 +150,45 @@ def _check_response(resp: httpx.Response) -> None:
         raise LLMError(resp.status_code, (detail or "")[:400])
 
 
+def _post_with_deadline(url: str, headers: dict, payload: dict) -> httpx.Response:
+    """非流式 POST，带**总时长**硬上限。
+
+    为什么需要（2026-11-10 实测）：
+        `httpx` 的 timeout 是**分阶段**的 —— `read=60` 表示"每次读取的间隔上限"，
+        不是整条请求的总时长。服务端慢速吐字 / 网关半死不断连时，
+        请求会远超 60 秒。实测出现过**单次问答卡 1352 秒（22.5 分钟）**。
+
+    做法：把请求放进**独立线程**，主线程 `future.result(timeout=...)` 到点就放弃。
+        ⚠️ 放弃后那个线程仍会跑到 httpx 自己的 read 超时为止（Python 无法强杀线程），
+        但它**不再占用调用方的等待时间** —— 用户侧体验变成
+        "最多等 120 秒然后降级"，而不是"卡 22 分钟"。
+    """
+    future = _deadline_pool().submit(
+        httpx.post, url, headers=headers, json=payload, timeout=LLM_TIMEOUT
+    )
+    try:
+        return future.result(timeout=LLM_TOTAL_DEADLINE)
+    except FuturesTimeout as e:
+        future.cancel()
+        raise LLMError(-1, f"大模型响应超时（超过 {int(LLM_TOTAL_DEADLINE)} 秒未返回）") from e
+    except httpx.HTTPError as e:
+        raise LLMError(-1, f"网络异常: {e}") from e
+
+
+_DEADLINE_POOL: ThreadPoolExecutor | None = None
+# 并发上限略大于并发问答数（uvicorn 单进程多线程，给 8 足够）
+_DEADLINE_POOL_MAX = 8
+
+
+def _deadline_pool() -> ThreadPoolExecutor:
+    global _DEADLINE_POOL
+    if _DEADLINE_POOL is None:
+        _DEADLINE_POOL = ThreadPoolExecutor(
+            max_workers=_DEADLINE_POOL_MAX, thread_name_prefix="llm-deadline"
+        )
+    return _DEADLINE_POOL
+
+
 def generate(
     query: str,
     contexts: list[str],
@@ -137,17 +199,16 @@ def generate(
         return None
     history = history or []
     try:
-        resp = httpx.post(
+        resp = _post_with_deadline(
             _url(),
-            headers=_auth_header(),
-            json={
+            _auth_header(),
+            {
                 "model": _model_or_err(),
                 "messages": _build_messages(query, contexts, history),
                 "temperature": 0.3,
                 "max_tokens": 800,
                 "stream": False,
             },
-            timeout=60.0,
         )
         _check_response(resp)
         data: dict[str, Any] = resp.json()
@@ -184,7 +245,7 @@ def summarize(text: str) -> str | None:
                 "max_tokens": 200,
                 "stream": False,
             },
-            timeout=60.0,
+            timeout=LLM_TIMEOUT,
         )
         _check_response(resp)
         data: dict[str, Any] = resp.json()
@@ -250,7 +311,7 @@ def assist(action: str, text: str) -> str | None:
                 "max_tokens": 1200,
                 "stream": False,
             },
-            timeout=60.0,
+            timeout=LLM_TIMEOUT,
         )
         _check_response(resp)
         data: dict[str, Any] = resp.json()
@@ -279,7 +340,7 @@ def _generate_json(system: str, user: str, max_tokens: int = 2000) -> dict:
                 "max_tokens": max_tokens,
                 "stream": False,
             },
-            timeout=90.0,
+            timeout=LLM_TIMEOUT,
         )
         _check_response(resp)
         data = resp.json()
@@ -363,7 +424,7 @@ def generate_stream(
                 "max_tokens": 800,
                 "stream": True,
             },
-            timeout=60.0,
+            timeout=LLM_STREAM_TIMEOUT,
         ) as resp:
             if resp.status_code >= 400:
                 detail = ""
