@@ -701,7 +701,7 @@ class DocStore:
         return docs
 
     def all(
-        self, kb_id: str | None = None, user_id: str | None = None, with_chunks: bool = True
+        self, kb_id: str | None = None, user_id: str | None = None, with_chunks: bool = False
     ) -> list[dict[str, Any]]:
         """返回用户可见的文档（知识库级可见性）。
 
@@ -709,6 +709,14 @@ class DocStore:
         - kb_id 为空、user_id 提供：返回可访问知识库下的全部文档 + 自有且未归属 kb 的文档。
         - user_id 为空：返回全部（内部/未登录场景）。
         - with_chunks=False：跳过 chunks/向量，用于搜索、统计等只读标题/正文的场景。
+
+        🔴 **默认值必须是 False**（2026-11-12 实测）：
+            原先默认 True，实测代价是 **5,643ms vs 91ms（62 倍）** ——
+            True 会把全部 291 篇的 **40,242 个分片连同向量**一次性拉进内存。
+            而生产链路里**没有任何一处**真的需要分片（检索走 `db.search_chunks`
+            在 SQL 层做向量比较；列表/统计/导出全部只要元数据）。
+            默认 True 是个**等着被踩的陷阱**：任何新调用忘记传参，列表页就卡 5.6 秒。
+            确实需要分片的场景（仅测试与 JSON 后端兼容路径）请显式传 True。
         """
         if self._backend == "db":
             if kb_id is not None:

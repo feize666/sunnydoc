@@ -620,12 +620,17 @@ def add_document(doc: dict[str, Any]) -> dict[str, Any]:
 
 
 def all_documents(
-    kb_id: str | None = None, user_id: str | None = None, with_chunks: bool = True
+    kb_id: str | None = None, user_id: str | None = None, with_chunks: bool = False
 ) -> list[dict[str, Any]]:
-    """返回全部文档（默认含 chunks 与向量），结构与 JSON 存储保持一致。
+    """返回全部文档，结构与 JSON 存储保持一致。
 
     kb_id / user_id 提供时按对应维度过滤。with_chunks=False 时跳过 chunks/向量加载，
     用于搜索、统计等只读标题/正文的场景，避免反序列化向量带来的开销。
+
+    🔴 **默认改为 False**（2026-11-12 实测）：True 时实测 **5,643ms**，
+    False 时 **91ms** —— 差 62 倍，因为要反序列化全部 40,242 个向量。
+    生产链路无一处需要分片（检索走 `search_chunks` 在 SQL 层完成），
+    需要时请显式传 True（仅测试与兼容路径）。
     """
     conn = _connect()
     with conn.cursor() as cur:
