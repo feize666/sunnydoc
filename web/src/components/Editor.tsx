@@ -728,6 +728,14 @@ export function Editor({
   }, [mode, doc?.key]);
 
   // 多人协作：订阅文档 SSE（presence 在线列表 + 他人保存事件）
+  //
+  // ⚠️ 依赖里**不能放 `onRemoteUpdate` 本身**：宿主 page.tsx 传的是内联箭头函数
+  //    （`activeKey ? () => refreshDoc(activeKey) : undefined`），每次父组件渲染都是新引用
+  //    → effect 反复重跑 → SSE 被反复重连（实测一次打开文档发了 **3 次** `events/collab`）。
+  //    改成 ref 持有最新引用、依赖只留 `doc?.key` / `currentUserId`。
+  const onRemoteUpdateRef = useRef(onRemoteUpdate);
+  onRemoteUpdateRef.current = onRemoteUpdate;
+
   useEffect(() => {
     if (!doc?.key) return;
     setCollabPresence([]);
@@ -742,7 +750,7 @@ export function Editor({
       } else if (t === "doc_updated") {
         // 他人在别的标签页/设备保存：预览态自动刷新，编辑态提示避免覆盖
         if (modeRef.current === "preview") {
-          onRemoteUpdate?.();
+          onRemoteUpdateRef.current?.();
         } else {
           const who = (event.updated_by as { nickname?: string } | undefined)?.nickname || "其他用户";
           setCollabNotice(`${who} 更新了本文档`);
@@ -753,7 +761,7 @@ export function Editor({
     });
     return () => sub.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc?.key, currentUserId, onRemoteUpdate]);
+  }, [doc?.key, currentUserId]);
 
   // Ctrl/Cmd+S 保存
   useEffect(() => {
@@ -914,10 +922,11 @@ export function Editor({
     setConflict(null);
     setMode("preview");
     // 通知宿主重新拉取（Editor 本身不持有文档源，由 page.tsx 负责刷新）
-    onRemoteUpdate?.();
+    // 走 ref：`onRemoteUpdate` 是宿主的内联箭头函数，放进依赖会让本 callback 每次都重建。
+    onRemoteUpdateRef.current?.();
     toast.info("已采用对方版本");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc, onRemoteUpdate, toast]);
+  }, [doc, toast]);
 
   // handleSave 的最新引用：供防抖回调与 blur 回调调用。
   // 不把 handleSave 写进那些 effect 的依赖数组 —— 它依赖 draft/draftTitle，

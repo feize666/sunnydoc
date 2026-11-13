@@ -627,11 +627,19 @@ class DocStore:
             if title is not _UNSET:
                 doc["title"] = title
             if text is not _UNSET:
+                # 旧正文要在覆盖前留一份：判断「原本有没有分片」只能看旧值，
+                # 覆盖后 doc["text"] 已是新文本（写成 if doc.get("text") 就变成永真）。
+                had_old_text = bool(doc.get("text"))
                 doc["text"] = text
                 # 带上改动前的分片：增量向量化只重算真正变了的片段。
                 # 自动保存每 1.5s 就可能触发一次，全量重嵌在长文档上是不可接受的。
+                #
+                # ⚠️ 旧分片**按需加载**：这是全站唯一真正需要向量的地方。
+                #    `get()` 默认不加载（带向量取 3156 片要 394ms / 4.5ms，88 倍），
+                #    否则「只改标题、拖拽排序」也会白发这笔钱。
+                previous = db.load_chunks(doc_id) if had_old_text else []
                 doc["chunks"] = self._build_chunks(
-                    text, kind=doc.get("type", "doc"), previous=doc.get("chunks")
+                    text, kind=doc.get("type", "doc"), previous=previous
                 )
             if folder_id is not _UNSET:
                 doc["folder_id"] = folder_id
@@ -744,9 +752,18 @@ class DocStore:
             return [{k: v for k, v in d.items() if k != "chunks"} for d in docs]
         return docs
 
-    def get(self, doc_id: str, user_id: str | None = None) -> dict[str, Any] | None:
+    def get(
+        self, doc_id: str, user_id: str | None = None, with_chunks: bool = False
+    ) -> dict[str, Any] | None:
+        """取单篇文档。
+
+        ⚠️ `with_chunks` 默认 **False** —— 分片带 1024 维向量，加载极贵
+        （实测 3156 分片的文档 394ms，不带只要 4.5ms，**88 倍**）。
+        28 处调用里只有 `update()` 在**改正文**时需要旧向量做增量复用，
+        其余全是权限校验/取正文，一律不该付这个钱。
+        """
         if self._backend == "db":
-            doc = db.get_document(doc_id)
+            doc = db.get_document(doc_id, with_chunks=with_chunks)
         else:
             doc = next(
                 (d for d in self._docs if d["id"] == doc_id and not d.get("deleted_at")),

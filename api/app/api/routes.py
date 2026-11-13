@@ -1376,7 +1376,12 @@ def remove_favorite(doc_id: str, current_user: dict = Depends(get_current_user))
 
 @router.get("/favorites")
 def list_favorites(current_user: dict = Depends(get_current_user)):
-    """收藏列表（返回收藏的文档 meta）。"""
+    """收藏列表（返回收藏的文档 meta）。
+
+    ⚠️ 这里是 **N+1 查询**：`doc_ids` 有 N 个就发 N 次 `store.get`（每次一条 SQL）。
+    收藏几十篇时会明显变慢。但单次 `get` 已是轻量元数据查询（不加载分片，~1ms），
+    先保持简单；真要优化应做成一次 `WHERE id = ANY(...)`。
+    """
     doc_ids = store.list_favorites(current_user["id"])
     docs = [store.get(did, current_user["id"]) for did in doc_ids]
     return {

@@ -682,7 +682,15 @@ def all_documents_for_user(
     return docs
 
 
-def get_document(doc_id: str) -> dict[str, Any] | None:
+def get_document(doc_id: str, with_chunks: bool = False) -> dict[str, Any] | None:
+    """取单篇文档。
+
+    ⚠️ `with_chunks` 默认 **False**：分片里带 1024 维向量，加载代价极高
+    （实测 3156 个分片的文档 394ms vs 4.5ms，**88 倍**），而调用方绝大多数
+    只做权限校验/取正文，根本用不到向量。需要「增量向量化」的旧分片时显式传 True。
+
+    `chunks` 键仍然存在（空列表），避免调用方 `doc["chunks"]` 抛 KeyError。
+    """
     conn = _connect()
     with conn.cursor() as cur:
         cur.execute(
@@ -693,8 +701,15 @@ def get_document(doc_id: str) -> dict[str, Any] | None:
         if row is None:
             return None
         doc = _doc_from_row(row)
-        doc["chunks"] = _load_chunks(cur, doc_id)
+        doc["chunks"] = _load_chunks(cur, doc_id) if with_chunks else []
     return doc
+
+
+def load_chunks(doc_id: str) -> list[dict[str, Any]]:
+    """单独加载某文档的分片（含向量）。仅供「增量向量化」复用旧向量用。"""
+    conn = _connect()
+    with conn.cursor() as cur:
+        return _load_chunks(cur, doc_id)
 
 
 def update_document(
