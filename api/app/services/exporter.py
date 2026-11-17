@@ -19,6 +19,26 @@ _MD_H_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _MD_LINK_RE = re.compile(r"!\[([^\]]*)\]\([^)]+\)|\[([^\]]+)\]\([^)]+\)")
 _MD_LIST_RE = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+")
 
+# 正文里的媒体引用。实测形式：`![alt](/api/v1/media/ef0b78da1ea4d8ac.png)`
+# 也要兼容可能的 `<img src="/media/x.png">` 与相对写法，所以前缀可省。
+_MEDIA_REF_RE = re.compile(r"(?:/api/v1)?/media/([A-Za-z0-9._-]+)")
+
+
+def _collect_media_refs(docs: list[dict[str, Any]]) -> set[str]:
+    """从这批文档的正文里抽出被引用的媒体文件名（去重）。
+
+    只导出**被引用**的媒体，理由见 `build_kb_zip` 里媒体段的注释：
+    无差别打包整个 MEDIA_DIR 会把别的知识库的图片一起带走（权限隔离失效），
+    而且实测 524 MB 让每次导出都慢到不可用。
+    """
+    refs: set[str] = set()
+    for d in docs:
+        text = d.get("text") or ""
+        if not text:
+            continue
+        refs.update(_MEDIA_REF_RE.findall(text))
+    return refs
+
 
 def build(fmt: str, docs: list[dict[str, Any]]) -> tuple[Any, str, str]:
     """按格式导出文档列表，返回 (内容流, 文件名, Content-Type)。"""
@@ -310,11 +330,29 @@ def build_kb_zip(
                 }
             )
 
-        # 媒体文件
-        if MEDIA_DIR.exists():
-            for f in sorted(MEDIA_DIR.iterdir()):
+        # 媒体文件：只打**本文档集实际引用**的，不是全站所有图片。
+        #
+        # 🔴 2026-11-17 实测：原来无条件 `for f in MEDIA_DIR.iterdir()` 会把
+        #    整个 media 目录（实测 **524 MB**）塞进每一份导出 zip ——
+        #    哪怕这个知识库只有 1 篇文档、一张图都没有。
+        #    两个后果：
+        #      ① 性能：任何一次知识库导出都要读 524 MB 并压缩，慢到不可用
+        #      ② 泄露：导出者拿到的是**整个实例**所有知识库的图片，
+        #         等于绕过了按知识库的权限隔离
+        #    修法：从正文里抽出 media 引用（`/media/<name>`），只打这些。
+        needed = _collect_media_refs(docs)
+        packed = 0
+        for fname in sorted(needed):
+            f = MEDIA_DIR / fname
+            # 防路径穿越：只允许 MEDIA_DIR 下的直接文件名
+            if not fname or "/" in fname or "\\" in fname or fname.startswith("."):
+                continue
+            try:
                 if f.is_file():
                     zf.write(f, _pp.join(base, "media", f.name))
+                    packed += 1
+            except OSError:
+                continue  # 单个文件读失败不该让整次导出失败
 
         # 清单
         zf.writestr(

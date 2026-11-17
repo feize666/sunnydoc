@@ -2625,11 +2625,25 @@ def list_audit_logs(
 @router.post("/export")
 def export_documents(req: ExportRequest, current_user: dict = Depends(get_current_user)):
     """多格式导出：md/docx/pdf/html/json/zip。doc_ids 为空导出当前用户全部。
-    知识库整体导出：kb_id 提供且 format=zip 时，按文件夹层级打包整个知识库。"""
+    知识库整体导出：kb_id 提供且 format=zip 时，按文件夹层级打包整个知识库。
+
+    🔴 导出是**内容外带**操作，必须 write/owner 权限（2026-11-17 实测补上）：
+    原来「知识库 zip」分支只做 `get_kb(kb_id, user_id)` **可见性**校验，
+    单文档分支只做 `store.all(...)` 的**可见性过滤**。于是被共享为 **read** 的
+    协作者可以：
+      - 导出整个知识库 zip（实测 **515 MB**，全部原文 + 媒体）
+      - 按 doc_ids 逐篇导出 md/json（拿到完整正文，不是片段）
+
+    对比 `duplicate`（上轮修的）：duplicate 只能复制**一篇**，而导出能拿走**整库**。
+    只读的本意是「能看不能带走」，导出恰好是最直接的「带走」手段。
+
+    分级：owner / write 可导出；read 只能在线阅读，不能导出。
+    """
     if req.kb_id and req.format == "zip":
         kb = store.get_kb(req.kb_id, current_user["id"])
         if kb is None:
             raise HTTPException(status_code=404, detail="知识库不存在")
+        _require_kb_write(req.kb_id, current_user)
         docs = store.all(kb_id=req.kb_id, user_id=current_user["id"], with_chunks=False)
         folders = store.list_folders(req.kb_id, current_user["id"])
         if not docs:
@@ -2644,6 +2658,16 @@ def export_documents(req: ExportRequest, current_user: dict = Depends(get_curren
             docs = [d for d in docs if d["id"] in idset]
         if not docs:
             raise HTTPException(status_code=404, detail="无文档可导出")
+        # 只保留**有写权限**的文档：`store.all` 只做了可见性过滤，
+        # 被共享为 read 的协作者会把文档混进来（实测能导出完整 md/json 正文）。
+        denied_n = len(docs)
+        docs = [d for d in docs if store._can_write_doc(d, current_user["id"])]
+        if not docs:
+            # 全部无写权限：按「无内容可导出」处理，不暴露具体文档是否存在
+            raise HTTPException(
+                status_code=403,
+                detail=f"没有导出权限（{denied_n} 篇均为只读共享）",
+            )
 
         try:
             content, filename, content_type = exporter.build(req.format, docs)
