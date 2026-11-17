@@ -121,8 +121,12 @@ async function ask(p, q, { expect, waitMs = 60000 } = {}) {
         // 内部每个 `span` 是一个工具标签。
         // ⚠️ 用结构而不是「文本在白名单里」——那种写法会在文案微调后静默失效
         //    （本项目已因这类「断言依赖文案」吃过假失败）。
-        trace: Array.from(side.querySelectorAll("[data-tool-trace] span"))
-          .map((s) => (s.innerText || "").trim())
+        // 2026-11-17 改造：轨迹改成了可折叠的步骤条，**折叠态只显示摘要**
+        // （"已完成 N 个步骤"），工具名藏在 `data-tool-label` 属性上。
+        // 所以这里改读**属性**而不是 innerText —— 属性不受展开/折叠影响，
+        // 断言也不必先点开（这是有意保留的稳定性）。
+        trace: Array.from(side.querySelectorAll("[data-tool-trace] [data-tool-label]"))
+          .map((s) => s.getAttribute("data-tool-label") || "")
           .filter(Boolean),
         // 确认卡片：用 data-pending-card 锚点（不依赖文案与类名）
         cards: Array.from(side.querySelectorAll("[data-pending-card]"))
@@ -141,8 +145,12 @@ async function ask(p, q, { expect, waitMs = 60000 } = {}) {
       snap = await p.evaluate((sel) => {
         const side = document.querySelector(sel) || document.body;
         return {
-          trace: Array.from(side.querySelectorAll("[data-tool-trace] span"))
-            .map((s) => (s.innerText || "").trim())
+          // 与上面的首次快照保持一致：读 **属性** 而非 innerText。
+          // 折叠态只渲染摘要文案，工具名在 data-tool-label 上。
+          // ⚠️ 两处必须同步改 —— 只改一处会被这里的"重读"覆盖掉
+          //    （实测：先读到正确值，700ms 后重读又变回摘要，断言假失败）。
+          trace: Array.from(side.querySelectorAll("[data-tool-trace] [data-tool-label]"))
+            .map((s) => s.getAttribute("data-tool-label") || "")
             .filter(Boolean),
           cards: Array.from(side.querySelectorAll("[data-pending-card]"))
             .map((d) => (d.innerText || "").trim())
@@ -206,8 +214,10 @@ async function ask(p, q, { expect, waitMs = 60000 } = {}) {
   }
   await sleep(2800);
 
-  const aiBtn = p.locator("button").filter({ hasText: /^AI 问答$/ }).first();
-  check("知识库视图里找到 AI 入口", (await aiBtn.count()) > 0, "未找到「AI 问答」按钮");
+  // 2026-11-17 更名为「AI 助理」（原「AI 问答」）。用正则兼容两代名字，
+  // 这样脚本在改名过渡期也不会假失败。
+  const aiBtn = p.locator("button").filter({ hasText: /^AI\s*(助理|问答)$/ }).first();
+  check("知识库视图里找到 AI 入口", (await aiBtn.count()) > 0, "未找到「AI 助理」按钮");
   await aiBtn.click();
   await sleep(1000);
   const hasBox = await p

@@ -920,7 +920,7 @@ export function SettingsDialog({
                           向量服务{vecHealth.embedding_available ? "可用" : "未配置"} ·
                           存储 {vecHealth.backend === "db" ? "PostgreSQL" : "JSON"}
                           {vecHealth.supported && vecHealth.missing > 0
-                            ? " · 缺向量的分片无法被语义检索与 AI 问答命中"
+                            ? " · 缺向量的分片无法被语义检索与 AI 助理命中"
                             : ""}
                           {!vecHealth.supported
                             ? " · JSON 模式无法修复，请配置 PostgreSQL"

@@ -8,20 +8,19 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import {
-  SendIcon,
   LinkIcon,
   CopyIcon,
   CheckIcon,
   TrashIcon,
   PlusIcon,
   HistoryIcon,
-  PaperclipIcon,
-  ImportIcon,
   CloseIcon,
 } from "./icons";
-import { LogoMark } from "./LogoMark";
-import { renderMarkdown, hydrateCodeBlocks, mediaUrl } from "@/lib/markdown";
-import { handleCodeBlockCopy } from "./CodeBlock";
+import { AiLogo } from "./ai/AiLogo";
+import { AiEmptyState } from "./ai/AiEmptyState";
+import { AiMessageBubble } from "./ai/AiMessageBubble";
+import { AiComposer } from "./ai/AiComposer";
+import { AI_NAME, AI_TAGLINE } from "./ai/aiBrand";
 import { Tooltip } from "./Tooltip";
 import { useToast } from "./Toast";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -124,62 +123,6 @@ function attachmentEmoji(kind: string): string {
   return "📄";
 }
 
-/** 单条附件展示（含图片缩略图/文件图标 + 文件名 + 大小） */
-function AttachmentBadge({ att, preview }: { att: { filename: string; kind: string; size: number; preview_url?: string | null }; preview?: boolean }) {
-  return (
-    <span className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-[var(--hero-chip)] px-2 py-1">
-      {att.kind === "image" && preview && att.preview_url ? (
-        <img src={mediaUrl(att.preview_url)} alt={att.filename} className="h-8 w-8 shrink-0 rounded object-cover" />
-      ) : (
-        <span className="text-[14px] leading-none">{attachmentEmoji(att.kind)}</span>
-      )}
-      <span className="min-w-0">
-        <span className="block max-w-[200px] truncate text-[12px] font-medium">{att.filename}</span>
-        <span className="block text-[11px] opacity-90">{formatSize(att.size)}</span>
-      </span>
-    </span>
-  );
-}
-
-/** AI 回答正文：随流式内容增量异步渲染 markdown。 */
-function AiMarkdown({
-  content,
-  theme,
-}: {
-  content: string;
-  theme: "light" | "dark";
-}) {
-  const [html, setHtml] = useState("");
-  const renderId = useRef(0);
-  const bodyRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const id = ++renderId.current;
-    let cancelled = false;
-    renderMarkdown(content, undefined, theme).then((h) => {
-      if (!cancelled && id === renderId.current) setHtml(h);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [content, theme]);
-
-  // 闲时增量补语法高亮（AI 回答里常带代码示例）
-  useEffect(() => {
-    if (!html) return;
-    return hydrateCodeBlocks(bodyRef.current, theme);
-  }, [html, theme]);
-
-  return (
-    <div
-      ref={bodyRef}
-      className="md-body"
-      onClick={handleCodeBlockCopy}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
-}
-
 export function AiPanel({
   theme,
   open,
@@ -237,6 +180,8 @@ export function AiPanel({
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // 输入框引用：能力卡点击后要聚焦（填了字但光标不在里面，用户会以为没反应）
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const chatRef = useRef<HTMLDivElement>(null);
   // 当前流式请求的 AbortController（用于暂停）
@@ -360,6 +305,53 @@ export function AiPanel({
   const clearChat = () => {
     if (loading) return;
     setConfirmClear(true);
+  };
+
+  /**
+   * 处置一条待确认的破坏性操作。
+   *
+   * 从原内联 JSX 抽出（原逻辑在 map 里套了 60 行闭包，读不动）。
+   * 行为不变：
+   *   - confirm：先标 busy 防重复点击 → 调 agentConfirm → 成功才移除卡片
+   *     （失败时保留，用户可重试 —— 静默移除会让用户以为执行过了）
+   *   - cancel：直接移除 + toast 说明「未做任何改动」
+   */
+  const resolvePending = async (
+    msgIndex: number,
+    pa: PendingAction,
+    kind: "confirm" | "cancel",
+  ) => {
+    const patch = (fn: (p: PendingAction) => PendingAction | null) =>
+      setMessages((all) =>
+        all.map((mm, k) =>
+          k === msgIndex
+            ? {
+                ...mm,
+                pendings: (mm.pendings ?? [])
+                  .map((x) => (x === pa ? fn(x) : x))
+                  .filter((x): x is PendingAction => x !== null),
+              }
+            : mm,
+        ),
+      );
+
+    if (kind === "cancel") {
+      patch(() => null);
+      toast.success("已取消，未做任何改动");
+      return;
+    }
+
+    patch((x) => ({ ...x, _busy: true }));
+    try {
+      await agentConfirm(pa.tool, pa.arguments);
+      toast.success(`已执行：${pa.summary}`);
+      // 成功后才移除卡片 —— 失败时保留，用户可重试
+      patch(() => null);
+      onAgentDone?.();
+    } catch (err) {
+      toast.error(`执行失败：${err instanceof Error ? err.message : "未知错误"}`);
+      patch((x) => ({ ...x, _busy: false }));
+    }
   };
 
   const doClearChat = () => {
@@ -737,7 +729,10 @@ export function AiPanel({
         onMouseDown={startDrag}
       >
         <div className="flex items-center gap-2">
-          <span className="text-[14px] font-semibold text-text">AI 问答</span>
+          <AiLogo variant="title" />
+          <span className="text-[14px] font-semibold text-text" title={AI_TAGLINE}>
+            {AI_NAME}
+          </span>
           <Tooltip content={enableWeb ? "联网搜索已开启（点击关闭）" : "联网搜索已关闭（点击开启）"}>
             <button
               onClick={() => setEnableWeb((v) => !v)}
@@ -809,7 +804,7 @@ export function AiPanel({
               清空
             </button>
           </Tooltip>
-          <Tooltip content="关闭 AI 问答">
+          <Tooltip content="关闭 AI 助理">
             <button
               onClick={onClose}
               className="icon-btn border border-line text-faint"
@@ -873,282 +868,41 @@ export function AiPanel({
 
       <div ref={chatRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-3.5">
         {messages.length === 0 && !loading && (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16 text-center">
-            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-accent-soft text-accent">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
-            </div>
-            <div className="text-[14px] font-medium text-text">开始新的对话</div>
-            <div className="text-[12px] text-faint">
-              基于知识库问答，或上传附件后提问
-            </div>
-          </div>
+          <AiEmptyState
+            logo={<AiLogo variant="hero" />}
+            onPick={(text) => {
+              // 只填入输入框，不直接发送 —— 用户通常想改一改（换成自己的文档名）
+              setInput(text);
+              inputRef.current?.focus();
+            }}
+          />
         )}
         {messages.map((msg, i) => (
-          <div
+          <AiMessageBubble
             key={i}
-            className={`group flex flex-col gap-1 text-[14px] leading-relaxed ${
-              msg.role === "user" ? "items-end" : ""
-            }`}
-          >
-            {msg.role === "ai" && (
-              <div className="flex items-center gap-1.5">
-                <LogoMark size={20} rounded="rounded-md" />
-                <span className="text-[12px] text-faint">Sunny 助手</span>
-                {msg.content && !msg.error && (
-                  <Tooltip content={copiedIndex === i ? "已复制" : "复制回答"}>
-                    <button
-                      onClick={() => copyMessage(i)}
-                      className={`flex items-center gap-0.5 rounded px-1 py-0.5 text-[12px] text-faint transition-opacity hover:text-muted ${
-                        copiedIndex === i ? "text-accent opacity-100" : "reveal-on-hover"
-                      }`}
-                    >
-                      {copiedIndex === i ? <CheckIcon size={11} /> : <CopyIcon size={11} />}
-                      {copiedIndex === i ? "已复制" : "复制"}
-                    </button>
-                  </Tooltip>
-                )}
-              </div>
-            )}
-            {/* 智能体的工具轨迹：让用户看到「它在做什么」。
-                没有它，调工具的那几秒对用户是纯静默（既无文字也无反馈）。
-
-                `data-tool-trace` 是**给验证脚本的稳定锚点**：
-                早先脚本靠类名（`div.mb-1.flex.flex-wrap > span`）定位，
-                在真实页面上时有时无地命中，导致「后端明明调了工具、
-                断言却读到空数组」。类名会随样式调整而变，data 属性不会。 */}
-            {msg.role === "ai" && (msg.toolTrace?.length ?? 0) > 0 && (
-              <div data-tool-trace="1" className="mb-1 flex flex-wrap gap-1">
-                {msg.toolTrace!.map((t, k) => (
-                  <span
-                    key={k}
-                    data-tool-label={t.label}
-                    className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[12px] ${
-                      t.ok === false
-                        ? "border-danger/40 bg-danger-soft text-danger"
-                        : "border-line bg-surface-2 text-muted"
-                    }`}
-                    title={t.error || t.name}
-                  >
-                    {t.ok === undefined ? (
-                      <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border border-current border-t-transparent" />
-                    ) : t.ok ? (
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M20 6L9 17l-5-5" />
-                      </svg>
-                    ) : (
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                        <path d="M18 6L6 18M6 6l12 12" />
-                      </svg>
-                    )}
-                    {t.label}
-                  </span>
-                ))}
-              </div>
-            )}
-            <div
-              className={
-                msg.role === "user"
-                  ? "bubble-accent max-w-[90%] rounded-xl rounded-br-sm px-3 py-2 text-white"
-                  : `max-w-full rounded-xl rounded-bl-sm border px-3 py-2.5 shadow-sm ${
-                      msg.error ? "border-danger/40 bg-danger-soft text-danger" : "border-line bg-background"
-                    }`
-              }
-            >
-              {msg.role === "user" ? (
-                <div className="flex flex-col gap-1.5">
-                  <span>{msg.content}</span>
-                  {Array.isArray(msg.attachments) && msg.attachments.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {msg.attachments.map((att) => (
-                        <AttachmentBadge key={att.id} att={att} preview />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : msg.suggestWeb ? (
-                <div className="flex flex-col gap-2.5">
-                  <p className="text-text">
-                    本地知识库中<span className="font-medium text-text">未找到</span>与「{messages[i - 1]?.content ?? ""}」相关的内容。
-                  </p>
-                  <p className="text-[13px] text-muted">我可以联网搜索实时信息来回答，是否为你联网搜索？</p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => retryWithWeb(messages[i - 1]?.content ?? "")}
-                      className="flex items-center gap-1.5 rounded-lg bg-accent-solid px-3 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="10" />
-                        <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-                      </svg>
-                      联网搜索
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // 用户拒绝：移除提示卡片，改为普通提示
-                        setMessages((m) =>
-                          m.map((mm) =>
-                            mm === msg ? { ...mm, suggestWeb: false, content: "已取消联网搜索。你可以换个问法，或补充相关文档后再试。" } : mm,
-                          ),
-                        );
-                      }}
-                      className="rounded-lg border border-line px-3 py-1.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text"
-                    >
-                      暂不
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <AiMarkdown content={msg.content} theme={theme} />
-              )}
-              {Array.isArray(msg.citations) && msg.citations.length > 0 && (
-                <div className="mt-1.5 space-y-0.5 border-t border-line pt-1.5 text-[12px]">
-                  <div className="mb-0.5 text-[11px] text-faint">知识库引用（点击定位）</div>
-                  {msg.citations.map((c, j) => (
-                    <button
-                      key={j}
-                      type="button"
-                      onClick={() => onOpenCitation?.(c.doc_id, c)}
-                      className="flex w-full items-center gap-1 text-left text-accent hover:underline"
-                    >
-                      <LinkIcon size={11} />
-                      <span className="truncate">{c.title}</span>
-                      <span className="shrink-0 text-faint">· 片段 {c.segment_index + 1}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {/* 待确认的破坏性操作。
-                  🔴 这些操作**尚未执行** —— 后端只在确认后才落库。
-                  因此按钮文案必须是「确认执行」而非「已执行」，且要有「取消」。 */}
-              {Array.isArray(msg.pendings) &&
-                msg.pendings.length > 0 &&
-                msg.pendings.map((pa, j) => (
-                  <div
-                    key={j}
-                    data-pending-card="1"
-                    className="mt-1.5 rounded-lg border border-danger/40 bg-danger-soft px-3 py-2.5"
-                  >
-                    <div className="flex items-start gap-1.5">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0 text-danger">
-                        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                        <path d="M12 9v4M12 17h.01" />
-                      </svg>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[13px] font-medium text-danger">需要你确认</div>
-                        <div className="mt-0.5 text-[13px] text-text">{pa.summary}</div>
-                        <div className="mt-0.5 text-[12px] text-muted">
-                          此操作尚未执行，点击下方按钮后才会生效。
-                        </div>
-                        <div className="mt-2 flex items-center gap-2">
-                          <button
-                            type="button"
-                            disabled={pa._busy}
-                            onClick={async () => {
-                              // 标记 busy（防重复点击）
-                              setMessages((all) =>
-                                all.map((mm, k) =>
-                                  k === i
-                                    ? {
-                                        ...mm,
-                                        pendings: (mm.pendings ?? []).map((x, kk) =>
-                                          kk === j ? { ...x, _busy: true } : x,
-                                        ),
-                                      }
-                                    : mm,
-                                ),
-                              );
-                              try {
-                                await agentConfirm(pa.tool, pa.arguments);
-                                toast.success(`已执行：${pa.summary}`);
-                                // 成功后才移除卡片 —— 失败时保留，用户可重试
-                                setMessages((all) =>
-                                  all.map((mm, k) =>
-                                    k === i
-                                      ? {
-                                          ...mm,
-                                          pendings: (mm.pendings ?? []).filter(
-                                            (_, kk) => kk !== j,
-                                          ),
-                                        }
-                                      : mm,
-                                  ),
-                                );
-                                // 让上层刷新数据（删文档后左侧树要更新）
-                                onAgentDone?.();
-                              } catch (err) {
-                                toast.error(
-                                  `执行失败：${err instanceof Error ? err.message : "未知错误"}`,
-                                );
-                                setMessages((all) =>
-                                  all.map((mm, k) =>
-                                    k === i
-                                      ? {
-                                          ...mm,
-                                          pendings: (mm.pendings ?? []).map((x, kk) =>
-                                            kk === j ? { ...x, _busy: false } : x,
-                                          ),
-                                        }
-                                      : mm,
-                                  ),
-                                );
-                              }
-                            }}
-                            className="rounded-lg bg-danger-solid px-3 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                          >
-                            {pa._busy ? "执行中…" : "确认执行"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={pa._busy}
-                            onClick={() => {
-                              setMessages((all) =>
-                                all.map((mm, k) =>
-                                  k === i
-                                    ? {
-                                        ...mm,
-                                        pendings: (mm.pendings ?? []).filter(
-                                          (_, kk) => kk !== j,
-                                        ),
-                                      }
-                                    : mm,
-                                ),
-                              );
-                              toast.success("已取消，未做任何改动");
-                            }}
-                            className="rounded-lg border border-line px-3 py-1.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text disabled:opacity-50"
-                          >
-                            取消
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              {Array.isArray(msg.webSources) && msg.webSources.length > 0 && (
-                <div className="mt-1.5 space-y-0.5 border-t border-line pt-1.5 text-[12px]">
-                  <div className="mb-0.5 text-[11px] text-faint">联网搜索来源</div>
-                  {msg.webSources.map((s, j) => (
-                    <a
-                      key={j}
-                      href={s.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 truncate text-accent hover:underline"
-                    >
-                      <LinkIcon size={11} />
-                      <Tooltip content={s.title} className="min-w-0 flex-1">
-                        <span className="block truncate">{s.title}</span>
-                      </Tooltip>
-                    </a>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+            msg={msg}
+            index={i}
+            prevUserText={messages[i - 1]?.content ?? ""}
+            theme={theme}
+            copied={copiedIndex === i}
+            onCopy={() => copyMessage(i)}
+            onOpenCitation={onOpenCitation}
+            onRetryWeb={retryWithWeb}
+            onDismissWeb={() =>
+              setMessages((all) =>
+                all.map((mm) =>
+                  mm === msg
+                    ? {
+                        ...mm,
+                        suggestWeb: false,
+                        content: "已取消联网搜索。你可以换个问法，或补充相关文档后再试。",
+                      }
+                    : mm,
+                ),
+              )
+            }
+            onResolvePending={(pa, kind) => resolvePending(i, pa, kind)}
+          />
         ))}
         {loading && (
           <div className="flex items-center gap-2 text-[13px] text-faint">
@@ -1162,94 +916,21 @@ export function AiPanel({
         )}
       </div>
 
-      <div className="border-t border-line p-2.5">
-        {/* 待发送附件 chip 列表 */}
-        {attachments.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {attachments.map((att) => (
-              <span
-                key={att.id}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-background px-2 py-1"
-              >
-                {att.kind === "image" && att.preview_url ? (
-                  <img src={mediaUrl(att.preview_url)} className="h-7 w-7 rounded object-cover" alt={att.filename} />
-                ) : (
-                  <span className="text-[14px] leading-none">{attachmentEmoji(att.kind)}</span>
-                )}
-                <span className="max-w-[140px] truncate text-[12px] text-text">{att.filename}</span>
-                <Tooltip content="导入到知识库">
-                  <button
-                    onClick={() => openImport(att)}
-                    disabled={importing}
-                    className="grid h-5 w-5 place-items-center rounded text-faint transition-colors hover:text-accent disabled:opacity-40"
-                  >
-                    <ImportIcon size={13} />
-                  </button>
-                </Tooltip>
-                <Tooltip content="移除附件">
-                  <button
-                    onClick={() => removeAttachment(att.id)}
-                    className="grid h-5 w-5 place-items-center rounded text-faint transition-colors hover:text-danger"
-                  >
-                    <CloseIcon size={13} />
-                  </button>
-                </Tooltip>
-              </span>
-            ))}
-          </div>
-        )}
-
-        <div className="flex gap-2">
-          <Tooltip content="上传附件（图片/文档/压缩包）" className="shrink-0">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={loading || uploading}
-              aria-label={uploading ? "正在上传附件" : "添加附件"}
-              className="icon-btn border border-line bg-background text-muted disabled:opacity-50"
-            >
-              {uploading ? (
-                <span className="spinner spinner-sm" />
-              ) : (
-                <PaperclipIcon size={16} />
-              )}
-            </button>
-          </Tooltip>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            onChange={(e) => handlePickFiles(e.target.files)}
-            className="hidden"
-            accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.md,.markdown,.txt,.text,.json,.csv,.tsv,.pdf,.docx,.xlsx,.zip"
-          />
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                ask();
-              }
-            }}
-            rows={1}
-            className="textarea max-h-[120px] min-h-0 flex-1 resize-none"
-          />
-          <Tooltip content={loading ? "暂停" : "发送"} className="shrink-0">
-            <button
-              onClick={() => (loading ? abortRef.current?.abort() : ask())}
-              className="btn-accent icon-btn text-white"
-            >
-              {loading ? (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                  <rect x="6" y="6" width="12" height="12" rx="2" />
-                </svg>
-              ) : (
-                <SendIcon size={16} />
-              )}
-            </button>
-          </Tooltip>
-        </div>
-      </div>
+      <AiComposer
+        input={input}
+        setInput={setInput}
+        onSend={ask}
+        loading={loading}
+        onAbort={() => abortRef.current?.abort()}
+        attachments={attachments}
+        onRemoveAttachment={removeAttachment}
+        onOpenImport={openImport}
+        importing={importing}
+        uploading={uploading}
+        onPickFiles={handlePickFiles}
+        fileInputRef={fileInputRef}
+        inputRef={inputRef}
+      />
 
       <ConfirmDialog
         open={deleteTargetId !== null}

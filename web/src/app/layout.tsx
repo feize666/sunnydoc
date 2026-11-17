@@ -4,7 +4,7 @@ import { ToastProvider } from "@/components/Toast";
 
 export const metadata: Metadata = {
   title: "Sunny · 个人知识库",
-  description: "以文档为核心，支持 AI 问答与引用溯源的私有知识库",
+  description: "以文档为核心，支持 AI 助理与引用溯源的私有知识库",
   icons: {
     icon: [
       // 现代浏览器优先用 SVG（矢量、任意尺寸清晰）

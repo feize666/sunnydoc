@@ -68,7 +68,7 @@ const CITE_MARKER = "知识库引用（点击定位）";
 function extractInPage({ question, CITE_MARKER }) {
   const cands = Array.from(document.querySelectorAll("aside, div, section")).filter((n) => {
     const t = n.innerText || "";
-    if (!t.includes("AI 问答")) return false;
+    if (!/AI\s*(助理|问答)/.test(t)) return false;
     return getComputedStyle(n).position === "fixed";
   });
   cands.sort((a, b) => (a.innerText || "").length - (b.innerText || "").length);
@@ -191,7 +191,7 @@ function extractInPage({ question, CITE_MARKER }) {
 
     const res = await p.evaluate(extractInPage, { question: q, CITE_MARKER });
     if (!res.found) {
-      check(`「${q}」能定位到 AI 面板`, false, "未找到 fixed 定位且含「AI 问答」的容器");
+      check(`「${q}」能定位到 AI 面板`, false, "未找到 fixed 定位且含「AI 助理」的容器");
       continue;
     }
 

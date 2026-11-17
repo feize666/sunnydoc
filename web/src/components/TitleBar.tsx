@@ -182,7 +182,7 @@ export function TitleBar({
 
       <ThemeToggle theme={theme} onToggle={onToggleTheme} size={18} />
 
-      <Tooltip content={aiOpen ? "收起 AI 问答" : "打开 AI 问答"}>
+      <Tooltip content={aiOpen ? "收起 AI 助理" : "打开 AI 助理"}>
         <button
           onClick={onToggleAi}
           className={`flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors sm:h-9 sm:min-w-0 ${
@@ -194,7 +194,7 @@ export function TitleBar({
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 2a4 4 0 0 1 4 4c1.7 0 3 1.3 3 3 0 .8-.3 1.5-.8 2 .5.5.8 1.2.8 2 0 1.7-1.3 3-3 3a4 4 0 0 1-8 0c-1.7 0-3-1.3-3-3 0-.8.3-1.5.8-2-.5-.5-.8-1.2-.8-2 0-1.7 1.3-3 3-3z" />
           </svg>
-          <span className="hidden sm:inline">AI 问答</span>
+          <span className="hidden sm:inline">AI 助理</span>
         </button>
       </Tooltip>
 

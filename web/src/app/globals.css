@@ -2064,3 +2064,28 @@ mark.search-hit {
   background: var(--accent);
   color: #fff;
 }
+
+/* AI 助理空态主视觉：只播一次的「呼吸」入场。
+   为什么只播一次：空态是唯一适合"打个招呼"的场合，循环播放会变成干扰。
+   `backwards` 而非 `both` —— 播完要回到静止态（项目动效约定，见 DESIGN.md）。
+   prefers-reduced-motion 下完全不播（无障碍要求）。 */
+@media (prefers-reduced-motion: no-preference) {
+  .ai-logo-hero {
+    animation: ai-logo-breathe 0.9s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+}
+
+@keyframes ai-logo-breathe {
+  from {
+    transform: scale(0.86);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}

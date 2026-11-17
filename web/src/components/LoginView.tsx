@@ -18,7 +18,7 @@ const HIGHLIGHTS: { title: string; desc: string; icon: React.ReactNode }[] = [
     ),
   },
   {
-    title: "AI 问答溯源",
+    title: "AI 助理溯源",
     desc: "回答附引用来源，可逐句回查",
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
@@ -83,7 +83,7 @@ export function LoginView({ onAuthed }: { onAuthed: (user: User) => void }) {
             变成可检索的知识
           </h1>
           <p className="mt-4 max-w-[380px] text-[14px] leading-relaxed text-[var(--hero-ink-muted)]">
-            以文档为核心，支持知识库分级管理、全文检索与 AI 问答，让每一次查找都有据可循。
+            以文档为核心，支持知识库分级管理、全文检索与 AI 助理，让每一次查找都有据可循。
           </p>
 
           <ul className="mt-8 flex flex-col gap-3">

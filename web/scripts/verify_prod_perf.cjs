@@ -189,7 +189,14 @@ function startServer() {
   check("验证服务器就绪（静态 200 + 反代可达）", ready);
 
   const b = await chromium.launch({ headless: true, args: ["--no-proxy-server"] });
-  const p = await (await b.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+  const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
+  // 🔴 token 必须用 addInitScript 注入，**不能** goto 后再 evaluate + reload。
+  //    实测（2026-11-17）：静态导出的产物里，goto(domcontentloaded) 返回时
+  //    页面脚本可能已开始执行；此时 setItem 之后再 reload，token 有时读不到
+  //    （表现为停在登录页、`/api 请求: （无）`，而非 401）。
+  //    addInitScript 在**任何页面脚本之前**执行，稳定得多。
+  await ctx.addInitScript((t) => localStorage.setItem("sunnydoc.token", t), TOKEN);
+  const p = await ctx.newPage();
   const errs = [];
   p.on("pageerror", (e) => errs.push(String(e).slice(0, 140)));
   const apiStatus = [];
@@ -198,8 +205,6 @@ function startServer() {
   });
 
   await p.goto(`http://127.0.0.1:${PROD_PORT}/`, { waitUntil: "domcontentloaded" });
-  await p.evaluate((t) => localStorage.setItem("sunnydoc.token", t), TOKEN);
-  await p.reload({ waitUntil: "domcontentloaded" });
 
   console.log("\n=== 进入知识库（走真实交互）===");
   // 🔴 不能 goto `/#/kb/xxx`：hash 路由下浏览器视为同文档导航、不重新执行脚本
