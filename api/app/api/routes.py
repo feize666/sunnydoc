@@ -427,6 +427,30 @@ def _require_kb_write(kb_id: str, user: dict) -> None:
         raise HTTPException(status_code=403, detail="没有权限修改该知识库的内容")
 
 
+def _require_doc_write(doc_id: str, user: dict) -> dict:
+    """要求对该**文档**有写权限，返回文档；否则 404/403。
+
+    🔴 为什么必须单独有它（2026-11-17 实测出 4 处越权）：
+
+    很多端点原本写的是 `store.get(doc_id, user["id"]) is None` ——
+    那是**可见性**校验（能读就通过），**不是写权限**。
+    对「被共享为 read」的协作者来说文档可见，于是：
+
+        改标签   → 200，标签真被改了
+        置顶     → 200，真被置顶了
+        复制     → 200，拿走全文
+        收藏     → 200（这条只影响自己的收藏夹，风险低但语义仍不对）
+
+    ⇒ 口诀：**能看见 ≠ 能修改**。凡是写动词，一律走写权限校验。
+    """
+    doc = store.get(doc_id, user["id"])
+    if doc is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    if not store._can_write_doc(doc, user["id"]):
+        raise HTTPException(status_code=403, detail="没有权限修改该文档")
+    return doc
+
+
 def _require_folder_access(folder_id: str, user: dict) -> None:
     """要求对该目录有写权限（自有目录，或所属知识库 write/owner），否则 403/404。"""
     folder = next(
@@ -2884,7 +2908,14 @@ class RenameDocumentRequest(BaseModel):
 
 @router.post("/documents/{doc_id}/duplicate")
 def duplicate_document(doc_id: str, current_user: dict = Depends(get_current_user)):
-    """复制文档（标题加「（副本）」）。"""
+    """复制文档（标题加「（副本）」）。
+
+    🔴 复制是**内容外带**操作，必须写权限（2026-11-17 实测补上）：
+    原来只判 `store.get` 可见性，于是被共享为 **read** 的协作者可以
+    「复制一份到自己名下」—— 拿到全文副本，等于绕过只读限制。
+    只读的本意是「可以看，但不能带走/修改」，复制恰好绕过了它。
+    """
+    _require_doc_write(doc_id, current_user)
     new_doc = store.duplicate(doc_id, current_user["id"])
     if new_doc is None:
         raise HTTPException(status_code=404, detail="文档不存在")
@@ -2937,8 +2968,8 @@ def set_document_tags(
     doc_id: str, req: SetTagsRequest, current_user: dict = Depends(get_current_user)
 ):
     """设置文档标签。"""
-    if store.get(doc_id, current_user["id"]) is None:
-        raise HTTPException(status_code=404, detail="文档不存在")
+    # 写动词 → 要写权限（原来只判 `store.get` 可见性，只读协作者能改）
+    _require_doc_write(doc_id, current_user)
     tags = [t.strip() for t in req.tags if t and t.strip()][:10]
     store.set_tags(doc_id, tags)
     return {"tags": tags}
@@ -2990,8 +3021,9 @@ def rename_tag(req: RenameTagRequest, current_user: dict = Depends(get_current_u
 @router.post("/documents/{doc_id}/pin")
 def pin_document(doc_id: str, current_user: dict = Depends(get_current_user)):
     """置顶文档。"""
-    if store.get(doc_id, current_user["id"]) is None:
-        raise HTTPException(status_code=404, detail="文档不存在")
+    # 写动词 → 要写权限。原来只判 `store.get` 可见性，
+    # 被共享为 read 的协作者能把他人的文档置顶（实测 200 且真生效）。
+    _require_doc_write(doc_id, current_user)
     store.set_pinned(doc_id, True)
     return {"pinned": True}
 
@@ -3006,8 +3038,9 @@ def unpin_document(doc_id: str, current_user: dict = Depends(get_current_user)):
     （实测 u2 调 u1 文档的 unpin → 200，且 u1 回读 pinned 已变 false）。
     同一资源的两个动词只给一个加校验，是这类漏洞最常见的成因。
     """
-    if store.get(doc_id, current_user["id"]) is None:
-        raise HTTPException(status_code=404, detail="文档不存在")
+    # 与 pin 对称：同样要写权限（这一条 2026-10-21 曾单独补过，
+    # 但当时补的是「归属校验」而非「写权限」，只读协作者仍能通过）
+    _require_doc_write(doc_id, current_user)
     store.set_pinned(doc_id, False)
     return {"pinned": False}
 
@@ -3015,9 +3048,8 @@ def unpin_document(doc_id: str, current_user: dict = Depends(get_current_user)):
 @router.post("/documents/{doc_id}/summary")
 def generate_summary(doc_id: str, current_user: dict = Depends(get_current_user)):
     """用 AI 生成文档摘要并保存。"""
-    doc = store.get(doc_id, current_user["id"])
-    if doc is None:
-        raise HTTPException(status_code=404, detail="文档不存在")
+    # 会写回 summary 字段 → 要写权限；顺带避免只读者白烧 AI 额度
+    doc = _require_doc_write(doc_id, current_user)
     summary = llm.summarize(doc["text"])
     if summary is None:
         raise HTTPException(status_code=503, detail="AI 服务不可用，请稍后再试")
