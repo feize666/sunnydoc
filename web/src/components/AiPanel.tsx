@@ -766,7 +766,9 @@ export function AiPanel({
               className="btn-ghost text-accent hover:bg-accent-soft"
             >
               <PlusIcon size={14} />
-              新建
+              {/* 小屏（<640px）只留图标：面板宽 367px 时
+                  「新建(58)+历史(58)+清空(58)」会把关闭按钮挤出边界（实测溢出 32px）*/}
+              <span className="hidden sm:inline">新建</span>
             </button>
           </Tooltip>
           <Tooltip content="历史会话">
@@ -775,7 +777,7 @@ export function AiPanel({
               className={`btn-ghost ${showHistory ? "bg-accent-soft text-accent" : "text-muted"}`}
             >
               <HistoryIcon size={14} />
-              历史
+              <span className="hidden sm:inline">历史</span>
             </button>
           </Tooltip>
           <Tooltip content={expanded ? "还原大小" : "扩大"}>
@@ -801,7 +803,7 @@ export function AiPanel({
               className="btn-ghost text-muted hover:bg-danger-soft hover:text-danger"
             >
               <TrashIcon size={14} />
-              清空
+              <span className="hidden sm:inline">清空</span>
             </button>
           </Tooltip>
           <Tooltip content="关闭 AI 助理">
