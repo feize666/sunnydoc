@@ -251,6 +251,91 @@ async function openPanel(p, mobile) {
           m.hScroll ? "滚动容器有横向滚动" : `元素越界: ${JSON.stringify(m.over)}`);
         check(`${vp.n} 4 张卡未被压扁`, m.caps === 4 && m.squeezed === 0,
           `卡数=${m.caps} 压扁=${m.squeezed}`);
+
+        // ---------- E. 可访问性（只在大屏跑一次，避免重复）----------
+        if (vp.w === 1440) {
+          console.log("\n【E】可访问性");
+          const a = await p.evaluate(() => {
+            const panel = Array.from(document.querySelectorAll("aside"))
+              .filter((x) => x.getBoundingClientRect().width > 0)
+              .pop();
+            const log = panel.querySelector('[role="log"]');
+            const caps = Array.from(panel.querySelectorAll("[data-ai-capabilities] button"));
+            return {
+              panelRole: panel.getAttribute("role"),
+              panelLabel: panel.getAttribute("aria-label"),
+              logRole: log?.getAttribute("role") ?? null,
+              live: log?.getAttribute("aria-live") ?? null,
+              // 每张卡都要能把「会做什么」读出来
+              descOk: caps.every((c) => {
+                const id = c.getAttribute("aria-describedby");
+                return !!id && !!document.getElementById(id)?.innerText?.trim();
+              }),
+              caps: caps.length,
+            };
+          });
+          check(`面板有 role="dialog"（实测 ${a.panelRole}）`, a.panelRole === "dialog", a.panelRole);
+          check(`面板有可读名称（${a.panelLabel}）`, !!a.panelLabel, "屏幕阅读器只会读作「对话框」");
+          check(`消息区 role="log"（实测 ${a.logRole}）`, a.logRole === "log", a.logRole);
+          check(`消息区 aria-live="polite"（实测 ${a.live}）`, a.live === "polite", a.live);
+          check(
+            `能力卡都能读出「会做什么」（${a.caps}/4 关联 aria-describedby）`,
+            a.descOk,
+            "只读主文案时，用户听不出点了会发生什么",
+          );
+
+          // 键盘聚焦必须有**底色**反馈（不只是 outline）
+          const first = p.locator("[data-ai-capabilities] button").first();
+          await first.focus();
+          await p.keyboard.press("Tab");
+          await p.keyboard.press("Shift+Tab");
+          await sleep(300);
+          const kb = await p.evaluate(() => {
+            const el = document.activeElement;
+            const s = getComputedStyle(el);
+            const base = getComputedStyle(el.closest("[data-ai-capabilities]") || el);
+            return {
+              inCaps: !!el.closest?.("[data-ai-capabilities]"),
+              bg: s.backgroundColor,
+              outline: s.outlineWidth,
+              // 与"未聚焦"状态的对比：临时移除焦点不方便，用 accent-soft 判定
+              hoverBg: base.backgroundColor,
+            };
+          });
+          check("键盘能 Tab 到能力卡", kb.inCaps, "焦点顺序里没有能力卡");
+          check(`键盘聚焦有 outline（${kb.outline}）`, parseFloat(kb.outline) > 0, "无焦点环");
+          // 🔴 这一条是本轮新增的关键：只有 outline 不够，鼠标悬停有底色
+          //    而键盘聚焦没有 → 两类用户视觉反馈不一致。
+          check(
+            `键盘聚焦有底色反馈（bg=${kb.bg}）`,
+            !/rgba?\(\s*255,\s*255,\s*255/.test(kb.bg) && !/, 0\)$/.test(kb.bg),
+            "键盘聚焦只有 outline、无底色；鼠标悬停却有 → 反馈不一致",
+          );
+
+          // ---------- F. 全站按钮都有可读名称 ----------
+          // 图标按钮最容易漏：`<button><svg/></button>` 对屏幕阅读器只读作「按钮」。
+          // 实测（2026-11-19）修掉 1 个：文档标签页的关闭按钮平时 opacity-0，
+          // 用户听不出「关哪个标签」。
+          const names = await p.evaluate(() => {
+            const vis = (el) => {
+              const b = el.getBoundingClientRect();
+              return b.width > 0 && b.height > 0;
+            };
+            const btns = Array.from(document.querySelectorAll("button")).filter(vis);
+            const bad = btns.filter((b) => {
+              const txt = (b.innerText || "").trim();
+              const aria = b.getAttribute("aria-label") || b.getAttribute("title");
+              const hasImgAlt = !!b.querySelector("img[alt]:not([alt=''])");
+              return !txt && !aria && !hasImgAlt;
+            });
+            return { total: btns.length, bad: bad.map((b) => b.outerHTML.slice(0, 60)).slice(0, 3) };
+          });
+          check(
+            `全站图标按钮都有可读名称（${names.total} 个中 ${names.bad.length} 个缺失）`,
+            names.bad.length === 0,
+            `缺 aria-label: ${JSON.stringify(names.bad)}`,
+          );
+        }
       }
       await ctx.close();
     }

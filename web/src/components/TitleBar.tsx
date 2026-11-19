@@ -124,7 +124,11 @@ export function TitleBar({
                   e.stopPropagation();
                   onClose(d.key);
                 }}
-                className="grid h-4 w-4 place-items-center rounded opacity-0 group-hover:opacity-70 hover:bg-hover hover:opacity-100"
+                /* 这个按钮平时 opacity-0（悬停才显现），屏幕阅读器用户
+                   Tab 到它时只能听到「按钮」——不知道是关哪个标签页。
+                   带标题的 aria-label 才说得清。 */
+                aria-label={`关闭 ${d.title}`}
+                className="grid h-4 w-4 place-items-center rounded opacity-0 group-hover:opacity-70 hover:bg-hover hover:opacity-100 focus-visible:opacity-100"
               >
                 <CloseIcon size={12} />
               </button>

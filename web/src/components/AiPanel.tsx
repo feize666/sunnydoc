@@ -719,6 +719,13 @@ export function AiPanel({
       className={`fixed z-50 flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-lg ${
         expanded ? "h-[92vh] max-h-[92vh]" : "h-[78vh] max-h-[820px] min-h-[480px]"
       } max-w-[94vw]`}
+      /*
+       * 屏幕阅读器语义（2026-11-19 补）：
+       * 这是一个独立浮层，用 dialog + aria-label 让用户知道"进入了什么"。
+       * `aria-modal` 不用 true —— 面板不阻止与主界面交互（可以边看文档边问）。
+       */
+      role="dialog"
+      aria-label={`${AI_NAME}对话`}
     >
       <div
         onMouseDown={onPanelResize}
@@ -868,7 +875,20 @@ export function AiPanel({
         </>
       )}
 
-      <div ref={chatRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-3.5">
+      <div
+        ref={chatRef}
+        /*
+         * `aria-live="polite"`：AI 正在流式输出时，屏幕阅读器会等用户
+         * 说完当前句子再播报新内容（不像 assertive 那样打断）。
+         * `aria-relevant="additions"` 只播新增（不播"正在生成回答…"这类
+         * 频繁变化的提示，否则会一直打断）。
+         */
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions"
+        aria-label="对话记录"
+        className="flex flex-1 flex-col gap-3 overflow-y-auto p-3.5"
+      >
         {messages.length === 0 && !loading && (
           <AiEmptyState
             logo={<AiLogo variant="hero" />}

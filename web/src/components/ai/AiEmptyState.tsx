@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 
 /**
  * 空态的能力卡。
@@ -107,8 +106,6 @@ export function AiEmptyState({
   /** 主视觉（由调用方传入，避免这个文件依赖 Logo 实现）。 */
   logo: React.ReactNode;
 }) {
-  const [hovered, setHovered] = useState<number | null>(null);
-
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-5 px-4 py-10 text-center">
       {logo}
@@ -120,32 +117,42 @@ export function AiEmptyState({
       </div>
 
       <div className="grid w-full max-w-[420px] gap-1.5" data-ai-capabilities="1">
-        {CAPABILITIES.map((c, i) => (
-          <button
-            key={c.text}
-            type="button"
-            onMouseEnter={() => setHovered(i)}
-            onMouseLeave={() => setHovered(null)}
-            onClick={() => onPick(c.text)}
-            className={`group flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors ${
-              hovered === i
-                ? "border-accent/40 bg-accent-soft"
-                : "border-line bg-background hover:border-line-strong"
-            }`}
-          >
-            <span
-              className={`grid h-7 w-7 shrink-0 place-items-center rounded-md transition-colors ${
-                hovered === i ? "bg-accent/12 text-accent" : "bg-surface-2 text-muted"
-              }`}
+        {CAPABILITIES.map((c, i) => {
+          // 屏幕阅读器读按钮时只有主文案（"帮我写一篇部署记录"），
+          // 听不出它"会做什么"也听不出"点了只是填入不发送"。
+          // 用 aria-describedby 把 hint 挂上去，读作
+          // "帮我写一篇部署记录，新建文档并写入正文"。
+          const descId = `ai-cap-desc-${i}`;
+          return (
+            <button
+              key={c.text}
+              type="button"
+              onClick={() => onPick(c.text)}
+              aria-describedby={descId}
+              /*
+               * 悬停/聚焦用**纯 CSS**（group-hover + group-focus-visible），
+               * 不用 onMouseEnter 的 JS 状态。
+               *
+               * 🔴 为什么（2026-11-19 实测）：原先只挂 onMouseEnter，
+               *    键盘 Tab 到卡片时**底色毫无变化**，只有全局的 2px outline。
+               *    鼠标用户能"扫一眼看哪张卡高亮"，键盘用户不能 —— 两类用户
+               *    的视觉反馈不一致。而 `:focus-visible` 只在键盘导航时生效，
+               *    正好符合"键盘用户需要它、鼠标用户不需要"的语义。
+               */
+              className="group flex w-full items-center gap-2.5 rounded-lg border border-line bg-background px-3 py-2.5 text-left transition-colors hover:border-accent/40 hover:bg-accent-soft focus-visible:border-accent/40 focus-visible:bg-accent-soft"
             >
-              <CapIcon kind={c.icon} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] text-text">{c.text}</span>
-              <span className="block text-[11px] text-faint">{c.hint}</span>
-            </span>
-          </button>
-        ))}
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-surface-2 text-muted transition-colors group-hover:bg-accent/12 group-hover:text-accent group-focus-visible:bg-accent/12 group-focus-visible:text-accent">
+                <CapIcon kind={c.icon} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] text-text">{c.text}</span>
+                <span id={descId} className="block text-[11px] text-faint">
+                  {c.hint}
+                </span>
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
