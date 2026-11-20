@@ -175,6 +175,57 @@ function clearDraft(docId: string): void {
   }
 }
 
+/**
+ * 文档位置行：知识库 › 目录 A › 目录 B  ·  更新于 …
+ *
+ * 为什么需要（2026-11-21）：顶栏只显示文档标题，`doc.path` 存的是**来源**
+ * （导入时的路径），不是层级位置。侧栏有 14 个顶级目录、树最深 3 层，
+ * 读一篇文档时无法回答"我在哪一块"——而这正是主流产品（语雀/飞书/Notion）
+ * 都在标题下方放面包屑的原因。
+ *
+ * 层级由 `openDoc` 用现有的 kbs/folders 状态现算（`doc.kbName`/`doc.folderChain`），
+ * 不额外请求。没有层级信息时回落到原来的「来源 · 更新时间」，不倒退。
+ */
+function DocLocation({ doc }: { doc: Doc }) {
+  const chain = doc.folderChain ?? [];
+  const hasLoc = !!doc.kbName || chain.length > 0;
+
+  // `doc.path` 存的是 `source`（导入来源）。实测全库只有两种值：
+  // 「data.zip」239 篇（导入时的压缩包名）与「手动创建」15 篇 ——
+  // 前者对读者没有任何信息量，显示出来只是噪音。
+  // 规则：有层级时只在 source 是「手动创建」这类人话时附带；
+  // 无层级时兜底显示（否则整行只剩"更新于…"，用户更没参照）。
+  const src = (doc.path || "").trim();
+  const srcIsNoise = /\.(zip|rar|7z|tar|gz)$/i.test(src) || src === "";
+  const showSrc = src && (!hasLoc || !srcIsNoise);
+
+  return (
+    <p className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[14px] text-faint">
+      {hasLoc && (
+        <>
+          {doc.kbName && <span className="text-muted">{doc.kbName}</span>}
+          {chain.map((f) => (
+            <span key={f.id} className="flex items-center gap-1.5">
+              <span aria-hidden className="text-faint/70">
+                ›
+              </span>
+              <span className="text-muted">{f.name}</span>
+            </span>
+          ))}
+          <span aria-hidden className="mx-1 h-3 w-px bg-line" />
+        </>
+      )}
+      {showSrc ? (
+        <>
+          <span>{src}</span>
+          <span aria-hidden>·</span>
+        </>
+      ) : null}
+      <span>更新于 {doc.updated}</span>
+    </p>
+  );
+}
+
 export function Editor({
   doc,
   loading,
@@ -1279,9 +1330,7 @@ export function Editor({
               <h1 className="text-[32px] font-bold leading-[1.25] tracking-[-0.01em] text-text">
                 {doc.title}
               </h1>
-              <p className="mt-3 text-[14px] text-faint">
-                {doc.path} · 更新于 {doc.updated}
-              </p>
+              <DocLocation doc={doc} />
               {summary && (
                 <div className="mt-4 rounded-lg border border-accent/20 bg-accent-soft px-4 py-3 text-[14px] leading-relaxed text-text">
                   <span className="mr-2 font-semibold text-accent">摘要</span>
@@ -1419,9 +1468,7 @@ export function Editor({
                 placeholder="标题"
                 spellCheck={false}
               />
-              <p className="mt-3 text-[14px] text-faint">
-                {doc.path} · 更新于 {doc.updated}
-              </p>
+              <DocLocation doc={doc} />
               <div className="mt-4 border-b border-line" />
               <div className="mt-6">
                 <ErrorBoundary key={`${doc.key}-${mode}`} title="编辑器加载失败">

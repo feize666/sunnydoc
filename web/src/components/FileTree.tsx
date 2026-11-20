@@ -161,6 +161,7 @@ function SelectBox({
     <button
       onClick={onClick}
       title={checked ? "取消选择" : "选择"}
+      aria-label={checked ? "取消选择" : "选择此文档"}
       aria-pressed={checked}
       className={`grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors ${
         reveal && !checked ? "reveal-on-hover" : ""
@@ -258,6 +259,41 @@ function FileTreeNode({
   // 与 batchedAt 协调（见下）。
   const [userToggled, setUserToggled] = useState(false);
   const [open, setOpen] = useState(false);
+
+  // 折叠状态持久化（2026-11-21）。
+  //
+  // 问题：原来 `open` 只活在组件内，刷新/切库后全部回到默认折叠。
+  // 侧栏有 14 个顶级目录、树最深 3 层，每次都要重新点到上次的位置。
+  //
+  // 存储键带 folder id（全局唯一），所以跨知识库也不会串。
+  // 用 useEffect 恢复而不是 lazy init：lazy init 在 SSR/预渲染阶段拿不到
+  // localStorage，会产出与客户端不一致的首帧（React 会报 hydration mismatch）。
+  // 代价是"上次展开的目录"会先折叠一帧再展开 —— 16ms，肉眼基本无感，
+  // 比 mismatch 警告安全。
+  const lsKey = node.key ? `sunnydoc.tree.open.${node.key}` : null;
+  useEffect(() => {
+    if (!lsKey) return;
+    try {
+      const v = localStorage.getItem(lsKey);
+      if (v === "1") setOpen(true);
+      else if (v === "0") setOpen(false);
+    } catch {
+      /* 隐私模式/配额满：当作没有记录 */
+    }
+    // 只在挂载时恢复一次；之后开合由用户点击驱动
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** 用户手动开合：同时落盘，下次进来还是这个样子。 */
+  const persistOpen = (next: boolean) => {
+    setOpen(next);
+    if (!lsKey) return;
+    try {
+      localStorage.setItem(lsKey, next ? "1" : "0");
+    } catch {
+      /* 写不进去也不能影响开合本身 */
+    }
+  };
   const [addOpen, setAddOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -273,7 +309,18 @@ function FileTreeNode({
   //   - batchedAll=true/false 且 userToggled=true：用户偏好优先（不再跟随批量）
   useEffect(() => {
     if (batchedAll === undefined) return;
-    if (!userToggled) setOpen(batchedAll);
+    if (!userToggled) {
+      setOpen(batchedAll);
+      // 「全部展开 / 全部折叠」是用户主动意图，同样落盘。
+      // 不落盘的话，点完"全部展开"刷新一下又打回原形，与预期不符。
+      if (lsKey) {
+        try {
+          localStorage.setItem(lsKey, batchedAll ? "1" : "0");
+        } catch {
+          /* 忽略 */
+        }
+      }
+    }
     // 这里不重置 userToggled —— 一旦用户动过某节点，就永久脱离批量控制。
   }, [batchedAll, batchedAt, userToggled]);
 
@@ -301,6 +348,9 @@ function FileTreeNode({
   const isFolder = node.type === "folder";
   const isSelected = !!(node.key && selected?.has(node.key));
 
+  // 行内操作按钮的样式。**没**在这里判断"当前行"，因为 active 在下面才算出来
+  // （`node.key === activeKey`），这里引用会触发 TDZ。
+  // 当前行常显由渲染处追加 `const btnCls = active ? hoverBtn.replace("reveal-on-hover ", "") : hoverBtn`。
   const hoverBtn =
     "reveal-on-hover grid h-6 w-6 place-items-center rounded-md text-faint hover:bg-hover hover:text-accent";
 
@@ -450,7 +500,7 @@ function FileTreeNode({
               else {
                 // 标记「用户已手动操作」：脱离后续批量覆盖，保留用户偏好。
                 setUserToggled(true);
-                setOpen((v) => !v);
+                persistOpen(!open);
               }
             }}
             className="flex min-w-0 flex-1 items-center gap-1.5"
@@ -467,7 +517,7 @@ function FileTreeNode({
 
           {onNew && (
             <div className="relative shrink-0">
-              <button ref={addBtnRef} onClick={(e) => { e.stopPropagation(); setAddOpen((v) => !v); }} className={hoverBtn} title="新建子节点">
+              <button ref={addBtnRef} onClick={(e) => { e.stopPropagation(); setAddOpen((v) => !v); }} className={hoverBtn} title="新建子节点" aria-label={`在「${node.name}」下新建`}>
                 <PlusIcon />
               </button>
               {addOpen && (
@@ -477,7 +527,7 @@ function FileTreeNode({
           )}
           {folderItems.length > 0 && (
             <div className="relative shrink-0">
-              <button ref={menuBtnRef} onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }} className={hoverBtn} title="更多操作">
+              <button ref={menuBtnRef} onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }} className={hoverBtn} title="更多操作" aria-label={`「${node.name}」的更多操作`} aria-haspopup="menu" aria-expanded={menuOpen}>
                 <DotsIcon />
               </button>
               {menuOpen && <TreeNodeMenu items={folderItems} anchorRef={menuBtnRef} onClose={() => setMenuOpen(false)} />}
@@ -528,6 +578,15 @@ function FileTreeNode({
   }
 
   const active = node.key === activeKey;
+
+  // 当前打开那一行的操作按钮**常显**；其余行悬停才显形。
+  //
+  // 为什么（2026-11-21 实测）：原来全部 `reveal-on-hover`，鼠标不悬停时
+  // 行内只有文档名，用户得先"猜"这里有操作再去悬停才敢试。
+  // 当前行常显给了一个稳定的可见样本——看见一次，就知道其它行也有。
+  // 触屏兜底与键盘显形仍由 `.reveal-on-hover` 自身的媒体查询负责。
+  const btnCls = active ? hoverBtn.replace("reveal-on-hover ", "") : hoverBtn;
+
   const docItems: MenuItem[] = [];
   if (onRequestRename && node.key) {
     docItems.push({ label: "重命名", icon: <EditIcon size={14} />, onClick: () => onRequestRename({ kind: "doc", id: node.key!, name: node.name }) });
@@ -651,7 +710,13 @@ function FileTreeNode({
 
       {onNew && (
         <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-          <button ref={addBtnRef} onClick={() => setAddOpen((v) => !v)} className={hoverBtn} title="新建子文档">
+          <button
+            ref={addBtnRef}
+            onClick={() => setAddOpen((v) => !v)}
+            className={btnCls}
+            title="新建子文档"
+            aria-label={`在「${node.name}」下新建`}
+          >
             <PlusIcon />
           </button>
           {addOpen && (
@@ -661,7 +726,15 @@ function FileTreeNode({
       )}
       {docItems.length > 0 && (
         <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
-          <button ref={menuBtnRef} onClick={() => setMenuOpen((v) => !v)} className={hoverBtn} title="更多操作">
+          <button
+            ref={menuBtnRef}
+            onClick={() => setMenuOpen((v) => !v)}
+            className={btnCls}
+            title="更多操作"
+            aria-label={`「${node.name}」的更多操作`}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+          >
             <DotsIcon />
           </button>
           {menuOpen && <TreeNodeMenu items={docItems} anchorRef={menuBtnRef} onClose={() => setMenuOpen(false)} />}

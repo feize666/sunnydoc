@@ -308,11 +308,24 @@ def _export_zip(docs: list[dict[str, Any]]) -> tuple[Any, str, str]:
                 name = f"{base}({i}).md"
             seen.add(name)
             zf.writestr(name, d["text"])
-        # 打包已存储的媒体文件
-        if MEDIA_DIR.exists():
-            for f in sorted(MEDIA_DIR.iterdir()):
-                if f.is_file():
-                    zf.write(f, f"media/{f.name}")
+        # 只打包**本次导出的文档实际引用**的媒体。
+        #
+        # 🔴 2026-11-21 实测：这里原来是无条件 `for f in MEDIA_DIR.iterdir()`，
+        #    按目录导出 21 篇文档却打出 **515 MB / 2144 个条目**（整个实例的图片）。
+        #    上一轮只修了 `build_kb_zip` 的同类问题，**漏了这条路径** ——
+        #    「按目录导出」刚好走 `build()` → `_export_zip`，把这个坑又踩了一遍。
+        #    判据也因此改成绝对阈值（见 verify_export_perf），不写「省多少 %」。
+        needed = _collect_media_refs(docs)
+        for name in sorted(needed):
+            # 路径穿越防护：_collect_media_refs 已过滤，这里再挡一层。
+            if "/" in name or "\\" in name or name.startswith("."):
+                continue
+            f = MEDIA_DIR / name
+            if f.is_file():
+                try:
+                    zf.write(f, f"media/{name}")
+                except OSError:
+                    continue  # 单个文件读失败不该让整次导出失败
     return buf.getvalue(), "export.zip", "application/zip"
 
 

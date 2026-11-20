@@ -20,6 +20,15 @@ export interface Doc {
    * 引发权限混乱）。`openDoc` 拉取详情时写入。
    */
   kbId?: string | null;
+  /**
+   * 所属知识库名称 + 目录链（2026-11-21）。
+   *
+   * 用途：告诉用户"这篇在哪"。原来顶栏只显示标题，在 14 个顶级目录的树里
+   * 定位不到自己在读哪一块；`path` 字段是**来源**（导入路径），不是层级。
+   * 由 `openDoc` 用现有 `kbs` / `folders` 状态现算，零额外请求。
+   */
+  kbName?: string | null;
+  folderChain?: { id: string; name: string }[];
 }
 
 export interface TreeNode {

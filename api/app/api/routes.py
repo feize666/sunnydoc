@@ -277,6 +277,12 @@ class ExportRequest(BaseModel):
     format: str
     doc_ids: list[str] | None = None
     kb_id: str | None = None
+    # 按目录导出（2026-11-21）。目录树是按 folder_id 挂的，而导出原来只有
+    # 「当前文档 / 全部 / 整个知识库」三档，想导出某个模块（如 08-Kubernetes）
+    # 只能整库导出再手动挑。这里只做**过滤**，不走第二条权限路径 ——
+    # 仍然经过 store.all 的可见性 + _can_write_doc 的写权限，
+    # 否则「按目录导出」会变成新的越权入口（见第 51 条硬规则）。
+    folder_id: str | None = None
 
 
 class ImportUrlRequest(BaseModel):
@@ -465,6 +471,38 @@ def _require_folder_access(folder_id: str, user: dict) -> None:
     if kb_id and _kb_permission(kb_id, user) in ("write", "owner"):
         return
     raise HTTPException(status_code=403, detail="没有权限写入该目录")
+
+
+def _collect_folder_subtree(folder_id: str, user_id: str) -> set[str]:
+    """返回该目录及其**所有后代目录**的 id 集合。
+
+    为什么需要递归：目录树是按 `parent_id` 挂的。只按 `folder_id` 精确匹配，
+    「导出 08-Kubernetes」会只导出直接挂在它下面的文档，孙目录里的全丢 ——
+    用户会以为导出漏了（而且是静默漏，最难发现）。
+
+    权限：先走 `_require_folder_access` 判一次（目录不存在 404 / 无权限 403），
+    再在**用户可见的目录列表**里递归，所以不可能靠伪造 folder_id 看到别人的目录。
+    """
+    folders = store.list_folders(user_id=user_id)
+    by_id = {f["id"]: f for f in folders}
+    if folder_id not in by_id:
+        raise HTTPException(status_code=404, detail="目录不存在")
+
+    children: dict[str, list[str]] = {}
+    for f in folders:
+        pid = f.get("parent_id")
+        if pid:
+            children.setdefault(pid, []).append(f["id"])
+
+    out: set[str] = set()
+    stack = [folder_id]
+    while stack:
+        cur = stack.pop()
+        if cur in out:  # 防环（脏数据时 parent 指回自己）
+            continue
+        out.add(cur)
+        stack.extend(children.get(cur, []))
+    return out
 
 
 def _dedupe_title(store, title: str, user_id: str | None = None) -> str:
@@ -2656,6 +2694,14 @@ def export_documents(req: ExportRequest, current_user: dict = Depends(get_curren
         if req.doc_ids:
             idset = set(req.doc_ids)
             docs = [d for d in docs if d["id"] in idset]
+        if req.folder_id:
+            # 按目录过滤（含子目录）：目录树是递归的，只按 folder_id 精确匹配
+            # 会把「导出 08-Kubernetes」变成「只导出直接挂在它下面的那几篇」，
+            # 用户会以为漏了。收集所有后代 folder id 再匹配。
+            want = _collect_folder_subtree(req.folder_id, current_user["id"])
+            if not want:
+                raise HTTPException(status_code=404, detail="目录不存在")
+            docs = [d for d in docs if (d.get("folder_id") or "") in want]
         if not docs:
             raise HTTPException(status_code=404, detail="无文档可导出")
         # 只保留**有写权限**的文档：`store.all` 只做了可见性过滤，

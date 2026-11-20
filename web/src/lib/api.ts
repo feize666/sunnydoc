@@ -428,11 +428,17 @@ export async function exportDocuments(
   format: ExportFormat,
   docIds?: string[],
   kbId?: string | null,
+  folderId?: string | null,
 ): Promise<{ filename: string; blob: Blob }> {
   const res = await fetch(`${BASE}/export`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ format, doc_ids: docIds, kb_id: kbId ?? undefined }),
+    body: JSON.stringify({
+      format,
+      doc_ids: docIds,
+      kb_id: kbId ?? undefined,
+      folder_id: folderId ?? undefined,
+    }),
   });
 
   if (!res.ok) {

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { exportDocuments, type ExportFormat } from "@/lib/api";
 import { useModalFocus } from "@/lib/useModalFocus";
+import { useToast } from "./Toast";
 import { CloseIcon } from "./icons";
 
 const FORMATS: {
@@ -54,24 +55,60 @@ export function ExportDialog({
   onClose,
   activeDocId,
   kbId,
+  folderId,
+  folderName,
 }: {
   open: boolean;
   onClose: () => void;
   activeDocId: string | null;
   kbId?: string | null;
+  /** 当前选中的目录（可选）。提供时多一个「当前目录」范围。 */
+  folderId?: string | null;
+  folderName?: string | null;
 }) {
+  const toast = useToast();
   const [format, setFormat] = useState<ExportFormat>("md");
-  const [scope, setScope] = useState<"current" | "all" | "kb">("current");
+  const [scope, setScope] = useState<"current" | "folder" | "all" | "kb">("current");
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** 用户是否自己改过格式。没改过时，切到「整个知识库」会自动变 zip 并说明。 */
+  const [formatTouched, setFormatTouched] = useState(false);
 
   const panelRef = useModalFocus<HTMLDivElement>(open, onClose, "导出文档");
 
+  // 打开时重置：上次选了「整个知识库」、这次从某篇文档点进来，
+  // 不该还停在 zip 上（会导出一整个库，用户完全没预期）。
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+    setFormatTouched(false);
+    setScope((s) => {
+      // 没有打开的文档就别默认「当前文档」——先拦住，别让用户点了才知道不行
+      if (s === "current" && !activeDocId) return folderId ? "folder" : "all";
+      return s;
+    });
+  }, [open, activeDocId, folderId]);
+
   if (!open) return null;
+
+  const download = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
 
   const handleExport = async () => {
     if (scope === "current" && !activeDocId) {
-      setError("当前没有打开的文档，请先选择一篇文档或切换到「导出全部」");
+      setError("当前没有打开的文档，请先选择一篇文档或切换到其它范围");
+      return;
+    }
+    if (scope === "folder" && !folderId) {
+      setError("当前没有选中的目录");
       return;
     }
     if (scope === "kb" && !kbId) {
@@ -81,30 +118,24 @@ export function ExportDialog({
     setExporting(true);
     setError(null);
     try {
+      let filename: string;
+      let blob: Blob;
       if (scope === "kb") {
-        // 整个知识库导出：固定 zip，保留目录结构
-        const { filename, blob } = await exportDocuments("zip", undefined, kbId);
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-        onClose();
-        return;
+        // 整个知识库：固定 zip，保留目录结构
+        ({ filename, blob } = await exportDocuments("zip", undefined, kbId));
+      } else {
+        const docIds = scope === "current" && activeDocId ? [activeDocId] : undefined;
+        ({ filename, blob } = await exportDocuments(
+          format,
+          docIds,
+          kbId,
+          scope === "folder" ? folderId : undefined,
+        ));
       }
-      const docIds = scope === "current" && activeDocId ? [activeDocId] : undefined;
-      const { filename, blob } = await exportDocuments(format, docIds, kbId);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      download(blob, filename);
+      // 之前是「下载完直接 onClose」，用户不知道成没成 —— 全库 docx 要 2.6s，
+      // 大 zip 更久，框一闪就没会让人怀疑白点了一次。
+      toast.success(`已导出 ${filename}`);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "导出失败");
@@ -133,17 +164,32 @@ export function ExportDialog({
 
         <div className="p-4">
           <label className="mb-1.5 block text-xs text-muted">导出范围</label>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setScope("current")}
+              disabled={!activeDocId}
               className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${
                 scope === "current"
                   ? "border-accent bg-accent-soft text-accent"
                   : "border-line text-muted hover:bg-hover"
-              }`}
+              } disabled:cursor-not-allowed disabled:opacity-40`}
+              title={activeDocId ? "只导出当前打开的这一篇" : "当前没有打开的文档"}
             >
               当前文档
             </button>
+            {folderId && (
+              <button
+                onClick={() => setScope("folder")}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                  scope === "folder"
+                    ? "border-accent bg-accent-soft text-accent"
+                    : "border-line text-muted hover:bg-hover"
+                }`}
+                title={`导出目录「${folderName || "当前目录"}」及其所有子目录`}
+              >
+                当前目录
+              </button>
+            )}
             <button
               onClick={() => setScope("all")}
               className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${
@@ -157,20 +203,31 @@ export function ExportDialog({
             <button
               onClick={() => {
                 setScope("kb");
-                setFormat("zip");
+                // 只在用户没自己选过格式时自动切 zip。
+                // 原来无条件 setFormat("zip")：用户明明选了 Markdown，
+                // 点一下「整个知识库」格式就被静默改掉，滑回去还以为还是 md。
+                if (!formatTouched) setFormat("zip");
               }}
+              disabled={!kbId}
               className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${
                 scope === "kb"
                   ? "border-accent bg-accent-soft text-accent"
                   : "border-line text-muted hover:bg-hover"
-              }`}
+              } disabled:cursor-not-allowed disabled:opacity-40`}
+              title={kbId ? "导出整个知识库（保留目录结构）" : "当前不在知识库中"}
             >
               整个知识库
             </button>
           </div>
+          {scope === "folder" && (
+            <p className="mt-2 rounded-md bg-surface-2 px-2.5 py-1.5 text-[12px] text-muted">
+              导出「{folderName || "当前目录"}」及其全部子目录下的文档
+            </p>
+          )}
           {scope === "kb" && (
             <p className="mt-2 rounded-md bg-surface-2 px-2.5 py-1.5 text-[12px] text-muted">
               以 ZIP 压缩包导出整个知识库，保留文件夹目录结构，含媒体文件与清单 manifest.json
+              {!formatTouched && "（格式已自动切换为 ZIP）"}
             </p>
           )}
 
@@ -183,7 +240,12 @@ export function ExportDialog({
                   return (
                     <button
                       key={f.id}
-                      onClick={() => setFormat(f.id)}
+                      onClick={() => {
+                        setFormat(f.id);
+                        // 记下「用户亲自选过格式」，之后切到「整个知识库」
+                        // 就不再自动覆盖他的选择。
+                        setFormatTouched(true);
+                      }}
                       className={`flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors ${
                         active
                           ? "border-accent bg-accent-soft"

@@ -45,7 +45,10 @@ import { parseTagQuery } from "@/lib/tagQuery";
 // 幻灯片初始内容：从**纯函数模块**取，别从 SlideEditor（重依赖）取 —— 后者会把
 // html-to-image 整包拽进首屏 chunk。详见 slideTemplates.ts 顶部说明。
 import { newSlideDocBody } from "@/lib/slideTemplates";
-import { ImportIcon, FolderIcon, RefreshIcon, SearchIcon, SunIcon, MoonIcon, SettingsIcon } from "@/components/icons";
+import {
+  ImportIcon, FolderIcon, RefreshIcon, SearchIcon, SunIcon, MoonIcon, SettingsIcon,
+  StarIcon, CopyIcon, DownloadIcon, EditIcon,
+} from "@/components/icons";
 import {
   listDocuments,
   listFolders,
@@ -575,6 +578,23 @@ export default function Home() {
         setLoadingDoc(true);
         try {
           const detail = await getDocument(key);
+          // 层级位置（2026-11-21）：`detail.source` 是**来源**（导入路径），
+          // 不是"这篇在哪个知识库/目录"。顶栏原来只显示标题，
+          // 在 14 个顶级目录的树里根本定位不到自己读的是哪一块。
+          // 这里现算：kb 名 + 目录链，用现有状态算，零额外请求。
+          const _kbName = (kbs.find((k) => k.id === (detail.kb_id ?? "")) || {}).name ?? null;
+          const _chain: { id: string; name: string }[] = [];
+          {
+            let fid: string | null = (detail as { folder_id?: string | null }).folder_id ?? null;
+            const guard = new Set<string>();
+            while (fid && !guard.has(fid)) {
+              guard.add(fid);
+              const f = folders.find((x) => x.id === fid);
+              if (!f) break;
+              _chain.unshift({ id: f.id, name: f.name });
+              fid = (f as { parent_id?: string | null }).parent_id ?? null;
+            }
+          }
           setDocs((prev) => ({
             ...prev,
             [key]: {
@@ -588,6 +608,8 @@ export default function Home() {
               revision: detail.revision ?? 0,
               // 供「插入卡片」选择器在本知识库内筛选候选文档
               kbId: detail.kb_id ?? null,
+              kbName: _kbName,
+              folderChain: _chain,
             },
           }));
           void recordRecent(detail.id);
@@ -602,7 +624,12 @@ export default function Home() {
         refreshRecent();
       }
     },
-    [docs, refreshRecent],
+    // 🔴 `folders` / `kbs` 必须进依赖（2026-11-21）。
+    //    它们用于现算「这篇文档在哪个知识库/目录」（DocLocation 的层级面包屑）。
+    //    漏掉的后果是**静默失效**：闭包捕获的是首帧的空数组，
+    //    `folders.find()` 恒为 undefined → 目录链恒为空 → 层级行永远只显示来源。
+    //    表现是"加了功能但看不到"，不报错也不警告，只能靠实测发现。
+    [docs, refreshRecent, folders, kbs],
   );
 
   const closeDoc = useCallback(
@@ -1422,6 +1449,83 @@ export default function Home() {
       action: () => setTheme((t) => (t === "light" ? "dark" : "light")),
     },
     { icon: <SettingsIcon size={15} />, label: "系统设置", hint: "Ctrl+,", action: handleOpenSettings },
+
+    // ---- 针对"当前文档"的动作（2026-11-21）----
+    // 原来面板只有「新建/导入/刷新/主题/设置」这类**全局**动作。
+    // 想给正在看的文档置顶、复制、导出、删除，得回到侧栏找那一行、
+    // 悬停、再点「更多」——在 253 篇的树里这是最难找的一条路径。
+    // ⌘K 是唯一的万能入口，把这几个动作挂上去，路径从「三步定位 + 悬停」变成「打字」。
+    // 全部以「当前文档」开头，便于一次输入筛出这一组。
+    ...(activeDoc
+      ? [
+          {
+            icon: <EditIcon size={15} />,
+            label: `当前文档：${activeDoc.title}`,
+            hint: "定位",
+            action: () => setHighlight(activeDoc.key),
+          },
+          {
+            icon: <StarIcon size={15} />,
+            label: `置顶当前文档 · ${activeDoc.title}`,
+            action: () => {
+              const cur = metas.find((m) => m.id === activeDoc.key);
+              void handleTogglePin(activeDoc.key, !cur?.pinned);
+            },
+          },
+          {
+            icon: <CopyIcon size={15} />,
+            label: `复制当前文档 · ${activeDoc.title}`,
+            action: () => void handleDuplicateDoc(activeDoc.key),
+          },
+          {
+            icon: <DownloadIcon size={15} />,
+            label: `导出当前文档 · ${activeDoc.title}`,
+            action: () => setExportOpen(true),
+          },
+          {
+            icon: <StarIcon size={15} />,
+            label: `收藏/取消收藏当前文档 · ${activeDoc.title}`,
+            action: () => void handleToggleFavorite(activeDoc.key),
+          },
+        ]
+      : []),
+
+    // ---- 跳到某个目录（2026-11-21）----
+    // 14 个顶级目录、树最深 3 层，滚动找比打字慢得多。
+    //
+    // 实现取「进知识库 + 把目录名填进侧栏名称过滤」：
+    // - 不能只 scrollIntoView：目标目录可能在上次折叠的分支里，滚动也看不见；
+    // - 名称过滤会让 FileTree 的 forceOpen 生效，命中路径上的目录**自动展开**，
+    //   这是现成的机制（`@media` 之外的 forceOpen 就是为「搜到了要看得见」写的）。
+    // - 用 tree-filter 而不是 sidebar-search：后者是全文搜索，会把视图切到
+    //   搜索结果页，用户就"离开了原来的上下文"。
+    ...folders.slice(0, 40).map((f) => ({
+      icon: <FolderIcon size={15} />,
+      label: `跳到目录：${f.name}`,
+      action: () => {
+        const kid = (f as { kb_id?: string | null }).kb_id;
+        if (kid && kid !== currentKbId) enterKb(kid);
+        // 等侧栏换库重挂载后再填过滤词（同一帧 DOM 还没换）
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            const el = document.querySelector<HTMLInputElement>('[data-testid="tree-filter"]');
+            if (el) {
+              el.focus();
+              // 给 React 的受控 input 赋值得走原生 setter，否则值写进去但
+              // onChange 不触发，过滤不生效（React 17+ 的已知行为）。
+              const setter = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype,
+                "value",
+              )?.set;
+              setter?.call(el, f.name);
+              el.dispatchEvent(new Event("input", { bubbles: true }));
+            } else {
+              toast.error("当前视图没有目录树，先进入知识库再试");
+            }
+          }, 120);
+        });
+      },
+    })),
   ];
 
   // 公开分享视图（优先，无需登录）
@@ -1744,6 +1848,30 @@ export default function Home() {
         onClose={() => setExportOpen(false)}
         activeDocId={activeKey}
         kbId={currentKbId}
+        /* 「当前目录」取自**当前打开文档**所在的目录。
+           项目里没有独立的"选中目录"状态（侧栏树只记展开/折叠，
+           多选状态在 FileTree 内部），而当前文档的 folder_id 是现成的、
+           且语义明确：我在看这个模块的文档，多半就想导这个模块。
+           folder 名从 folders 里查，查不到就退化成"当前目录"文案。 */
+        folderId={
+          activeKey
+            ? // 优先用 openDoc 时算好的 `folderChain`（末项就是直接父目录）：
+              // `metas` 是列表接口的快照，刚打开的文档不一定在里面
+              // （例如跨库打开、或列表尚未刷新），拿它查会得到 null，
+              // 表现为「当前目录」时有时无。
+              (activeDoc?.folderChain?.length
+                ? activeDoc.folderChain[activeDoc.folderChain.length - 1].id
+                : metas.find((m) => m.id === activeKey)?.folder_id) ?? null
+            : null
+        }
+        folderName={
+          activeKey
+            ? (activeDoc?.folderChain?.length
+                ? activeDoc.folderChain[activeDoc.folderChain.length - 1].name
+                : folders.find((f) => f.id === metas.find((m) => m.id === activeKey)?.folder_id)
+                    ?.name) ?? null
+            : null
+        }
       />
 
       <NewKbDialog

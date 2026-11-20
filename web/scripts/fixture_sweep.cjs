@@ -201,6 +201,12 @@ const DOC_PREFIXES = [
   //    按「空」判断既漏又容易误伤刚新建的真文档。
   "探测-", "临时探测-", "空图表-", "FC-流程探测",
   "PROBE-", "PROBE2-", "DBG-", "RPRO-", "REPRO-", "MMV-", "CTRL-MM-", "DBL-MM-",
+  // 图片/分享/双击放大 验证类（2026-11-21 实测积 9 篇）：
+  // 历次「图片灯箱能不能双击放大」「分享页能不能看」的手工验证产物，
+  // 标题形如 `IMG2-诊断` `IMGP-选图诊断` `SHARE-双击放大` `REPRO2-双击放大` `PRB-探针文档`。
+  // ⚠️ 又一次印证第 34 条：清扫**每次都要重新过一遍命名习惯**，
+  //    不能只补上次见过的前缀。这批是上一次清扫之后新产生的。
+  "IMG2-", "IMGB-", "IMGD-", "IMGP-", "SHARE-", "REPRO2-", "PRB-",
   // 双下划线包裹的标题（如 `__P0-2越权验证(owner=admin)__`）：
   // 这是手工验证脚本的命名习惯，真实知识文档不会这么起名
   "__",
@@ -252,12 +258,34 @@ async function j(path, method = "GET", body) {
   }
 }
 
+/**
+ * 正则判据：整类覆盖，不枚举。
+ *
+ * 🔴 为什么必须用正则（2026-11-21 第 N 次踩）：
+ * 图片验证类的标题是 `IMG2-诊断` `IMGB-基准诊断` `IMGD-诊断` `IMGP-选图诊断` `IMGS-诊断`……
+ * 我上一次只枚举了 IMG2-/IMGB-/IMGD-/IMGP- 四个，**漏了 IMGS-**，
+ * 结果清扫报「零残留」而库里仍躺着一篇。
+ *
+ * 枚举永远漏 —— 后缀（A/B/C/2/3）是测试脚本按需挑的，没有上限。
+ * ⇒ 凡「同一族前缀 + 可变后缀 + 固定中文词」的命名，一律写正则。
+ */
+const DOC_PATTERNS = [
+  // 图片/分享/双击放大 手工验证产物：IMG* / SHARE* / REPRO* / PRB 后跟固定中文
+  /^IMG[A-Z0-9]*-/,
+  /^SHARE\d*-/,
+  /^REPRO\d*-/,
+  /^PRB-/,
+  // 双下划线包裹（`__P0-2越权验证(owner=admin)__`）
+  /^__.*__$/,
+];
+
 const isFixtureDoc = (d) => {
   const t = String(d.title || "");
   // 去掉「(2)」这类自动去重后缀 —— 新建同名文档时后端会加，夹具因此越积越多
   // （实测 `import-ok` 积到 `import-ok(14)`）
   const base = t.replace(/\(\d+\)$/, "").trim();
   if (DOC_PREFIXES.some((p) => t.startsWith(p) || base.startsWith(p))) return true;
+  if (DOC_PATTERNS.some((re) => re.test(t) || re.test(base))) return true;
   if (DOC_EXACT.has(base)) return true;
   if (UNNAMED_PREFIXES.some((p) => t.startsWith(p)) && String(d.text || "").length <= UNNAMED_MAX_LEN) {
     return true;
