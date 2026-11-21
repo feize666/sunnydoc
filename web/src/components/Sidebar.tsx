@@ -172,6 +172,8 @@ export function Sidebar({
    * Sidebar 把这个状态透传给 FileTree —— FileTree 内部用 useEffect 把批量值
    * 应用到每个节点，但「用户单独点过某节点」会让该节点脱离批量控制。
    */
+  treeEpoch,
+  currentKbId,
   batchedAll,
   batchedAt,
   onToggleBatchedAll,
@@ -234,6 +236,10 @@ export function Sidebar({
   onExportDoc?: (docId: string) => void;
   onImportToFolder?: (folderId: string, folderName: string) => void;
   /** 批量展开/折叠：null=未控制；true=展开全部；false=折叠全部 */
+  /** 树的重挂令牌（+1 即重挂，用于「点目录跳到树里」）。 */
+  treeEpoch?: number;
+  /** 当前知识库 id（重挂 key 里带上，换库时不沿用旧展开态）。 */
+  currentKbId?: string | null;
   batchedAll?: boolean | null;
   /** 切换批量展开/折叠：参数是「下一个目标态」 */
   onToggleBatchedAll?: () => void;
@@ -1146,7 +1152,12 @@ export function Sidebar({
                 </span>
               )}
             </div>
+            {/* key 里带 treeEpoch：知识库总览点「目录」时，用一次重挂来让
+                已挂载的树读到新的 localStorage 展开记录（见 page.tsx
+                revealFolderInTree 的说明）。不重挂的话树不会重新读记录，
+                表现就是「点了目录没反应」。 */}
             <FileTree
+              key={`tree-${treeEpoch ?? 0}-${currentKbId ?? "none"}`}
               data={data}
               filterQuery={treeFilter}
               activeKey={activeKey}

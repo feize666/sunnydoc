@@ -26,6 +26,7 @@ import {
 import { CopyIcon, CheckIcon, EditIcon, HistoryIcon, ShareIcon } from "./icons";
 import { useImageZoom } from "./ImageLightbox";
 import { EmptyState } from "./EmptyState";
+import { KbOverview } from "./KbOverview";
 import {
   applyAnchors,
   unwrapAnchors,
@@ -238,6 +239,7 @@ export function Editor({
   onShare,
   recent,
   onOpenRecent,
+  kbOverview,
   pinned,
   tags,
   summary,
@@ -271,6 +273,19 @@ export function Editor({
   onShare?: () => void;
   recent?: RecentDoc[];
   onOpenRecent?: (docId: string, kbId: string | null) => void;
+  /** 知识库总览数据（仅在未打开任何文档时渲染，见 KbOverview）。
+   *  不传时退回旧的「最近浏览」单块布局（分享页等场景不需要总览）。 */
+  kbOverview?: {
+    kbName: string;
+    docCount: number;
+    folders: { id: string; name: string; count: number }[];
+    pinnedDocs: { id: string; title: string }[];
+    favoriteDocs: { id: string; title: string }[];
+    onOpenDoc: (id: string) => void;
+    onOpenFolder: (id: string) => void;
+    onNewDoc: () => void;
+    onImport: () => void;
+  } | null;
   pinned?: boolean;
   tags?: string[];
   summary?: string | null;
@@ -330,6 +345,10 @@ export function Editor({
   const [previewHtml, setPreviewHtml] = useState("");
   const [htmlPreview, setHtmlPreview] = useState("");
   const [copied, setCopied] = useState(false);
+  /** 顶栏「更多文档操作」下拉（置顶/标签/摘要/历史）。低频项收起来，
+   *  让「编辑」成为唯一实心按钮 —— 否则 8 个等宽按钮主次全平。 */
+  const [docMoreOpen, setDocMoreOpen] = useState(false);
+  const docMoreRef = useRef<HTMLDivElement>(null);
   const [collabPresence, setCollabPresence] = useState<{ id: string; nickname: string; avatar?: string | null }[]>([]);
   const [collabNotice, setCollabNotice] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -1056,6 +1075,26 @@ export function Editor({
   }
 
   if (!doc) {
+    // 有总览数据时走 KbOverview（进入知识库的第一屏是"这里有什么"，
+    // 而不是一份 20 条、1501px 高的「最近浏览」）。
+    if (kbOverview) {
+      return (
+        <KbOverview
+          kbName={kbOverview.kbName}
+          docCount={kbOverview.docCount}
+          folderCount={kbOverview.folders.length}
+          folders={kbOverview.folders}
+          pinnedDocs={kbOverview.pinnedDocs}
+          favoriteDocs={kbOverview.favoriteDocs}
+          recent={recent ?? []}
+          onOpenDoc={kbOverview.onOpenDoc}
+          onOpenRecent={(id, kb) => onOpenRecent?.(id, kb)}
+          onOpenFolder={kbOverview.onOpenFolder}
+          onNewDoc={kbOverview.onNewDoc}
+          onImport={kbOverview.onImport}
+        />
+      );
+    }
     return (
       <main className="flex-1 overflow-y-auto bg-background">
         <div className="mx-auto max-w-[760px] px-4 py-10 sm:px-10">
@@ -1154,26 +1193,41 @@ export function Editor({
               </span>
             )}
           </div>
-          <div className="flex min-w-0 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {/* 操作栏分层（对比语雀 / Notion 的文档顶栏）
+                ------------------------------------------------------------------
+                原来 8 个动作全是等宽文字按钮（各 72×32，一排在 1600px 下占 640px），
+                主次完全抹平：**每分钟按的「编辑」和一年按一次的「置顶」长得一样**。
+                而且「复制 / 分享」连续两个都是"把内容带出去"，紧邻容易误点。
+
+                分成三层，按**使用频率**而不是功能分类：
+                  1. 常显图标（24px 图标 + tooltip）：复制 / 分享 / 收藏 —— 高频、
+                     语义通用、看一眼图标就懂；
+                  2. 「更多」下拉：置顶 / 标签 / 摘要 / 历史 —— 低频，收起来；
+                  3. 主按钮：编辑（唯一的实心按钮，视线终点）。
+
+                ⚠️ 文字不再渲染，但 `aria-label` 与 `title` **必须**保留：
+                - 读屏软件靠 aria-label；
+                - 既有护栏用 `hasText: /评论/`、`/^编辑$/` 定位（12 个脚本），
+                  文字一消失就会落空 —— 所以「编辑」保持文字（它是主按钮），
+                  其余被收起的项一律补 `aria-label`，并各自保留可读名称。 */}
             <Tooltip content={copied ? "已复制" : "复制 Markdown"}>
               <button
                 onClick={copyMarkdown}
-                className={`btn btn-sm btn-secondary hover:border-accent/40 hover:text-accent ${
-                  copied ? "border-accent/40 text-accent" : ""
-                }`}
+                aria-label={copied ? "已复制" : "复制 Markdown"}
+                className={`icon-btn ${copied ? "text-accent" : "text-muted hover:text-text"}`}
               >
-                {copied ? <CheckIcon size={14} className="text-accent" /> : <CopyIcon size={14} />}
-                复制
+                {copied ? <CheckIcon size={16} className="text-accent" /> : <CopyIcon size={16} />}
               </button>
             </Tooltip>
             {onShare && (
               <Tooltip content="分享">
                 <button
                   onClick={onShare}
-                  className="btn btn-sm btn-secondary hover:border-accent/40 hover:text-accent"
+                  aria-label="分享"
+                  className="icon-btn text-muted hover:text-text"
                 >
-                  <ShareIcon size={14} />
-                  分享
+                  <ShareIcon size={16} />
                 </button>
               </Tooltip>
             )}
@@ -1181,94 +1235,103 @@ export function Editor({
               <Tooltip content={isFavorite ? "取消收藏" : "收藏"}>
                 <button
                   onClick={onToggleFavorite}
-                  className={`btn btn-sm ${
-                    isFavorite
-                      ? "border border-accent/40 bg-accent-soft text-accent"
-                      : "btn-secondary hover:border-accent/40 hover:text-accent"
-                  }`}
+                  aria-label={isFavorite ? "取消收藏" : "收藏"}
+                  aria-pressed={isFavorite}
+                  className={`icon-btn ${isFavorite ? "text-accent" : "text-muted hover:text-text"}`}
                 >
-                  <StarIcon size={14} filled={isFavorite} />
-                  收藏
+                  <StarIcon size={16} filled={isFavorite} />
                 </button>
               </Tooltip>
             )}
-            {onTogglePin && (
-              <Tooltip content={pinned ? "取消置顶" : "置顶"}>
-                <button
-                  onClick={onTogglePin}
-                  className={`btn btn-sm ${
-                    pinned
-                      ? "border border-accent/40 bg-accent-soft text-accent"
-                      : "btn-secondary hover:border-accent/40 hover:text-accent"
-                  }`}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill={pinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 17v5M5 12l-1 1 6 6 1-1M14 3l6 6-3 3-1-1-2 2-2-2 2-2-1-1 3-3z" />
-                  </svg>
-                  置顶
-                </button>
-              </Tooltip>
+
+            {/* 低频项：置顶 / 标签 / 摘要 / 历史 收进下拉。
+                触发器不带「更多」以外的语义词（防撞车：画布护栏用
+                `button[title*="导出"]`，侧栏已经踩过一次）。 */}
+            {(onTogglePin || onEditTags || onGenerateSummary || onOpenHistory) && (
+              <div className="relative" ref={docMoreRef}>
+                <Tooltip content="更多文档操作">
+                  <button
+                    onClick={() => setDocMoreOpen((v) => !v)}
+                    aria-label="更多文档操作"
+                    aria-haspopup="menu"
+                    aria-expanded={docMoreOpen}
+                    className={`icon-btn ${docMoreOpen ? "text-accent" : "text-muted hover:text-text"}`}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" />
+                    </svg>
+                  </button>
+                </Tooltip>
+                {docMoreOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setDocMoreOpen(false)} />
+                    <div
+                      role="menu"
+                      className="menu-panel absolute right-0 top-full z-40 mt-1 w-44 p-1.5"
+                    >
+                      {onTogglePin && (
+                        <button
+                          role="menuitem"
+                          onClick={() => { setDocMoreOpen(false); onTogglePin(); }}
+                          className={`menu-item w-full ${pinned ? "text-accent" : ""}`}
+                        >
+                          {pinned ? "取消置顶" : "置顶"}
+                          {pinned && <CheckIcon size={12} className="ml-auto" />}
+                        </button>
+                      )}
+                      {onEditTags && (
+                        <button
+                          role="menuitem"
+                          onClick={() => { setDocMoreOpen(false); onEditTags(); }}
+                          className="menu-item w-full"
+                        >
+                          标签{(tags?.length ?? 0) > 0 ? `（${tags?.length}）` : ""}
+                        </button>
+                      )}
+                      {onGenerateSummary && (
+                        <button
+                          role="menuitem"
+                          onClick={() => { setDocMoreOpen(false); onGenerateSummary(); }}
+                          className="menu-item w-full"
+                        >
+                          AI 摘要
+                        </button>
+                      )}
+                      {onOpenHistory && (
+                        <button
+                          role="menuitem"
+                          onClick={() => { setDocMoreOpen(false); onOpenHistory(); }}
+                          className="menu-item w-full"
+                        >
+                          版本历史
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             )}
-            {onEditTags && (
-              <Tooltip content="标签">
-                <button
-                  onClick={onEditTags}
-                  className="btn btn-sm btn-secondary hover:border-accent/40 hover:text-accent"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 2H2v10l9.29 9.29a2 2 0 0 0 2.83 0l7.17-7.17a2 2 0 0 0 0-2.83L12 2z" />
-                    <circle cx="7" cy="7" r="1.5" />
-                  </svg>
-                  标签
-                </button>
-              </Tooltip>
-            )}
-            {onGenerateSummary && (
-              <Tooltip content="AI 摘要">
-                <button
-                  onClick={onGenerateSummary}
-                  className="btn btn-sm btn-secondary hover:border-accent/40 hover:text-accent"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
-                    <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z" />
-                  </svg>
-                  摘要
-                </button>
-              </Tooltip>
-            )}
-            {onOpenHistory && (
-              <Tooltip content="版本历史">
-                <button
-                  onClick={onOpenHistory}
-                  className="btn btn-sm btn-secondary hover:border-accent/40 hover:text-accent"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-                    <path d="M3 3v5h5" />
-                  </svg>
-                  历史
-                </button>
-              </Tooltip>
-            )}
+
             {onOpenComments && (
               <Tooltip content="评论">
                 <button
                   onClick={onOpenComments}
-                  className="btn btn-sm btn-secondary hover:border-accent/40 hover:text-accent"
+                  aria-label={`评论${commentCount ? `（${commentCount}）` : ""}`}
+                  className="icon-btn relative text-muted hover:text-text"
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                   </svg>
-                  评论
                   {commentCount ? (
-                    <span className="ml-0.5 rounded-full bg-accent-soft px-1.5 text-[10px] font-medium leading-[16px] text-accent">
-                      {commentCount}
+                    <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-accent-solid px-1 text-[10px] font-semibold leading-none text-white">
+                      {commentCount > 99 ? "99+" : commentCount}
                     </span>
                   ) : null}
                 </button>
               </Tooltip>
             )}
+
+            <span className="mx-1 h-5 w-px shrink-0 bg-line" />
 
             {readOnly ? (
               <span className="flex items-center gap-1 rounded-lg border border-line bg-background px-3 py-1.5 text-xs text-faint">

@@ -360,7 +360,12 @@ const purgeDoc = async (id) => {
   check("彻底定位不到时正文不留高亮", m4.length === 0, JSON.stringify(m4));
 
   // 打开面板看是否降级显示「未锚定」
-  const commentsBtn = p.locator("button").filter({ hasText: /评论/ }).first();
+  // ⚠️ 顶栏「评论」第五轮起只显示图标（文字收进 tooltip），
+  //    原来的 `hasText: /评论/` 会落空 → 改用 `aria-label` 定位。
+  //    这也是更稳的写法：可见文字是设计变量，可访问名是契约。
+  const commentsBtn = p
+    .locator('button[aria-label^="评论"], button:has-text("评论")')
+    .first();
   if (await commentsBtn.count()) await commentsBtn.click({ force: true }).catch(() => {});
   const orphanShown = await waitFor(async () => {
     const t = await p.locator("aside.fixed").first().innerText().catch(() => "");

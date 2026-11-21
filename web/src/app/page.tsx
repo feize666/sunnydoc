@@ -254,6 +254,8 @@ export default function Home() {
   } | null>(null);
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
   const [currentKbId, setCurrentKbId] = useState<string | null>(null);
+  /** 让 FileTree 重新挂载的计数器（知识库总览「点目录」用，见 revealFolderInTree）。 */
+  const [treeEpoch, setTreeEpoch] = useState(0);
   const [kbs, setKbs] = useState<Kb[]>([]);
   const [recent, setRecent] = useState<RecentDoc[]>([]);
   const [favorites, setFavorites] = useState<DocMeta[]>([]);
@@ -1396,8 +1398,59 @@ export default function Home() {
 
   const activeDoc = activeKey ? docs[activeKey] ?? null : null;
   const wordCount = activeDoc ? countWords(activeDoc.body) : 0;
+  /** 顶层目录 + 各目录下（递归含子目录）的文档数。知识库总览「目录」块用。
+   *  口径：只统计**当前知识库**的 metas（metas 已按 kb 拉取）。 */
+  const folderSummaries = useMemo(() => {
+    const byFolder = new Map<string, number>();
+    for (const m of metas) if (m.folder_id) byFolder.set(m.folder_id, (byFolder.get(m.folder_id) ?? 0) + 1);
+    // 递归把子孙计数上卷到祖先，并算出顶层目录
+    const childrenOf = new Map<string | null, typeof folders>();
+    for (const f of folders) {
+      const arr = childrenOf.get(f.parent_id ?? null) ?? [];
+      arr.push(f);
+      childrenOf.set(f.parent_id ?? null, arr);
+    }
+    const totalUnder = (id: string): number => {
+      let n = byFolder.get(id) ?? 0;
+      for (const c of childrenOf.get(id) ?? []) n += totalUnder(c.id);
+      return n;
+    };
+    return (childrenOf.get(null) ?? []).map((f) => ({
+      id: f.id,
+      name: f.name,
+      count: totalUnder(f.id),
+    }));
+  }, [folders, metas]);
+
   const currentKb = kbs.find((k) => k.id === currentKbId) ?? null;
   const readOnly = currentKb?.permission === "read";
+
+  /** 知识库总览「目录」块：点一下 → 侧栏把该目录展开并滚到眼前。
+   *
+   *  为什么走 localStorage 而不是加 prop 链：
+   *  `FileTree` 的展开态是按节点存 `sunnydoc.tree.open.{id}`、且**只在挂载时**
+   *  恢复一次（避免受控/非受控两套状态打架）。要让「已挂载」的树展开某个节点，
+   *  最省事且与既有持久化一致的做法就是写好这条记录，再让树重新挂载一次
+   *  （换 key），随后把那一行滚进视野。
+   *
+   *  这是一次性的导航动作，不走受控 prop 是刻意的：
+   *  否则 FileTree 要同时支持「内部 state」与「外部指令」两套真相，
+   *  历史上这类双源状态最容易出现「点了没反应 / 自己的操作被覆盖」。 */
+  const revealFolderInTree = useCallback((folderId: string) => {
+    try {
+      localStorage.setItem(`sunnydoc.tree.open.${folderId}`, "1");
+    } catch {
+      /* 隐私模式下写不进去：仍然尝试滚动定位 */
+    }
+    setTreeEpoch((v) => v + 1); // 触发 FileTree 重新挂载 → 读到新的展开记录
+    // 等树重挂 + 展开渲染完成再滚（两帧不够，树是递归渲染的）
+    window.setTimeout(() => {
+      const row = document.querySelector(
+        `[data-tree-kind="folder"][data-tree-key="${folderId}"]`,
+      );
+      row?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 260);
+  }, []);
   const activeMeta = activeKey ? metas.find((m) => m.id === activeKey) ?? null : null;
 
   // 命令面板全文搜索
@@ -1557,6 +1610,8 @@ export default function Home() {
   const sidebarProps = {
     data: tree,
     activeKey,
+    treeEpoch,
+    currentKbId,
     onSelect: openDoc,
     folders,
     onImport: openImport,
@@ -1674,6 +1729,24 @@ export default function Home() {
               }
               recent={recent}
               onOpenRecent={openRecent}
+              /* 知识库总览的数据（只在未打开文档时用）。
+                 全部由已有 state 现算，不新增接口 —— 打开知识库不多打网络请求。
+                 统计口径：只算**当前知识库**下的活跃文档（metas 已按 kb 拉取）。 */
+              kbOverview={{
+                kbName: kbs.find((k) => k.id === currentKbId)?.name ?? "知识库",
+                docCount: metas.length,
+                folders: folderSummaries,
+                pinnedDocs: metas
+                  .filter((m) => m.pinned)
+                  .map((m) => ({ id: m.id, title: m.title })),
+                favoriteDocs: favorites
+                  .filter((f) => !currentKbId || f.kb_id === currentKbId)
+                  .map((f) => ({ id: f.id, title: f.title })),
+                onOpenDoc: (id: string) => openDoc(id),
+                onOpenFolder: revealFolderInTree,
+                onNewDoc: () => handleNew("doc", null),
+                onImport: () => setImportOpen(true),
+              }}
               pinned={activeMeta?.pinned ?? false}
               tags={activeMeta?.tags ?? []}
               summary={activeMeta?.summary ?? null}
