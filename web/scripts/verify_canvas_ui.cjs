@@ -107,14 +107,21 @@ async function j(path, method = "GET", body) {
         (d) => (d.className || "").includes("flex-wrap") && (d.innerText || "").includes("自动布局"),
       );
       if (!bar) return null;
+      // ⚠️ 只数**可见**按钮。第五轮加入的「更多」图标按钮在宽容器下是
+      //    `display:none`（窄容器才出现），把它算进来会让这条判据从 14 变 15
+      //    而误报 —— 「平铺」的语义是"占位挤宽度"，隐藏的不占位。
+      //    （这是"判据写死数量会过时"的又一实例：数量不是重点，
+      //      "宽度是否够、会不会折行"才是，后者由下一行 barH 断言守。）
       const btns = [...bar.querySelectorAll("button")];
+      const visible = btns.filter((b) => b.getBoundingClientRect().width > 0);
       return {
-        btnCount: btns.length,
+        btnCount: visible.length,
+        domCount: btns.length,
         barH: Math.round(bar.getBoundingClientRect().height),
         text: bar.innerText || "",
       };
     });
-    check(`工具栏 ≤14 个按钮（${m?.btnCount}）`, !!m && m.btnCount <= 14, "原 18 个平铺");
+    check(`工具栏可见按钮 ≤14 个（${m?.btnCount}，DOM ${m?.domCount}）`, !!m && m.btnCount <= 14, "原 18 个平铺");
     check(
       `工具栏单行高 ≤50px（${m?.barH}px）`,
       !!m && m.barH <= 50,

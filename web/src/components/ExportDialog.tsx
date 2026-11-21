@@ -70,6 +70,8 @@ export function ExportDialog({
   const [format, setFormat] = useState<ExportFormat>("md");
   const [scope, setScope] = useState<"current" | "folder" | "all" | "kb">("current");
   const [exporting, setExporting] = useState(false);
+  /** 已等待毫秒数（仅用于把「导出中…」变成可判断的进度反馈）。 */
+  const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   /** 用户是否自己改过格式。没改过时，切到「整个知识库」会自动变 zip 并说明。 */
   const [formatTouched, setFormatTouched] = useState(false);
@@ -117,6 +119,12 @@ export function ExportDialog({
     }
     setExporting(true);
     setError(null);
+    setElapsed(0);
+    // 全库导出实测 2.63s、整库 zip 可达数十秒。没有计时反馈时，
+    // 用户看到的是一个静止的「导出中…」，无法判断「在跑」还是「卡死了」——
+    // 这是本轮用户反馈「用起来别扭」的直接来源之一。
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => setElapsed(Date.now() - startedAt), 200);
     try {
       let filename: string;
       let blob: Blob;
@@ -140,6 +148,7 @@ export function ExportDialog({
     } catch (e) {
       setError(e instanceof Error ? e.message : "导出失败");
     } finally {
+      window.clearInterval(timer);
       setExporting(false);
     }
   };
@@ -281,6 +290,30 @@ export function ExportDialog({
           {error && (
             <div className="mt-3 rounded-md border border-danger/40 bg-danger-soft px-2 py-1.5 text-xs text-danger">
               {error}
+            </div>
+          )}
+
+          {/* 进度反馈：全库导出 2.63s 起、大 zip 可达数十秒。
+              静止的「导出中…」无法区分「在跑」与「卡死」——
+              这里给出已用时 + 不确定态进度条 + 一句"可以关掉吗"。 */}
+          {exporting && (
+            <div className="mt-3" role="status" aria-live="polite">
+              <div className="mb-1.5 flex items-baseline justify-between">
+                <span className="text-[12px] text-muted">
+                  {scope === "kb" ? "正在打包整个知识库…" : scope === "folder" ? "正在导出目录树…" : scope === "all" ? "正在导出全部文档…" : "正在导出…"}
+                </span>
+                <span className="tabular-nums text-[12px] text-faint">
+                  {(elapsed / 1000).toFixed(1)}s
+                </span>
+              </div>
+              {/* 不确定态进度条：总时长不可预知（后端一次性返回），
+                  用循环动画而非假百分比 —— 假进度比没有更糟。 */}
+              <div className="h-1 overflow-hidden rounded-full bg-surface-2">
+                <div className="export-progress-bar h-full rounded-full bg-accent-solid" />
+              </div>
+              <p className="mt-1.5 text-[11px] text-faint">
+                请勿关闭页面；完成后会自动下载并提示。
+              </p>
             </div>
           )}
 

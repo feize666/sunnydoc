@@ -1493,6 +1493,9 @@ export function MindMapEditor({
   // —— 导入 Xmind ——
   const fileRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
+  /** 工具栏「更多」下拉：低频项（导入 / 模板 / 重置）在窄容器里收进这里。
+   *  与 exportOpen / helpOpen 互斥（同时只会有一个浮层，否则遮罩互相覆盖）。 */
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const importXmind = (file: File) => {
     setImporting(true);
@@ -1688,7 +1691,7 @@ export function MindMapEditor({
   };
 
   const toolBtn = (active: boolean) =>
-    `flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] transition-colors ${
+    `tbtn flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] transition-colors ${
       active ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"
     } disabled:opacity-40 disabled:cursor-not-allowed`;
 
@@ -1696,7 +1699,7 @@ export function MindMapEditor({
     <div className="flex h-[calc(100vh-300px)] min-h-[400px] flex-col rounded-lg border border-line bg-background">
       {/* 工具栏（精简，只留高频操作） */}
       {!readOnly && (
-      <div className="relative z-20 flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
+      <div className="canvas-toolbar relative z-20 flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
         {/* 侧栏折叠开关 */}
         <button
           onClick={() => setLeftCollapsed((v) => !v)}
@@ -1728,11 +1731,11 @@ export function MindMapEditor({
         {/* 撤销/重做 */}
         <button onClick={undo} disabled={!canUndo} className={toolBtn(false)} title="撤销 (Ctrl+Z)" aria-label="撤销">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>
-          撤销
+          <span className="tbtn-label">撤销</span>
         </button>
         <button onClick={redo} disabled={!canRedo} className={toolBtn(false)} title="重做 (Ctrl+Y)" aria-label="重做">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 15-6.7L21 13" /></svg>
-          重做
+          <span className="tbtn-label">重做</span>
         </button>
 
         <span className="mx-1.5 h-5 w-px bg-line" />
@@ -1740,11 +1743,11 @@ export function MindMapEditor({
         {/* 折叠 */}
         <button onClick={expandAll} className={toolBtn(false)} title="展开全部节点" aria-label="展开全部节点">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 9h16M4 15h16M9 4v16" /></svg>
-          展开
+          <span className="tbtn-label">展开</span>
         </button>
         <button onClick={collapseAll} className={toolBtn(false)} title="折叠全部节点" aria-label="折叠全部节点">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 9h16M4 15h16M12 4v16" /></svg>
-          折叠
+          <span className="tbtn-label">折叠</span>
         </button>
 
         <span className="mx-1.5 h-5 w-px bg-line" />
@@ -1758,21 +1761,22 @@ export function MindMapEditor({
           disabled={!selected}
           className={toolBtn(linkingFrom !== null)}
           title={linkingFrom ? "关联模式：点击另一节点建立/取消关联，再次点击或点空白取消" : "关联主题：先选中起点节点，再点此进入关联模式"}
+          aria-label="关联主题"
         >
           <Glyph iconId="link" size={14} />
-          {linkingFrom ? "关联中…" : "关联"}
+          <span className="tbtn-label">{linkingFrom ? "关联中…" : "关联"}</span>
         </button>
         <button onClick={clearLinks} disabled={links.length === 0} className={toolBtn(false)} title="清除所有关联" aria-label="清除所有关联">
-          清除关联
+          <span className="tbtn-label">清除关联</span>
         </button>
 
         {/* 工具栏不再常驻快捷键提示（占位且随宽度换行）。
             完整说明收在右侧「快捷键」按钮的面板里，需要时按需展开。 */}
         <span className="ml-auto" />
 
-        <button onClick={() => setOutline((o) => !o)} className={toolBtn(outline)} title="切换大纲 / 导图视图">
+        <button onClick={() => setOutline((o) => !o)} className={toolBtn(outline)} title="切换大纲 / 导图视图" aria-label={outline ? "切换到导图视图" : "切换到大纲视图"}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>
-          {outline ? "导图" : "大纲"}
+          <span className="tbtn-label">{outline ? "导图" : "大纲"}</span>
         </button>
 
         {/* 导出（PNG / SVG / PDF）下拉 */}
@@ -1780,10 +1784,11 @@ export function MindMapEditor({
           <button
             onClick={() => { setExportOpen((o) => !o); setHelpOpen(false); }}
             disabled={exporting || outline}
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover disabled:opacity-50"
+            className="tbtn flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] text-text transition-colors hover:bg-hover disabled:opacity-50"
             title={outline ? "大纲视图下不支持导出，请先切换回导图视图" : "导出图片 / 矢量图 / PDF"}
+            aria-label="导出"
           >
-            {exporting ? "导出中…" : "导出"}
+            <span className="tbtn-label">{exporting ? "导出中…" : "导出"}</span>
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${exportOpen ? "rotate-180" : ""}`}>
               <path d="M6 9l6 6 6-6" />
             </svg>
@@ -1814,8 +1819,10 @@ export function MindMapEditor({
             </>
           )}
         </div>
-        {/* 快捷键提示面板（与主题/图标/导出下拉互斥） */}
-        <div className="relative shrink-0">
+        {/* 快捷键提示面板（与主题/图标/导出下拉互斥）。
+            整个包裹层都要标记 tbtn-in-more —— 只把 <button> 标上，
+            外层 div 仍占位，窄屏照样折行（实测 558px 仍需 543px）。 */}
+        <div className="tbtn-in-more relative shrink-0">
           <button
             onClick={() => {
               const next = !helpOpen;
@@ -1826,9 +1833,10 @@ export function MindMapEditor({
             }}
             className={toolBtn(helpOpen)}
             title="快捷键说明"
+            aria-label="快捷键说明"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1 .9-1 1.7M12 17h.01" /></svg>
-            快捷键
+            <span className="tbtn-label">快捷键</span>
           </button>
           {helpOpen && (
             <>
@@ -1856,29 +1864,88 @@ export function MindMapEditor({
         </div>
 
         <button
+          onClick={() => {
+            // 窄容器下隐藏（此时它已在「更多」里）；这里保留给宽屏
+            setMoreOpen((o) => !o);
+            setExportOpen(false);
+            setHelpOpen(false);
+          }}
+          className={`tbtn-more ${toolBtn(moreOpen)}`}
+          title="更多操作"
+          aria-label="更多操作"
+          aria-haspopup="menu"
+          aria-expanded={moreOpen}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" />
+          </svg>
+          <span className="tbtn-label">更多</span>
+        </button>
+
+        <button
           onClick={() => fileRef.current?.click()}
           disabled={importing}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] text-text transition-colors hover:bg-hover disabled:opacity-50"
+          className="tbtn tbtn-in-more flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] text-text transition-colors hover:bg-hover disabled:opacity-50"
           title="导入 Xmind 文件（.xmind）"
+          aria-label="导入 Xmind 文件"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12M7 10l5 5 5-5" /><path d="M3 21h18" /></svg>
-          {importing ? "导入中…" : "导入"}
+          <span className="tbtn-label">{importing ? "导入中…" : "导入"}</span>
         </button>
         <input ref={fileRef} type="file" accept=".xmind" onChange={onFileChange} className="hidden" />
 
         <button
           onClick={() => setTemplateOpen(true)}
-          className="rounded-md px-2 py-1.5 text-[13px] text-text transition-colors hover:bg-hover"
+          className="tbtn tbtn-in-more rounded-md px-2 py-1.5 text-[13px] text-text transition-colors hover:bg-hover"
           title="保存为模板 / 我的模板"
+          aria-label="模板"
         >
-          模板
+          <span className="tbtn-label">模板</span>
         </button>
-        <button onClick={() => setAiOpen(true)} className="rounded-md bg-accent-solid px-2.5 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90">
-          ✨ AI 生成
+        <button onClick={() => setAiOpen(true)} className="tbtn rounded-md bg-accent-solid px-2.5 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90" aria-label="AI 生成思维导图" title="用 AI 生成思维导图">
+          <span aria-hidden="true">✨</span>
+          <span className="tbtn-label">AI 生成</span>
         </button>
-        <button onClick={() => setResetConfirmOpen(true)} className="rounded-md px-2 py-1.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text" title="重置为单个中心主题（可撤销）">
-          重置
+        <button onClick={() => setResetConfirmOpen(true)} className="tbtn tbtn-in-more rounded-md px-2 py-1.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text" title="重置为单个中心主题（可撤销）" aria-label="重置导图">
+          <span className="tbtn-label">重置</span>
         </button>
+        {moreOpen && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setMoreOpen(false)} />
+            <div className="menu-panel absolute right-2 top-full z-40 mt-1 w-40 p-1.5" role="menu">
+              <button
+                role="menuitem"
+                onClick={() => { setMoreOpen(false); fileRef.current?.click(); }}
+                disabled={importing}
+                className="menu-item w-full disabled:opacity-50"
+              >
+                {importing ? "导入中…" : "导入 Xmind"}
+              </button>
+              <button
+                role="menuitem"
+                onClick={() => { setMoreOpen(false); setTemplateOpen(true); }}
+                className="menu-item w-full"
+              >
+                模板
+              </button>
+              <button
+                role="menuitem"
+                onClick={() => { setMoreOpen(false); setHelpOpen(true); }}
+                className="menu-item w-full"
+              >
+                快捷键说明
+              </button>
+              <div className="my-1 h-px bg-line" />
+              <button
+                role="menuitem"
+                onClick={() => { setMoreOpen(false); setResetConfirmOpen(true); }}
+                className="menu-item w-full text-danger"
+              >
+                重置导图
+              </button>
+            </div>
+          </>
+        )}
       </div>
       )}
 

@@ -1402,6 +1402,8 @@ export function FlowchartEditor({
    */
   const [edgeMenuOpen, setEdgeMenuOpen] = useState(false);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  // 窄容器下的「更多」下拉（导入 Visio / 模板）
+  const [moreOpen, setMoreOpen] = useState(false);
   // 就地编辑（替代弹窗）：直接在原位浮出输入框，所见即所得
   const [inlineEdit, setInlineEdit] = useState<{
     type: "node" | "edge";
@@ -2729,7 +2731,7 @@ export function FlowchartEditor({
     <div className="flex h-[calc(100vh-300px)] min-h-[400px] flex-col rounded-lg border border-line bg-background">
       {/* 工具栏 */}
       {!readOnly && (
-      <div className="relative z-20 flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
+      <div className="canvas-toolbar relative z-20 flex flex-wrap items-center gap-1 border-b border-line px-2 py-1.5">
         {/* 侧栏折叠开关 */}
         <button
           onClick={() => setLeftCollapsed((v) => !v)}
@@ -2769,15 +2771,16 @@ export function FlowchartEditor({
               setEdgeMenuOpen((v) => !v);
               setViewMenuOpen(false);
             }}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
-            title="连线形状"
+            className="tbtn flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
+            title={`连线形状（当前：${EDGE_KINDS.find((k) => k.kind === edgeKind)?.label ?? "连线"}）`}
+            aria-label="连线形状"
             aria-haspopup="menu"
             aria-expanded={edgeMenuOpen}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M4 18C8 18 8 6 12 6s4 12 8 12" />
             </svg>
-            {EDGE_KINDS.find((k) => k.kind === edgeKind)?.label ?? "连线"}
+            <span className="tbtn-label">{EDGE_KINDS.find((k) => k.kind === edgeKind)?.label ?? "连线"}</span>
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${edgeMenuOpen ? "rotate-180" : ""}`}>
               <path d="M6 9l6 6 6-6" />
             </svg>
@@ -2820,15 +2823,16 @@ export function FlowchartEditor({
               setViewMenuOpen((v) => !v);
               setEdgeMenuOpen(false);
             }}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text"
+            className="tbtn flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text"
             title="画布视图设置"
+            aria-label="画布视图设置"
             aria-haspopup="menu"
             aria-expanded={viewMenuOpen}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
             </svg>
-            视图
+            <span className="tbtn-label">视图</span>
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${viewMenuOpen ? "rotate-180" : ""}`}>
               <path d="M6 9l6 6 6-6" />
             </svg>
@@ -2884,20 +2888,20 @@ export function FlowchartEditor({
         </div>
 
         <span className="mx-1.5 h-5 w-px bg-line" />
-        <button onClick={undo} disabled={!canUndo} className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed" title="撤销 (Ctrl+Z)" aria-label="撤销">
+        <button onClick={undo} disabled={!canUndo} className="tbtn rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed" title="撤销 (Ctrl+Z)" aria-label="撤销">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>
         </button>
-        <button onClick={redo} disabled={!canRedo} className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed" title="重做 (Ctrl+Y)" aria-label="重做">
+        <button onClick={redo} disabled={!canRedo} className="tbtn rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed" title="重做 (Ctrl+Y)" aria-label="重做">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 15-6.7L21 13" /></svg>
         </button>
-        <button onClick={() => deleteSelected()} className="rounded-md px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger-soft" title="删除选中 (Delete)">
-          删除
+        <button onClick={() => deleteSelected()} className="tbtn rounded-md px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger-soft" title="删除选中 (Delete)">
+          <span className="tbtn-label">删除</span>
         </button>
-        <button onClick={clearAll} className="rounded-md px-2.5 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="清空画布（可撤销）">
-          清空
+        <button onClick={clearAll} className="tbtn rounded-md px-2.5 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text" title="清空画布（可撤销）">
+          <span className="tbtn-label">清空</span>
         </button>
-        <button onClick={autoLayoutBtn} className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover" title="自动整理布局">
-          自动布局
+        <button onClick={autoLayoutBtn} className="tbtn rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover" title="自动整理布局">
+          <span className="tbtn-label">自动布局</span>
         </button>
         <span className="ml-auto flex items-center gap-1">
           {/* 快捷键提示按钮（靠右，导出/AI 附近） */}
@@ -2942,10 +2946,11 @@ export function FlowchartEditor({
             <button
               onClick={() => setExportOpen((o) => !o)}
               disabled={exporting}
-              className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-50"
+              className="tbtn flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-50"
               title="导出图片 / 矢量图 / PDF"
+              aria-label="导出"
             >
-              {exporting ? "导出中…" : "导出"}
+              <span className="tbtn-label">{exporting ? "导出中…" : "导出"}</span>
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${exportOpen ? "rotate-180" : ""}`}>
                 <path d="M6 9l6 6 6-6" />
               </svg>
@@ -2976,27 +2981,59 @@ export function FlowchartEditor({
               </>
             )}
           </div>
+          {/* 窄容器下这三项收进「更多」（低频：导入 Visio / 模板 / 重置库）
+              —— 与思维导图同一套 .tbtn-more / .tbtn-in-more 机制。 */}
+          <button
+            className="tbtn-more flex items-center justify-center rounded-md px-2.5 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text"
+            onClick={() => setMoreOpen((o) => !o)}
+            title="更多操作"
+            aria-label="更多操作"
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" />
+            </svg>
+          </button>
+          {moreOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setMoreOpen(false)} />
+              <div className="menu-panel absolute right-0 top-full z-40 mt-1 w-40 p-1.5" role="menu">
+                <button role="menuitem" onClick={() => { setMoreOpen(false); visioFileRef.current?.click(); }} disabled={importingVisio} className="menu-item w-full disabled:opacity-50">
+                  {importingVisio ? "导入中…" : "导入 Visio"}
+                </button>
+                <button role="menuitem" onClick={() => { setMoreOpen(false); setTemplateOpen(true); }} className="menu-item w-full">
+                  模板
+                </button>
+              </div>
+            </>
+          )}
           <button
             onClick={() => visioFileRef.current?.click()}
             disabled={importingVisio}
-            className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-50"
+            className="tbtn tbtn-in-more rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-50"
             title="导入 Visio 文件（.vsdx）"
+            aria-label="导入 Visio 文件"
           >
-            {importingVisio ? "导入中…" : "导入"}
+            <span className="tbtn-label">{importingVisio ? "导入中…" : "导入"}</span>
           </button>
           <input ref={visioFileRef} type="file" accept=".vsdx" onChange={onVisioFileChange} className="hidden" />
           <button
             onClick={() => setTemplateOpen(true)}
-            className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover"
+            className="tbtn tbtn-in-more rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover"
             title="保存为模板 / 我的模板"
+            aria-label="模板"
           >
-            模板
+            <span className="tbtn-label">模板</span>
           </button>
           <button
             onClick={() => setAiOpen(true)}
-            className="rounded-md bg-accent-solid px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
+            className="tbtn rounded-md bg-accent-solid px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90"
+            aria-label="AI 生成流程图"
+            title="用 AI 生成流程图"
           >
-            ✨ AI 生成
+            <span aria-hidden="true">✨</span>
+            <span className="tbtn-label">AI 生成</span>
           </button>
         </span>
       </div>

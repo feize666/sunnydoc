@@ -147,7 +147,16 @@ function CheckIcon({ size = 12 }: { size?: number }) {
   );
 }
 
-/** 选择框：未选中时 hover 才显形（沿用 reveal-on-hover），选中后常显。 */
+/** 选择框：未选中时 hover 才显形（沿用 reveal-on-hover），选中后常显。
+ *
+ *  ⚠️ 视觉 16px，但**可点区域必须是 24px**。
+ *  实测（2026-11-21）：整个树里 18 个这样的按钮尺寸都是 16×16 ——
+ *  WCAG 2.5.8 的目标下限是 24×24，手指/触控板点偏的概率很高，
+ *  而且它紧贴「展开三角」和文件名，误触会变成钩选而不是打开文档。
+ *
+ *  做法：外层撑到 24×24 透明命中区，内层方框保持 16px 视觉。
+ *  不改视觉尺寸（16px 是 DESIGN.md 的规格）、不改行高（会挤乱树）。
+ *  左侧用 `-mr-2 / ml-[-4px]` 抵消多出来的 8px，缩进坐标不变。 */
 function SelectBox({
   checked,
   onClick,
@@ -163,15 +172,20 @@ function SelectBox({
       title={checked ? "取消选择" : "选择"}
       aria-label={checked ? "取消选择" : "选择此文档"}
       aria-pressed={checked}
-      className={`grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors ${
+      className={`group/sel relative -ml-1 mr-0 grid h-6 w-6 shrink-0 place-items-center ${
         reveal && !checked ? "reveal-on-hover" : ""
-      } ${
-        checked
-          ? "border-accent bg-accent text-white"
-          : "border-line-strong bg-surface text-transparent hover:border-accent"
       }`}
     >
-      <CheckIcon />
+      <span
+        aria-hidden="true"
+        className={`grid h-4 w-4 place-items-center rounded border transition-colors ${
+          checked
+            ? "border-accent bg-accent text-white"
+            : "border-line-strong bg-surface text-transparent group-hover/sel:border-accent"
+        }`}
+      >
+        <CheckIcon />
+      </span>
     </button>
   );
 }

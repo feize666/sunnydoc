@@ -443,7 +443,12 @@ export async function exportDocuments(
 ): Promise<{ filename: string; blob: Blob }> {
   const res = await fetch(`${BASE}/export`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    // ⚠️ 必须带 Authorization：`/export` 是要登录的（且要 write 权限）。
+    //    这里曾经只写了 Content-Type —— 结果**点「导出」永远报
+    //    「未登录或登录已过期」**，导出功能整条链路不可用。
+    //    复现：打开导出框 → 点导出 → 错误提示；直接 POST /export 不带头 → 401。
+    //    教训：手写 fetch 的端点最容易漏鉴权头（`request()` 会加，这里不会）。
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({
       format,
       doc_ids: docIds,

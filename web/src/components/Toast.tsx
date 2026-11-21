@@ -82,8 +82,18 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      {/* Toast 容器：右上角堆叠，pointer-events 仅卡片本身可交互 */}
-      <div className="pointer-events-none fixed right-4 top-16 z-[100] flex flex-col items-end gap-2">
+      {/* Toast 容器：右上角堆叠，pointer-events 仅卡片本身可交互。
+          `role="status"` + `aria-live="polite"` 是必须的：
+          导出、保存、删除这类操作**没有其他视觉反馈**（对话框一关就什么都不剩），
+          纯视觉 toast 对读屏用户等于「点了没反应」。
+          用 polite 而非 assertive：这些是"完成通知"，不该打断用户正在读的内容。 */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="false"
+        aria-relevant="additions"
+        className="pointer-events-none fixed right-4 top-16 z-[100] flex flex-col items-end gap-2"
+      >
         {toasts.map((t) => {
           const meta = TYPE_META[t.type];
           return (
@@ -105,6 +115,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 onClick={() => setToasts((tt) => tt.filter((x) => x.id !== t.id))}
                 className="ml-1 shrink-0 text-faint transition-colors hover:text-text"
                 title="关闭"
+                aria-label="关闭提示"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <path d="M18 6L6 18M6 6l12 12" />

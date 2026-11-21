@@ -126,9 +126,14 @@ export function TitleBar({
                 }}
                 /* 这个按钮平时 opacity-0（悬停才显现），屏幕阅读器用户
                    Tab 到它时只能听到「按钮」——不知道是关哪个标签页。
-                   带标题的 aria-label 才说得清。 */
+                   带标题的 aria-label 才说得清。
+
+                   可点区域 24×24（视觉仍是 12px 的叉）：实测原来只有 16×16，
+                   低于 WCAG 2.5.8 的 24 下限；标签页挨得紧，点偏就会切到
+                   相邻文档而不是关闭。用 -mr-1 抵消多出的宽度，
+                   标签间距不变。 */
                 aria-label={`关闭 ${d.title}`}
-                className="grid h-4 w-4 place-items-center rounded opacity-0 group-hover:opacity-70 hover:bg-hover hover:opacity-100 focus-visible:opacity-100"
+                className="relative -mr-1 grid h-6 w-6 place-items-center rounded text-inherit opacity-0 group-hover:opacity-70 hover:bg-hover hover:opacity-100 focus-visible:opacity-100"
               >
                 <CloseIcon size={12} />
               </button>
