@@ -193,6 +193,7 @@ export function Sidebar({
   searchSort,
   onSearchSortChange,
   searchResults,
+  searchTotal,
   searchTerms,
   searching,
   onOpenSearchResult,
@@ -258,6 +259,8 @@ export function Sidebar({
   searchSort: string;
   onSearchSortChange: (s: string) => void;
   searchResults: SearchResult[];
+  /** 后端命中的总条数（`searchResults` 只是前 N 条）。用于显示「显示前 N 条」。 */
+  searchTotal?: number;
   /**
    * 后端实际参与匹配的词。**高亮必须用它**：后端按中文分词 OR 匹配，
    * 「虚拟机怎么开机」命中的是「虚拟机」「开机」，文档里没有整串 ——
@@ -887,7 +890,11 @@ export function Sidebar({
                   搜索中…
                 </>
               ) : (
-                `共 ${searchResults.length} 条结果`
+                // 命中数与显示数不同时要明说 —— 否则用户以为"只有这么多"。
+                // （Obsidian 1.15 的做法：「显示 40 条中的前 10 条」）
+                searchTotal && searchTotal > searchResults.length
+                  ? `共 ${searchTotal} 条，显示前 ${searchResults.length} 条`
+                  : `共 ${searchResults.length} 条结果`
               )}
             </div>
             {searching && (

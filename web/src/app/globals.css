@@ -1212,6 +1212,39 @@ body {
   line-height: 1.8;
   color: var(--text);
   word-break: break-word;
+
+  /**
+   * 正文宽度限制（方案 B，2026-11-21）
+   *
+   * 实测问题：1600px 视口下正文宽 1000px = **63 字/行**，
+   * 中文舒适区是 30–45 字 —— 纯文字段落要来回甩头，长文极易串行。
+   *
+   * 为什么不是简单「整块限到 760px」：
+   * 实测这个库 90% 文档含代码块、51% 含表格、68% 含图片。
+   * 简单窄栏会让代码频繁横向滚动、表格被压成竖条 ——
+   * 那等于用「代码可读性」换「叙述可读性」，得不偿失。
+   *
+   * 所以：叙述类元素（段落/列表/标题）限到 --reader-measure，
+   * 宽元素（代码/表格/图片/嵌入卡片）用负边距**破格**到容器全宽。
+   * 这正是主流阅读型产品（Notion/Obsidian 的 wide 块）的做法。
+   *
+   * --reader-measure 取 34em ≈ 34 个中文字宽（1em = 16px 时约 544px，
+   * 加上行首缩进与标点后视觉上约 34–38 字/行）。
+   */
+  --reader-measure: 34em;
+}
+
+/* 叙述类元素收窄并居中 */
+.md-body > :is(p, ul, ol, dl, blockquote, h1, h2, h3, h4, h5, h6, hr) {
+  max-width: var(--reader-measure);
+  margin-inline: auto;
+}
+
+/* 宽元素破格：占满父容器可用宽度（左右各让 1rem 呼吸） */
+.md-body > :is(pre, table, figure, div.table-wrap, div.code-wrap) {
+  max-width: none;
+  width: calc(100% + 2rem);
+  margin-inline: -1rem;
 }
 .md-body > :first-child {
   margin-top: 0 !important;
@@ -1219,7 +1252,17 @@ body {
 
 /* 标题层级：H1 大号 + 渐变分隔线，H2 左侧蓝色竖条 */
 .md-body h1 {
-  font-size: 32px;
+  /**
+   * 28px（原 32px）—— 与文档标题拉开层级（2026-11-21 实测）
+   *
+   * 原来文档标题（`<h1>` in Editor）和正文 H1 **都是 32px**，
+   * 正文 H1 还更粗（800 vs 700），看起来比页面标题更像主标题，
+   * 读者分不清"这一页叫什么"和"这一章叫什么"。
+   *
+   * 新阶梯：文档标题 36px / 正文 H1 28px / H2 22px / H3 17px。
+   * 正文 H1 仍保留 800 与分隔线 —— 它是"章节"，不是"页名"。
+   */
+  font-size: 28px;
   font-weight: 800;
   margin: 1.7em 0 0.85em;
   padding-bottom: 0.45em;

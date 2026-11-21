@@ -275,6 +275,10 @@ const DOC_PATTERNS = [
   /^SHARE\d*-/,
   /^REPRO\d*-/,
   /^PRB-/,
+  // UI 审计/画布验证探针（2026-11-21）：R3AUD-/R3CANVAS-/A11YAUD-/UIAUDIT-
+  // 都是我验证「导出范围 / 画布 UI / a11y」时建的临时文档，
+  // 脚本里的清理写在 finally 之外的路径上就漏了（第 25 条硬规则第 ② 种）。
+  /^(R3AUD|R3CANVAS|A11YAUD|UIAUDIT)-/,
   // 双下划线包裹（`__P0-2越权验证(owner=admin)__`）
   /^__.*__$/,
 ];

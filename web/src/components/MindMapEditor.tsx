@@ -448,6 +448,70 @@ function bounds(nodes: MindNode[], pos: Record<string, LayoutItem>) {
   return { minX, minY, maxX, maxY };
 }
 
+/**
+ * 布局方式的几何示意图标（2026-11-21）
+ *
+ * 为什么不用图标字体/emoji：这六个是**几何结构**，抽象示意比任何
+ * 通用图标（列表/树/网络）都准确 —— 一眼能看出"往哪个方向展开"。
+ * 都画 24×24 里，用当前文字色，选中时随父级变 accent。
+ */
+function LayoutGlyph({ mode, active }: { mode: LayoutMode; active: boolean }) {
+  const c = "currentColor";
+  const sw = active ? 1.6 : 1.3;
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
+      {mode === "logic" && (
+        <>
+          <rect x="1" y="9" width="6" height="6" rx="1.5" />
+          <rect x="16" y="1" width="6" height="5" rx="1.5" />
+          <rect x="16" y="16" width="6" height="5" rx="1.5" />
+          <path d="M7 12h4M11 12V3.5h5M11 12v8.5h5" />
+        </>
+      )}
+      {mode === "org" && (
+        <>
+          <rect x="9" y="1" width="6" height="5" rx="1.5" />
+          <rect x="1" y="16" width="6" height="5" rx="1.5" />
+          <rect x="16" y="16" width="6" height="5" rx="1.5" />
+          <path d="M12 6v5M4 16v-5h16v5" />
+        </>
+      )}
+      {mode === "timeline" && (
+        <>
+          <path d="M2 12h20" />
+          <circle cx="6" cy="12" r="2" />
+          <circle cx="13" cy="12" r="2" />
+          <circle cx="19" cy="12" r="1.6" />
+          <path d="M6 10V5M13 14v5M19 10V6" />
+        </>
+      )}
+      {mode === "fishbone" && (
+        <>
+          <path d="M2 12h20" />
+          <path d="M7 12L4 7M7 12l-3 5M13 12l-3-5M13 12l-3 5M19 12l-3-5M19 12l-3 5" />
+        </>
+      )}
+      {mode === "tree" && (
+        <>
+          <rect x="8" y="1" width="8" height="5" rx="1.5" />
+          <rect x="1" y="16" width="6" height="5" rx="1.5" />
+          <rect x="9" y="16" width="6" height="5" rx="1.5" />
+          <rect x="17" y="16" width="6" height="5" rx="1.5" />
+          <path d="M12 6v5M4 16v-5h16v5M12 11v5" />
+        </>
+      )}
+      {mode === "free" && (
+        <>
+          <rect x="2" y="3" width="7" height="6" rx="1.5" />
+          <rect x="14" y="9" width="8" height="6" rx="1.5" />
+          <rect x="5" y="15" width="7" height="6" rx="1.5" />
+          <path d="M9 7l5 3M12 18l3-4" strokeDasharray="2 2" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 // —— 颜色工具：hex <-> HSL，用于自定义主题自动生成 8 色调色板 ——
 function hexToHsl(hex: string): { h: number; s: number; l: number } {
   let c = (hex || "#000000").replace("#", "");
@@ -1638,6 +1702,8 @@ export function MindMapEditor({
           onClick={() => setLeftCollapsed((v) => !v)}
           className={`grid h-7 w-7 place-items-center rounded-md transition-colors ${leftCollapsed ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
           title={leftCollapsed ? "展开左侧栏" : "折叠左侧栏"}
+          aria-label={leftCollapsed ? "展开左侧栏" : "折叠左侧栏"}
+          aria-expanded={!leftCollapsed}
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -1648,6 +1714,8 @@ export function MindMapEditor({
           onClick={() => setRightCollapsed((v) => !v)}
           className={`grid h-7 w-7 place-items-center rounded-md transition-colors ${rightCollapsed ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
           title={rightCollapsed ? "展开右侧栏" : "折叠右侧栏"}
+          aria-label={rightCollapsed ? "展开右侧栏" : "折叠右侧栏"}
+          aria-expanded={!rightCollapsed}
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -1658,11 +1726,11 @@ export function MindMapEditor({
         <span className="mx-1.5 h-5 w-px bg-line" />
 
         {/* 撤销/重做 */}
-        <button onClick={undo} disabled={!canUndo} className={toolBtn(false)} title="撤销 (Ctrl+Z)">
+        <button onClick={undo} disabled={!canUndo} className={toolBtn(false)} title="撤销 (Ctrl+Z)" aria-label="撤销">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>
           撤销
         </button>
-        <button onClick={redo} disabled={!canRedo} className={toolBtn(false)} title="重做 (Ctrl+Y)">
+        <button onClick={redo} disabled={!canRedo} className={toolBtn(false)} title="重做 (Ctrl+Y)" aria-label="重做">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 15-6.7L21 13" /></svg>
           重做
         </button>
@@ -1670,11 +1738,11 @@ export function MindMapEditor({
         <span className="mx-1.5 h-5 w-px bg-line" />
 
         {/* 折叠 */}
-        <button onClick={expandAll} className={toolBtn(false)} title="展开全部节点">
+        <button onClick={expandAll} className={toolBtn(false)} title="展开全部节点" aria-label="展开全部节点">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 9h16M4 15h16M9 4v16" /></svg>
           展开
         </button>
-        <button onClick={collapseAll} className={toolBtn(false)} title="折叠全部节点">
+        <button onClick={collapseAll} className={toolBtn(false)} title="折叠全部节点" aria-label="折叠全部节点">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 9h16M4 15h16M12 4v16" /></svg>
           折叠
         </button>
@@ -1694,7 +1762,7 @@ export function MindMapEditor({
           <Glyph iconId="link" size={14} />
           {linkingFrom ? "关联中…" : "关联"}
         </button>
-        <button onClick={clearLinks} disabled={links.length === 0} className={toolBtn(false)} title="清除所有关联">
+        <button onClick={clearLinks} disabled={links.length === 0} className={toolBtn(false)} title="清除所有关联" aria-label="清除所有关联">
           清除关联
         </button>
 
@@ -1909,29 +1977,47 @@ export function MindMapEditor({
           </div>
           <div className="flex-1 overflow-y-auto p-2">
             {leftTab === "structure" ? (
-              <div className="flex flex-col gap-0.5">
+              /*
+                结构选择：从「竖排 6 条、每条两行文字」改成 **2 列图标网格**
+                （2026-11-21）。
+
+                为什么：左栏只有 176px 宽，原来 6 条 × 约 44px = 264px 高，
+                把下方的「主题配色」和「自定义主题」挤出可视区，
+                用户想换配色得先滚动 —— 而左栏本身没有任何滚动提示。
+
+                改成 2 列网格后 3 行 × 约 56px ≈ 170px，省出约 90px。
+                图标是抽象几何示意（不是装饰）：让用户不读文字也能认布局。
+              */
+              <div className="grid grid-cols-2 gap-1">
                 {(
                   [
-                    ["logic", "逻辑图", "左到右展开"],
-                    ["org", "组织结构图", "上到下展开"],
-                    ["timeline", "时间轴", "根左、一级水平主干"],
+                    ["logic", "逻辑图", "左到右"],
+                    ["org", "组织结构", "上到下"],
+                    ["timeline", "时间轴", "水平主干"],
                     ["fishbone", "鱼骨图", "因果分析"],
-                    ["tree", "树形图", "向下分类树"],
-                    ["free", "自由分布", "自由拖拽定位"],
+                    ["tree", "树形图", "向下分类"],
+                    ["free", "自由分布", "自由拖拽"],
                   ] as [LayoutMode, string, string][]
-                ).map(([m, label, desc]) => (
-                  <button
-                    key={m}
-                    onClick={() => {
-                      setLayoutMode(m);
-                      setView(null);
-                    }}
-                    className={`rounded-md px-2 py-1.5 text-left transition-colors ${layoutMode === m ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"}`}
-                  >
-                    <div className="text-xs font-medium leading-none">{label}</div>
-                    <div className="mt-0.5 text-[11px] text-faint">{desc}</div>
-                  </button>
-                ))}
+                ).map(([m, label, desc]) => {
+                  const on = layoutMode === m;
+                  return (
+                    <button
+                      key={m}
+                      onClick={() => {
+                        setLayoutMode(m);
+                        setView(null);
+                      }}
+                      title={`${label} · ${desc}`}
+                      aria-pressed={on}
+                      className={`flex flex-col items-center gap-1 rounded-md px-1.5 py-2 transition-colors ${
+                        on ? "bg-accent-soft text-accent" : "text-text hover:bg-hover"
+                      }`}
+                    >
+                      <LayoutGlyph mode={m} active={on} />
+                      <span className="text-[11px] font-medium leading-none">{label}</span>
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <div>
@@ -2411,6 +2497,7 @@ export function MindMapEditor({
             onClick={() => setView({ ...v, k: Math.max(0.2, v.k / 1.2) })}
             className="grid h-5 w-5 place-items-center rounded-full text-text transition-colors hover:bg-hover"
             title="缩小"
+            aria-label="缩小画布"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M5 12h14" /></svg>
           </button>
@@ -2418,6 +2505,7 @@ export function MindMapEditor({
             onClick={() => setView(null)}
             className="min-w-[38px] rounded-full px-1 py-0.5 text-center transition-colors hover:bg-hover"
             title="自适应视图"
+            aria-label="自适应视图（点击重置为 100%）"
           >
             {Math.round(v.k * 100)}%
           </button>
@@ -2425,6 +2513,7 @@ export function MindMapEditor({
             onClick={() => setView({ ...v, k: Math.min(2.5, v.k * 1.2) })}
             className="grid h-5 w-5 place-items-center rounded-full text-text transition-colors hover:bg-hover"
             title="放大"
+            aria-label="放大画布"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
           </button>
@@ -2495,6 +2584,7 @@ export function MindMapEditor({
                     <button
                       key={ic.id}
                       title={ic.label}
+                      aria-label={ic.label}
                       onClick={() => setNodeIcon(ic.id)}
                       className={`grid place-items-center rounded-md p-1 transition-colors hover:bg-hover ${mapNode(selected)?.icon === ic.id ? "bg-accent-soft" : ""}`}
                     >

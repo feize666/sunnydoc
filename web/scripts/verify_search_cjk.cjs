@@ -88,7 +88,9 @@ const check = (n, c, d) => {
       const t = await p.evaluate(() => {
         const el = document.querySelector("aside, [class*='sidebar']");
         const txt = el ? el.innerText : document.body.innerText;
-        return /共\s*\d+\s*条结果|无匹配结果/.test(txt) ? txt : null;
+        // 2026-11-21 侧栏改为「共 N 条，显示前 M 条」（命中>50 时）。
+        // 正则要同时兼容「共 N 条结果」与「共 N 条，显示前 M 条」。
+        return /共\s*\d+\s*条(?:结果|，)||无匹配结果/.test(txt) ? txt : null;
       });
       if (t) {
         ok = true;
@@ -100,7 +102,9 @@ const check = (n, c, d) => {
       // 侧栏里的结果区
       const side = document.querySelector("aside, [class*='sidebar']") || document.body;
       const txt = side.innerText || "";
-      const m = txt.match(/共\s*(\d+)\s*条结果/);
+      // 兼容两种文案：命中 ≤50 显示「共 N 条结果」，>50 显示「共 N 条，显示前 M 条」。
+      // 取前者时 N 就是总数；取后者时 N 也是总数（M 才是显示数）。
+      const m = txt.match(/共\s*(\d+)\s*条(?:结果|，)/);
       const count = m ? parseInt(m[1], 10) : 0;
       const rows = side.querySelectorAll("button .line-clamp-2, button span.truncate").length;
       const marks = side.querySelectorAll("mark.search-hit").length;

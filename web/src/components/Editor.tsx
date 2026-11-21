@@ -1327,7 +1327,7 @@ export function Editor({
         <div key={doc.key} ref={scrollRef} className="anim-fade-in flex-1 overflow-y-auto py-8">
           {mode === "preview" ? (
             <div className="mx-auto max-w-[1080px] px-4 sm:px-10">
-              <h1 className="text-[32px] font-bold leading-[1.25] tracking-[-0.01em] text-text">
+              <h1 className="text-[36px] font-bold leading-[1.2] tracking-[-0.015em] text-text">
                 {doc.title}
               </h1>
               <DocLocation doc={doc} />
@@ -1464,7 +1464,7 @@ export function Editor({
               <input
                 value={draftTitle}
                 onChange={(e) => setDraftTitle(e.target.value)}
-                className="w-full bg-transparent text-[32px] font-bold leading-[1.25] tracking-[-0.01em] text-text outline-none placeholder:text-faint"
+                className="w-full bg-transparent text-[36px] font-bold leading-[1.2] tracking-[-0.015em] text-text outline-none placeholder:text-faint"
                 placeholder="标题"
                 spellCheck={false}
               />

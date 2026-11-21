@@ -1386,6 +1386,22 @@ export function FlowchartEditor({
   const [themeIndex, setThemeIndex] = useState(0);
   // 网格吸附开关
   const [snap, setSnap] = useState(false);
+
+  /**
+   * 工具栏下拉（2026-11-21）
+   *
+   * 原来工具栏 18 个按钮一行平铺（`flex-wrap`，窄屏折两三行挤掉画布高度）：
+   *   侧栏折叠×2 · 连线×4 · 视图×2 · 撤销/重做 · 删除/清空 · 自动布局 · ?/导出/导入/模板
+   *
+   * 问题不是"按钮太多"，而是**使用频率差异被抹平了**：
+   * 「连线形状」「网格吸附」「画布背景」都是**画一次就不动的设置**，
+   * 却和「撤销」「删除」这种每分钟都在按的动作放在同一层。
+   *
+   * 分组原则：低频设置收进下拉，当前值显示在按钮上（一眼可读）；
+   * 高频动作（撤销/重做/删除/自动布局）保持常驻。
+   */
+  const [edgeMenuOpen, setEdgeMenuOpen] = useState(false);
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
   // 就地编辑（替代弹窗）：直接在原位浮出输入框，所见即所得
   const [inlineEdit, setInlineEdit] = useState<{
     type: "node" | "edge";
@@ -2719,6 +2735,8 @@ export function FlowchartEditor({
           onClick={() => setLeftCollapsed((v) => !v)}
           className={`grid h-7 w-7 place-items-center rounded-md transition-colors ${leftCollapsed ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
           title={leftCollapsed ? "展开左侧栏" : "折叠左侧栏"}
+          aria-label={leftCollapsed ? "展开左侧栏" : "折叠左侧栏"}
+          aria-expanded={!leftCollapsed}
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -2729,6 +2747,8 @@ export function FlowchartEditor({
           onClick={() => setRightCollapsed((v) => !v)}
           className={`grid h-7 w-7 place-items-center rounded-md transition-colors ${rightCollapsed ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"}`}
           title={rightCollapsed ? "展开右侧栏" : "折叠右侧栏"}
+          aria-label={rightCollapsed ? "展开右侧栏" : "折叠右侧栏"}
+          aria-expanded={!rightCollapsed}
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -2738,58 +2758,136 @@ export function FlowchartEditor({
 
         <span className="mx-1.5 h-5 w-px bg-line" />
 
-        <span className="mr-0.5 text-[11px] font-medium text-faint">连线</span>
-        {EDGE_KINDS.map((k) => (
+        {/*
+          连线形状：原来 4 个按钮平铺（曲线/直线/正交/圆角正交）。
+          这是「画完一整张图基本不改」的设置，收成下拉，
+          按钮上直接显示当前值 —— 比 4 个按钮中的一个高亮更好读。
+        */}
+        <div className="relative shrink-0">
           <button
-            key={k.kind}
-            onClick={() => setEdgeKind(k.kind)}
-            className={`rounded-md px-2 py-1 text-xs transition-colors ${
-              edgeKind === k.kind ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
-            }`}
+            onClick={() => {
+              setEdgeMenuOpen((v) => !v);
+              setViewMenuOpen(false);
+            }}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text transition-colors hover:bg-hover"
+            title="连线形状"
+            aria-haspopup="menu"
+            aria-expanded={edgeMenuOpen}
           >
-            {k.label}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 18C8 18 8 6 12 6s4 12 8 12" />
+            </svg>
+            {EDGE_KINDS.find((k) => k.kind === edgeKind)?.label ?? "连线"}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${edgeMenuOpen ? "rotate-180" : ""}`}>
+              <path d="M6 9l6 6 6-6" />
+            </svg>
           </button>
-        ))}
+          {edgeMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setEdgeMenuOpen(false)} />
+              <div className="menu-panel absolute left-0 top-full z-40 mt-1 w-32 p-1.5" role="menu">
+                {EDGE_KINDS.map((k) => (
+                  <button
+                    key={k.kind}
+                    role="menuitemradio"
+                    aria-checked={edgeKind === k.kind}
+                    onClick={() => {
+                      setEdgeKind(k.kind);
+                      setEdgeMenuOpen(false);
+                    }}
+                    className={`menu-item w-full ${edgeKind === k.kind ? "text-accent" : ""}`}
+                  >
+                    {k.label}
+                    {edgeKind === k.kind && (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="ml-auto">
+                        <path d="M20 6L9 17l-5-5" />
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
 
-        <span className="ml-1 mr-0.5 text-[11px] font-medium text-faint">视图</span>
-        {/* 网格吸附开关 */}
-        <button
-          onClick={() => setSnap((v) => !v)}
-          className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
-            snap ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
-          }`}
-          title="网格吸附：开启后拖拽节点自动对齐网格"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
-          </svg>
-          网格
-        </button>
-        {/* 画布背景切换：点阵 / 网格线 / 空白 */}
-        <button
-          onClick={() => setBgVariant((v) => (v === "dots" ? "lines" : v === "lines" ? "none" : "dots"))}
-          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text"
-          title={`画布背景：${bgVariant === "dots" ? "点阵" : bgVariant === "lines" ? "网格线" : "空白"}（点击切换）`}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            {bgVariant === "dots" ? (
-              <>
-                <circle cx="6" cy="6" r="1" /><circle cx="18" cy="6" r="1" /><circle cx="6" cy="18" r="1" /><circle cx="18" cy="18" r="1" />
-              </>
-            ) : bgVariant === "lines" ? (
+        {/*
+          视图：网格吸附 + 画布背景。这两个都是"画一次就不动"的，
+          原来占 2 个常驻按钮，现在合成一个下拉（开启状态的项打勾）。
+        */}
+        <div className="relative shrink-0">
+          <button
+            onClick={() => {
+              setViewMenuOpen((v) => !v);
+              setEdgeMenuOpen(false);
+            }}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-text"
+            title="画布视图设置"
+            aria-haspopup="menu"
+            aria-expanded={viewMenuOpen}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
-            ) : (
-              <path d="M4 4l16 16" />
-            )}
-          </svg>
-          背景
-        </button>
+            </svg>
+            视图
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`transition-transform ${viewMenuOpen ? "rotate-180" : ""}`}>
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          {viewMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setViewMenuOpen(false)} />
+              <div className="menu-panel absolute left-0 top-full z-40 mt-1 w-40 p-1.5" role="menu">
+                <button
+                  role="menuitemcheckbox"
+                  aria-checked={snap}
+                  onClick={() => setSnap((v) => !v)}
+                  className="menu-item w-full"
+                  title="拖拽节点自动对齐网格"
+                >
+                  网格吸附
+                  {snap && (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="ml-auto text-accent">
+                      <path d="M20 6L9 17l-5-5" />
+                    </svg>
+                  )}
+                </button>
+                <div className="my-1 h-px bg-line" />
+                <div className="px-2 py-1 text-[11px] text-faint">画布背景</div>
+                {(
+                  [
+                    ["dots", "点阵"],
+                    ["lines", "网格线"],
+                    ["none", "空白"],
+                  ] as const
+                ).map(([v, label]) => (
+                  <button
+                    key={v}
+                    role="menuitemradio"
+                    aria-checked={bgVariant === v}
+                    onClick={() => {
+                      setBgVariant(v);
+                      setViewMenuOpen(false);
+                    }}
+                    className={`menu-item w-full ${bgVariant === v ? "text-accent" : ""}`}
+                  >
+                    {label}
+                    {bgVariant === v && (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="ml-auto">
+                        <path d="M20 6L9 17l-5-5" />
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
 
         <span className="mx-1.5 h-5 w-px bg-line" />
-        <button onClick={undo} disabled={!canUndo} className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed" title="撤销 (Ctrl+Z)">
+        <button onClick={undo} disabled={!canUndo} className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed" title="撤销 (Ctrl+Z)" aria-label="撤销">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>
         </button>
-        <button onClick={redo} disabled={!canRedo} className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed" title="重做 (Ctrl+Y)">
+        <button onClick={redo} disabled={!canRedo} className="rounded-md px-2.5 py-1 text-xs text-text transition-colors hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed" title="重做 (Ctrl+Y)" aria-label="重做">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 15-6.7L21 13" /></svg>
         </button>
         <button onClick={() => deleteSelected()} className="rounded-md px-2.5 py-1 text-xs text-danger transition-colors hover:bg-danger-soft" title="删除选中 (Delete)">
@@ -3394,13 +3492,13 @@ export function FlowchartEditor({
           <span className="h-3 w-px bg-line" />
           <span className="px-1">{edges.length} 连线</span>
           <span className="h-3 w-px bg-line" />
-          <button onClick={() => rfRef.current?.zoomOut()} className="grid h-5 w-5 place-items-center rounded-full text-text transition-colors hover:bg-hover" title="缩小">
+          <button onClick={() => rfRef.current?.zoomOut()} className="grid h-5 w-5 place-items-center rounded-full text-text transition-colors hover:bg-hover" title="缩小" aria-label="缩小画布">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M5 12h14" /></svg>
           </button>
           <button onClick={() => rfRef.current?.fitView()} className="min-w-[38px] rounded-full px-1 py-0.5 text-center transition-colors hover:bg-hover" title="自适应视图">
             {Math.round(viewport.zoom * 100)}%
           </button>
-          <button onClick={() => rfRef.current?.zoomIn()} className="grid h-5 w-5 place-items-center rounded-full text-text transition-colors hover:bg-hover" title="放大">
+          <button onClick={() => rfRef.current?.zoomIn()} className="grid h-5 w-5 place-items-center rounded-full text-text transition-colors hover:bg-hover" title="放大" aria-label="放大画布">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
           </button>
         </div>

@@ -186,6 +186,15 @@ export interface SearchResponse {
    * 会出现「有结果但零高亮」的怪异表现。旧后端没有该字段 → 回退到档案行为。
    */
   terms: string[];
+  /**
+   * 后端命中的**总条数**（`results` 只是截断后的前 N 条）。
+   *
+   * 2026-11-21：后端一直有返回 `total`，但前端在这里把它丢了，
+   * 侧栏只能显示「共 results.length 条」—— 命中 279 条时显示「共 50 条」，
+   * 用户会以为只有 50 条，不会想到还有 229 条被截掉了。
+   * Obsidian 1.15 的做法是明说「显示 40 条中的前 10 条」，这里对齐它。
+   */
+  total: number;
 }
 
 export async function searchDocumentsFull(
@@ -206,6 +215,8 @@ export async function searchDocumentsFull(
   return {
     results: Array.isArray(data?.results) ? data.results : [],
     terms: Array.isArray(data?.terms) ? data.terms : [],
+    // 后端可能不返回（旧版本）→ 回退到结果条数，不显示"共 0 条"
+    total: typeof data?.total === "number" ? data.total : Array.isArray(data?.results) ? data.results.length : 0,
   };
 }
 

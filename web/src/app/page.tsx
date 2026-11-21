@@ -191,6 +191,9 @@ export default function Home() {
   // 全文搜索
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  // 后端命中的总条数（`searchResults` 只是前 N 条）。
+  // 显示「共 N 条，显示前 M 条」，避免用户以为只有 M 条。
+  const [searchTotal, setSearchTotal] = useState(0);
   /** 后端实际参与匹配的词（供高亮；与搜索结果为同一次请求的产物） */
   const [searchTerms, setSearchTerms] = useState<string[]>([]);
   const [searching, setSearching] = useState(false);
@@ -714,7 +717,7 @@ export default function Home() {
     setSearching(true);
     const timer = setTimeout(async () => {
       try {
-        const { results, terms } = await searchDocumentsFull(
+        const { results, terms, total: resultsTotal } = await searchDocumentsFull(
           q,
           currentKbId,
           searchType || null,
@@ -722,11 +725,13 @@ export default function Home() {
           searchSort,
         );
         setSearchResults(results);
+        setSearchTotal(resultsTotal);
         // 高亮词用后端实际匹配的词（中文分词后「虚拟机怎么开机」命中的是
         // 「虚拟机」「开机」，文档里根本没有整串），否则会「有结果但零高亮」
         setSearchTerms(terms);
       } catch {
         setSearchResults([]);
+        setSearchTotal(0);
         setSearchTerms([]);
       } finally {
         setSearching(false);
@@ -1593,6 +1598,7 @@ export default function Home() {
     searchSort,
     onSearchSortChange: setSearchSort,
     searchResults,
+    searchTotal,
     searchTerms,
     searching,
     onOpenSearchResult: handleOpenSearchResult,
