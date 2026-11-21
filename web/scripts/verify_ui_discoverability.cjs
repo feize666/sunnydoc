@@ -276,13 +276,28 @@ async function api(p, method = "GET", body) {
     await sleep(2400);
   }
   check("打开的文档有层级信息（标题下方出现 ›）", layered, "没有则「当前目录」不会出现，这是正确的降级");
+  // 2026-11-21 侧栏把「导出」收进了「更多」下拉（头部 175→133px），
+  // 原来按精确文案找按钮会落空。改为：先点「更多」，再点菜单里的「导出文档」。
   const clicked = await p.evaluate(() => {
+    const more = document.querySelector('[data-testid="sidebar-more"]');
+    if (more) {
+      more.click();
+      return { ok: true, via: "more" };
+    }
+    // 兜底：老布局里侧栏有常显的「导出」按钮
     const btns = [...document.querySelectorAll("button")].filter((x) => x.offsetParent !== null);
     const x = btns.find((y) => (y.innerText || "").trim() === "导出");
     if (!x) return { ok: false, visible: btns.map((b) => (b.innerText || "").trim()).slice(0, 12) };
     x.click();
-    return { ok: true };
+    return { ok: true, via: "direct" };
   });
+  if (clicked.via === "more") {
+    await sleep(500);
+    await p.evaluate(() => {
+      const item = document.querySelector('[data-testid="sidebar-more-export"]');
+      if (item) item.click();
+    });
+  }
   await sleep(1200);
   const dlgOpen = await p.evaluate(() => !!(document.body.innerText || "").includes("导出范围"));
   if (!clicked.ok || !dlgOpen) {

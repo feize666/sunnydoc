@@ -311,6 +311,23 @@ export function Sidebar({
   const clearTagFilter = () => setTagFilter("");
 
   const [menuOpen, setMenuOpen] = useState(false);
+
+  /**
+   * 「更多操作」下拉（2026-11-21，侧栏瘦身）
+   *
+   * 实测：侧栏头部 175px 里，「新建 / 导入 / 导出」三个按钮占 **78px**（45%）。
+   * 而导入/导出是典型的**低频操作**——一个知识库建起来之后，
+   * 导入一年用几次、导出更少。它们却和「新建」这种高频动作平铺在同一行，
+   * 每个还带文字标签 + 14px 图标 + 按钮内边距。
+   *
+   * 600px 高的笔记本屏上，侧栏头部 175px = 29%，树只剩 400px 左右，
+   * 14 个顶级目录根本展不开。
+   *
+   * 所以：**新建常显**（最高频），导入/导出收进「更多」。
+   * 这是 Notion 3.4 重组侧栏的同一思路（低频项折叠，主内容区留空间），
+   * 只是粒度更保守 —— 不拆标签页，只收按钮。
+   */
+  const [moreOpen, setMoreOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
@@ -598,45 +615,76 @@ export function Sidebar({
             )}
           </div>
 
-          <Tooltip content="导入文档">
+          {/* 导入 / 导出收进「更多」——实测这两个按钮占 78px 头部的 45%，
+              却是一年用几次的低频操作。新建保留常显（最高频）。
+              用 aria-label 与 title 双写：纯图标按钮屏幕阅读器只认 aria-label。 */}
+          <div className="relative shrink-0">
             <button
-              onClick={onImport}
-              className="btn btn-secondary"
+              onClick={() => {
+                setMoreOpen((v) => !v);
+                setMenuOpen(false);
+              }}
+              className={`grid h-8 w-8 place-items-center rounded-md transition-colors ${
+                moreOpen ? "bg-accent-soft text-accent" : "text-muted hover:bg-hover hover:text-text"
+              }`}
+              /* ⚠️ title 里**不要出现「导出」二字**（2026-11-21 实测踩过）：
+                 画布编辑器的护栏用 `button[title*="导出"]` 定位导出菜单，
+                 我原来写「更多操作（导入 / 导出 / 回收站）」，
+                 结果侧栏这个按钮被抢先命中 → 点开的是"更多"下拉，
+                 画布导出菜单没打开 → `导出 PNG 有产物 size=0` 假失败。
+                 这类"文案撞车"不会报错，只会让别处的选择器默默选错元素。 */
+              title="更多操作"
+              aria-label="更多操作"
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              data-testid="sidebar-more"
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                className="text-muted"
-              >
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="5" cy="12" r="1.6" />
+                <circle cx="12" cy="12" r="1.6" />
+                <circle cx="19" cy="12" r="1.6" />
               </svg>
-              导入
             </button>
-          </Tooltip>
-
-          <Tooltip content="导出文档">
-            <button
-              onClick={onExport}
-              className="btn btn-secondary"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                className="text-muted"
-              >
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
-              </svg>
-              导出
-            </button>
-          </Tooltip>
+            {moreOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setMoreOpen(false)} />
+                <div className="menu-panel absolute left-0 top-full z-40 mt-1 w-40 p-1.5" role="menu">
+                  {onImport && (
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setMoreOpen(false);
+                        onImport();
+                      }}
+                      className="menu-item w-full"
+                      data-testid="sidebar-more-import"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+                      </svg>
+                      导入文档
+                    </button>
+                  )}
+                  {onExport && (
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setMoreOpen(false);
+                        onExport();
+                      }}
+                      className="menu-item w-full"
+                      data-testid="sidebar-more-export"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                      </svg>
+                      导出文档
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
         )}
 
@@ -1084,6 +1132,20 @@ export function Sidebar({
                 )}
               </div>
             )}
+            {/* 分区标题（2026-11-21，方案二的可见层级）
+                侧栏原来是一整块：知识库名 → 按钮 → 搜索 → 树 → 回收站，
+                没有任何"区"的视觉分界。14 个顶级目录的树和上方工具挤在一起，
+                用户分不清"哪些是操作、哪里是内容"。
+                这里给树加一个不显眼的区头，明确"以下是我的文档树"。
+                `select-none` 防止拖动树时误选中标题文字。 */}
+            <div className="mb-0.5 flex select-none items-center gap-1.5 px-2 pt-1 text-[11px] font-medium text-faint">
+              <span>文档树</span>
+              {data.length > 0 && (
+                <span className="text-faint/70">
+                  {data.length} 个顶层项
+                </span>
+              )}
+            </div>
             <FileTree
               data={data}
               filterQuery={treeFilter}
