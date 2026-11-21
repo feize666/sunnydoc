@@ -465,7 +465,7 @@ function ToolBtn({
 }
 
 function ToolDivider() {
-  return <span className="mx-1 h-4 w-px shrink-0 bg-line" aria-hidden />;
+  return <span className="mx-px h-4 w-px shrink-0 bg-line" aria-hidden />;
 }
 
 // AI 写作操作项
@@ -1092,13 +1092,13 @@ export function RichEditor({
   return (
     <div className="flex min-h-[calc(100vh-300px)] flex-col rounded-lg border border-line bg-background">
       {/* 格式工具栏（sticky 固定，向下滚动时不滚走；flex-wrap 换行避免横向滚动裁剪按钮） */}
-      <div className="sticky top-0 z-20 flex flex-wrap items-center gap-0.5 border-b border-line bg-background px-2 py-1.5">
+      <div className="editor-toolbar sticky top-0 z-20 flex flex-wrap items-center gap-0.5 border-b border-line bg-background px-2 py-1.5">
         {/* 标题下拉 */}
         <Tooltip content="段落格式">
           <select
             value={headingValue}
             onChange={(e) => setHeading(e.target.value)}
-            className="select select-sm w-[80px] shrink-0"
+            className="select select-sm w-[68px] shrink-0"
           >
             <option value="p">正文</option>
             <option value="1">标题 1</option>
@@ -1110,11 +1110,6 @@ export function RichEditor({
 
         <ToolDivider />
 
-        <ToolBtn title="格式刷" tone="text-accent" onClick={copyFormat} active={painterMarks !== null}>
-          <FormatPaintIcon size={17} />
-        </ToolBtn>
-
-        <ToolDivider />
 
         <ToolBtn title="加粗" shortcut="⌘B" onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive("bold")}>
           <span className="text-[16px] font-bold leading-none">B</span>
@@ -1263,15 +1258,6 @@ export function RichEditor({
             </div>
           )}
         </div>
-        <ToolBtn title="高亮" tone="text-warning" onClick={() => editor.chain().focus().toggleMark("highlight").run()} active={editor.isActive("highlight")}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 11l-3.5 3.5a1.5 1.5 0 0 0 2 2L11 13" />
-            <path d="M13 15l3.5-3.5a1.5 1.5 0 0 0-2-2L11 13" />
-            <path d="M3 21h18" />
-          </svg>
-        </ToolBtn>
-
-        <ToolDivider />
 
         <ToolBtn title="无序列表" shortcut="⌘⇧8" onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive("bulletList")}>
           <ListUlIcon size={17} />
@@ -1282,12 +1268,14 @@ export function RichEditor({
 
         <ToolDivider />
 
+        <span className="tbtn-narrow-wrap">
         <ToolBtn title="引用" shortcut="⌘⇧B" tone="text-warning" onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive("blockquote")}>
           <QuoteIcon size={17} />
         </ToolBtn>
         <ToolBtn title="代码块" shortcut="⌥⌘C" tone="text-accent" onClick={() => editor.chain().focus().toggleCodeBlock().run()} active={editor.isActive("codeBlock")}>
           <CodeBlockIcon size={17} />
         </ToolBtn>
+        </span>
         {/* 代码块语言选择（仅光标在代码块内时显示） */}
         {editor.isActive("codeBlock") && (
           <Tooltip content="代码块语言">
@@ -1349,7 +1337,7 @@ export function RichEditor({
             </div>
           )}
         </div>
-        <div className="relative shrink-0">
+        <div className="tbtn-in-more relative shrink-0">
           <ToolBtn title="图片" tone="text-success" onClick={setImage} active={imageOpen}>
             <ImageIcon size={17} />
           </ToolBtn>
@@ -1418,13 +1406,8 @@ export function RichEditor({
             </div>
           )}
         </div>
-        <ToolBtn title="任务列表" tone="text-success" onClick={() => editor.chain().focus().toggleTaskList().run()} active={editor.isActive("taskList")}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="5" width="14" height="14" rx="2" />
-            <path d="M6 12l3 3 5-6" />
-          </svg>
-        </ToolBtn>
         {/* 正文附件：选文件 → 上传 → 以 📎 链接插入（pdf/docx/xlsx/zip…） */}
+        <span className="tbtn-wrap">
         <Tooltip content="插入附件（PDF / Word / Excel / zip…）">
           <button
             type="button"
@@ -1436,6 +1419,7 @@ export function RichEditor({
             <PaperclipIcon size={17} />
           </button>
         </Tooltip>
+        </span>
         <input
           ref={attachInputRef}
           type="file"
@@ -1465,6 +1449,7 @@ export function RichEditor({
           }}
         />
         {/* 插入文档卡片：把表格/思维导图/流程图等作为可跟随的卡片嵌入正文 */}
+        <span className="tbtn-wrap">
         <Tooltip content="插入卡片（表格 / 思维导图 / 流程图…）">
           <button
             type="button"
@@ -1476,6 +1461,7 @@ export function RichEditor({
             <EmbedIcon size={17} />
           </button>
         </Tooltip>
+        </span>
         {embedOpen && (
           <EmbedPicker
             kbId={kbId}
@@ -1515,12 +1501,14 @@ export function RichEditor({
             }}
           />
         )}
-        <ToolBtn title="插入表格" tone="text-accent" onClick={insertTable}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="1" />
-            <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
-          </svg>
-        </ToolBtn>
+        <span className="tbtn-wrap">
+          <ToolBtn title="插入表格" tone="text-accent" onClick={insertTable}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="1" />
+              <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+            </svg>
+          </ToolBtn>
+        </span>
 
         <ToolDivider />
 
@@ -1636,6 +1624,54 @@ export function RichEditor({
                 </button>
                 <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().setHorizontalRule().run(); setMoreOpen(false); }} className="menu-item">
                   <MinusIcon size={15} />分割线
+                </button>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().toggleMark("highlight").run(); setMoreOpen(false); }} className={`menu-item ${editor.isActive("highlight") ? "text-accent" : "text-text"}`}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 11l-3.5 3.5a1.5 1.5 0 0 0 2 2L11 13" />
+                    <path d="M13 15l3.5-3.5a1.5 1.5 0 0 0-2-2L11 13" />
+                    <path d="M3 21h18" />
+                  </svg>
+                  高亮
+                </button>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { copyFormat(); setMoreOpen(false); }} className={`menu-item ${painterMarks !== null ? "text-accent" : "text-text"}`}>
+                  <FormatPaintIcon size={15} />格式刷
+                </button>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().toggleTaskList().run(); setMoreOpen(false); }} className={`menu-item ${editor.isActive("taskList") ? "text-accent" : "text-text"}`}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="5" width="14" height="14" rx="2" />
+                    <path d="M6 12l3 3 5-6" />
+                  </svg>
+                  任务列表
+                </button>
+
+                {/* 窄容器下主行会隐藏这四个「插入类」入口（见 globals.css 的
+                    .editor-toolbar 容器查询）。菜单里必须留一份，否则窄屏
+                    就真的**没有**插入图片/附件/卡片/表格的入口了 ——
+                    「收起」不等于「删掉」。 */}
+                <div className="my-1 border-t border-line" />
+                {/* 窄容器（<520px）主行会隐藏「引用 / 代码块」，菜单必须有入口。
+                    ⚠️ 这是本轮实测抓到的真实功能丢失：1024px 下这两项从主行
+                    消失、菜单里也没有 → 用户根本没有写引用/代码块的入口。 */}
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().toggleBlockquote().run(); setMoreOpen(false); }} className={`menu-item ${editor.isActive("blockquote") ? "text-accent" : "text-text"}`}>
+                  <QuoteIcon size={15} />引用
+                </button>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { editor.chain().focus().toggleCodeBlock().run(); setMoreOpen(false); }} className={`menu-item ${editor.isActive("codeBlock") ? "text-accent" : "text-text"}`}>
+                  <CodeBlockIcon size={15} />代码块
+                </button>
+                <div className="my-1 border-t border-line" />
+                <div className="px-2 py-1 text-[11px] text-faint">插入</div>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { setMoreOpen(false); setImageOpen(true); }} className="menu-item">
+                  <ImageIcon size={15} />图片
+                </button>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { setMoreOpen(false); attachInputRef.current?.click(); }} className="menu-item">
+                  <PaperclipIcon size={15} />附件
+                </button>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { setMoreOpen(false); setEmbedOpen(true); }} className="menu-item">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <path d="M3 9h18M9 21V9" />
+                  </svg>
+                  卡片 / 表格
                 </button>
 
                 <div className="my-1 border-t border-line" />

@@ -198,6 +198,16 @@ export function HomeView({
   onOpenSettings?: () => void;
 }) {
   const [pendingDelete, setPendingDelete] = useState<Kb | null>(null);
+  /** 「最近浏览」默认只显示 6 条。
+   *
+   *  实测（2026-11-21）：原来 20 条全量渲染 → 该区块 **1356px**，
+   *  把「我的收藏」顶到 **2219px**（要滚两屏多才看得到）。
+   *  同一类问题上一轮只修了知识库总览，漏了首页 —— 「最近浏览」是"回头看"，
+   *  不是"这里有什么"，不该占据首屏的主导权。
+   *
+   *  用"展开更多"而不是硬砍：用户确实可能想翻全部历史。 */
+  const RECENT_INITIAL = 6;
+  const [recentExpanded, setRecentExpanded] = useState(false);
 
   // FLIP 动画：最近浏览/收藏列表项增删、重排时平滑移动
   const recentListRef = useFlipList<HTMLUListElement>(recent);
@@ -524,7 +534,7 @@ export function HomeView({
               />
             ) : (
               <ul ref={recentListRef} className="anim-rise-in overflow-hidden rounded-xl border border-line bg-background shadow-sm">
-                {recent.map((r, i) => (
+                {(recentExpanded ? recent : recent.slice(0, RECENT_INITIAL)).map((r, i, arr) => (
                   <li key={r.doc_id} data-flip-key={`recent:${r.doc_id}`}>
                     <button
                       onClick={() => onOpenRecent(r.doc_id, r.kb_id)}
@@ -565,12 +575,35 @@ export function HomeView({
                         <path d="M9 6l6 6-6 6" />
                       </svg>
                     </button>
-                    {i < recent.length - 1 && (
+                    {i < arr.length - 1 && (
                       <div className="ml-14 border-b border-line" />
                     )}
                   </li>
                 ))}
               </ul>
+            )}
+
+            {/* 折叠开关：只在确实有更多条时出现，避免"永远显示一个没用的按钮" */}
+            {recent.length > RECENT_INITIAL && (
+              <button
+                onClick={() => setRecentExpanded((v) => !v)}
+                className="mt-2 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-muted transition-colors hover:bg-hover hover:text-text"
+                aria-expanded={recentExpanded}
+              >
+                {recentExpanded ? "收起" : `展开全部 ${recent.length} 条`}
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  className={`transition-transform ${recentExpanded ? "rotate-180" : ""}`}
+                >
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
             )}
           </section>
 
