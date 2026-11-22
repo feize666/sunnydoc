@@ -234,6 +234,7 @@ export function HomeView({
         <div className="flex min-w-0 shrink items-center gap-2">
           <button
             onClick={onOpenPalette}
+            data-testid="command-palette-trigger"
             className="touch-target group flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2.5 text-xs text-faint transition-colors hover:border-accent/40 hover:bg-background hover:text-muted md:min-w-[200px] md:px-3"
             aria-label="搜索或执行命令"
           >

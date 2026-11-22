@@ -144,6 +144,8 @@ export function TitleBar({
 
       <button
         onClick={onOpenPalette}
+        data-testid="command-palette-trigger"
+        aria-label="搜索或执行命令"
         className="hidden h-9 min-w-[220px] items-center gap-1.5 rounded-md bg-surface-2 px-3 text-sm text-faint md:flex"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

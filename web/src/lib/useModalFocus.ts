@@ -29,10 +29,18 @@ export function useModalFocus<T extends HTMLElement>(
   open: boolean,
   onClose?: () => void,
   label?: string,
+  /**
+   * 打开时调用，覆盖「把焦点归还到打开前元素」的默认行为。
+   * 仅在全局快捷键等「打开前焦点可能在 BODY」的入口使用；普通对话框不需要。
+   * 必须在清理函数归还焦点之前调用，不能用另一个 effect 与它竞争。
+   */
+  resolveRestoreTarget?: () => HTMLElement | null,
 ) {
   const panelRef = useRef<T | null>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const resolveRestoreRef = useRef(resolveRestoreTarget);
+  resolveRestoreRef.current = resolveRestoreTarget;
   const idRef = useRef<symbol>(Symbol("modal"));
   const restoreRef = useRef<HTMLElement | null>(null);
 
@@ -40,8 +48,8 @@ export function useModalFocus<T extends HTMLElement>(
     if (!open) return;
     const id = idRef.current;
     dialogStack.push(id);
-    restoreRef.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    restoreRef.current = resolveRestoreRef.current?.() ??
+      (document.activeElement instanceof HTMLElement ? document.activeElement : null);
 
     // 补模态语义（零侵入，不覆盖调用方已写的同名属性）
     const panel = panelRef.current;

@@ -7,7 +7,7 @@ import { Editor } from "@/components/Editor";
 import { AiPanel, type AgentUiAction } from "@/components/AiPanel";
 import { StatusBar } from "@/components/StatusBar";
 import { useToast } from "@/components/Toast";
-import { CommandPalette, type Command } from "@/components/CommandPalette";
+import { CommandPalette, type Command, type PaletteSearchResponse } from "@/components/CommandPalette";
 import { ShortcutPanel } from "@/components/ShortcutPanel";
 import { ImportDialog } from "@/components/ImportDialog";
 import { NewDocDialog } from "@/components/NewDocDialog";
@@ -71,7 +71,6 @@ import {
   getStats,
   getUnreadCount,
   subscribeSSE,
-  searchDocuments,
   searchDocumentsFull,
   getMe,
   logout,
@@ -575,10 +574,12 @@ export default function Home() {
 
   // 打开文档：设置 active，若未加载全文则拉取，并记录最近浏览
   const openDoc = useCallback(
-    async (key: string) => {
+    async (key: string, nextHighlight = "") => {
       setOpenKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
       setActiveKey(key);
-      setHighlight("");
+      // 高亮是「这次打开」的输入，不是调用方随后补设的状态：
+      // 分两次写会被这里的重置覆盖，搜索结果打开后命中数恒为 0。
+      setHighlight(nextHighlight);
       if (!docs[key]) {
         setLoadingDoc(true);
         try {
@@ -747,8 +748,7 @@ export default function Home() {
   // 后端未返回时回退到原始查询串（保持对旧后端的兼容）。
   const handleOpenSearchResult = useCallback(
     (docId: string) => {
-      openDoc(docId);
-      setHighlight(searchTerms.length > 0 ? searchTerms.join(" ") : searchQuery.trim());
+      void openDoc(docId, searchTerms.length > 0 ? searchTerms.join(" ") : searchQuery.trim());
     },
     [openDoc, searchQuery, searchTerms],
   );
@@ -759,11 +759,10 @@ export default function Home() {
   // 那条路实测只有 50% 命中（snippet 是裸分片，含换行/表格对齐空格）。
   const handleOpenCitation = useCallback(
     (docId: string, citation: Citation) => {
-      openDoc(docId);
       const kw =
         citation.terms?.trim() ||
         citation.snippet.replace(/\s+/g, " ").trim().slice(0, 20);
-      setHighlight(kw);
+      void openDoc(docId, kw);
       setAiOpen(false);
     },
     [openDoc],
@@ -1453,17 +1452,32 @@ export default function Home() {
   }, []);
   const activeMeta = activeKey ? metas.find((m) => m.id === activeKey) ?? null : null;
 
-  // 命令面板全文搜索
+  // 命令面板全文搜索。保留「实际匹配词」供打开文档后高亮：
+  // 搜索接口可能把自然语言拆成多个词，拿原始整句去正文里找会零高亮。
   const paletteSearch = useCallback(
-    async (q: string) => {
-      try {
-        return await searchDocuments(q, currentKbId);
-      } catch {
-        return [];
-      }
+    async (q: string): Promise<PaletteSearchResponse> => {
+      // 首页 / 设置页的 ⌘K 是全局入口，不能被上次访问的库隐式过滤；
+      // 在知识库内才保持当前库范围。跨库结果携带 kb_id，打开时再切换。
+      const response = await searchDocumentsFull(q, view === "kb" ? currentKbId : null);
+      return { results: response.results, terms: response.terms };
     },
-    [currentKbId],
+    [currentKbId, view],
   );
+  const goToKbView = viewStack.go;
+  const openPaletteResult = useCallback((result: SearchResult, terms: string[]) => {
+    // 命令面板在首页 / 设置页也可用。openDoc 只负责装载文档，不负责切视图；
+    // 若只调 openDoc，用户会看到「结果点了、面板关了、仍停在原页面」。
+    const kbId = result.kb_id ?? currentKbId;
+    if (kbId) saveSessionKbId(kbId);
+    else clearSessionKbId();
+    setCurrentKbId(kbId);
+    setView("kb");
+    goToKbView(["kb", result.doc_id]);
+    setSearchQuery("");
+    setSearchType("");
+    setSearchTag("");
+    void openDoc(result.doc_id, terms.length > 0 ? terms.join(" ") : result.title);
+  }, [currentKbId, openDoc, goToKbView]);
 
   const commands: Command[] = [
     {
@@ -1874,10 +1888,7 @@ export default function Home() {
         onClose={() => setPaletteOpen(false)}
         commands={commands}
         onSearch={paletteSearch}
-        onOpenResult={(docId) => {
-          setPaletteOpen(false);
-          openDoc(docId);
-        }}
+        onOpenResult={openPaletteResult}
         // P4-2「统一检索入口」：把标签也纳入命令面板。
         // 数据直接复用上层已算好的 tagList（含篇数），不另发请求 ——
         // 同一份数据的第二条产出路径在本项目已踩过坑。
