@@ -121,6 +121,7 @@ Tailwind 映射：`shadow-sm` / `shadow-md` / `shadow-lg` / `shadow-glow`。
 统一聚焦态（见 `globals.css`）：
 - 可点击元素（`button` / `[role="button"]` / `a` / `[tabindex]`）`focus-visible` → 蓝色 `outline`。
 - 文本输入 / 下拉（`input` / `select`）`focus-visible` → 蓝色边框 + `--focus-ring` 光晕。
+  **例外**：`.sidebar-search-input` 由唯一 shell 统一绘制焦点态，输入自身不重复描边，见 §5.21。
 
 ### 3.4 玻璃拟态（现状说明）
 
@@ -627,7 +628,50 @@ API 不变：`<Tooltip content="提示" side="top|bottom">触发元素</Tooltip>
 - 护栏：`verify_palette_navigation.cjs` 覆盖首页/跨库/设置页打开、真实正文高亮、
   浏览器返回后再次搜索、逆序响应、键盘与焦点归还、390×640 布局及零残留。
 
-### 5.21 树形列表缩进（`components/FileTree.tsx`）
+### 5.21 系统设置分类与侧栏搜索容器
+
+#### 设置分类：桌面滑动卡片 / 移动图标页签
+
+- 整页头部只显示「返回 + 系统设置」，不显示面包屑、AI 状态摘要或右侧操作；AI 配置状态只保留在 AI 分区标题内。删除可见的「设置分类」提示，但保留 nav 的 `aria-label`，不影响屏幕阅读器识别。
+- 桌面分类栏使用 `md:w-60`，每项为 56px 卡片，图标 + 13px 名称 + 11px 描述；
+  选中态用 `--accent-soft` / `--accent` 和持续左侧指示条，不随 hover 位移。
+- 精细指针悬停未选中项右移 **6px**，图标放大 **1.15** 并着色，配 `--background`、
+  `--line`、`--shadow-md` 与半高指示条；键盘 `focus-visible` 为 **4px** 右移。
+  不要把这种位移扩散到密集文档树。
+- `<768px` 改为图标 + 单行列名的横向页签，指示条在底部；切换后仅在容器确实溢出时
+  `scrollIntoView({ block:"nearest", inline:"nearest", behavior:"smooth" })`。
+  粗指针下页签与表单控件至少 44px，不依赖 hover。
+- 位移只在 `(hover:hover) and (pointer:fine)` 下启用；`prefers-reduced-motion:reduce`
+  下位移与过渡一并关闭。保留 `tablist/tab/tabpanel`、方向键、Home、End 与 roving tabindex。
+
+#### 侧栏全文搜索：唯一视觉容器
+
+- `.sidebar-search-shell` 独占背景、边框和焦点：默认 `--surface-2`、透明边框、
+  `--radius-lg`；hover 为 `--hover`；`:focus-within` 为 `--background` +
+  `--accent` 描边 + `--focus-ring`，图标同步着色。
+- 桌面 shell **40px**、内部输入 **38px**；input 自身不画边框和阴影，不能与 shell
+  叠加两层框。粗指针下 shell 和输入均为 **44px**。
+- 主搜索独占一行，有效宽度至少 200px；排序入口移到「文档树」区头，不再与其争宽度。
+- **主搜索 ≠ 目录筛选**：前者请求后端全文检索并显示后端命中词；后者仅在前端过滤目录名。
+  目录筛选为 32px、透明背景、底部细分隔线，不复制主搜索的柔和填充，不发起 `/search` 请求。
+- 移动端 `tap()` 打开搜索结果后必须关闭抽屉并传入本次命中词；清除搜索恢复目录树。
+
+横向页签容器中未选中的离屏子项不是页面横向溢出；判据应同时看
+`documentElement.scrollWidth === clientWidth` 与选中项在 nav 内可见，不能把所有
+`rect.right > vw` 的子项一概算作页面溢出。
+
+护栏 `verify_settings_search_ui.cjs`：58 项，覆盖上述计算样式、真实后端结果、
+高亮、键盘、390px 触屏、双主题、AI 配置 mock 和活跃列表/回收站零残留。
+`SUNNYDOC_TEST_OLD_UI=1` 在目标 document 内注入旧双层边框与弱 hover，必须精准拒绝
+「主搜索只有容器一层边框」「桌面分类悬停联动」两项；注入后须先读计算样式确认生效，
+否则空白 document 上插入的样式会在导航后丢失，得到无效的对照结果。
+
+知识库 session 恢复只负责补充当前库上下文，**只在无 hash 首页自动进入 `#/kb`**，
+不得直接 `setView("kb")` 覆盖显式设置等深链。恢复进库走 `viewStack.go(["kb"])`，
+同层设置切换仍使用 `replaceState`。`verify_nav_depth.cjs` 覆盖桌面/移动预设会话、
+首页恢复及真实 DOM 与 hash 一致性。
+
+### 5.22 树形列表缩进（`components/FileTree.tsx`）
 
 **每层缩进只有一个来源：行容器的 `paddingLeft`。**
 
@@ -1781,7 +1825,7 @@ viewport（pan/zoom）、自身尺寸、以及泳道父节点偏移影响——�
 
 `web/scripts/verify_nav_depth.cjs`：用户菜单 → 设置页（hash 变 `#/settings`）；
 深链 `#/settings` 直达；**浏览器后退回上一级**（hash 与界面同步）；
-面包屑可点回退；移动端 375px 可到达且无横向溢出。
+返回按钮沿用浏览器后退；移动端 375px 可到达且无横向溢出。设置页是无更深层级的独立页，头部仅「返回 + 系统设置」，不承载面包屑（§5.21）。
 
 ## 6.16 智能体工具编排（阶段 4）
 

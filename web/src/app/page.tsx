@@ -475,16 +475,19 @@ export default function Home() {
     return () => sub.close();
   }, [user, refreshUnread]);
 
-  // 知识库加载完成后，尝试恢复上次打开的知识库
+  // 知识库加载完成后，仅在首页恢复上次打开的知识库。
+  // 显式深链（如 #/settings）已经决定了视图，session 只能补充当前库上下文，
+  // 不能再 setView("kb") 覆盖路由同步结果；恢复进库也必须同步 hash，
+  // 否则「首页自动恢复」与「点进知识库」会产生不同的历史记录语义。
   useEffect(() => {
     if (restoredRef.current || !kbsFetchedRef.current) return;
     restoredRef.current = true;
     const saved = loadSessionKbId();
     if (saved && kbs.some((k) => k.id === saved)) {
       setCurrentKbId(saved);
-      setView("kb");
+      if (subPath.length === 0) viewStack.go(["kb"]);
     }
-  }, [kbs]);
+  }, [kbs, subPath, viewStack]);
 
   // 拉取文档列表 + 文件夹列表（带 kb_id 过滤）
   const refreshList = useCallback(async () => {
@@ -748,6 +751,9 @@ export default function Home() {
   // 后端未返回时回退到原始查询串（保持对旧后端的兼容）。
   const handleOpenSearchResult = useCallback(
     (docId: string) => {
+      // 搜索结果由共享回调打开，与树节点的 onSelect 是另一条路径；
+      // 点击与 Enter 都走这里，移动端必须同时收起抽屉，避免遮住正文。
+      setMobileSidebarOpen(false);
       void openDoc(docId, searchTerms.length > 0 ? searchTerms.join(" ") : searchQuery.trim());
     },
     [openDoc, searchQuery, searchTerms],
@@ -2039,16 +2045,8 @@ export default function Home() {
           theme={theme}
           onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
           isAdmin={user?.role === "admin"}
-          pageHeader={(title, subtitle) => (
-            <PageHeader
-              title={title}
-              subtitle={subtitle}
-              crumbs={[
-                { label: "首页", onClick: () => viewStack.upTo(0) },
-                { label: "系统设置" },
-              ]}
-              onBack={() => viewStack.back()}
-            />
+          pageHeader={(title) => (
+            <PageHeader title={title} onBack={() => viewStack.back()} />
           )}
         />
       )}

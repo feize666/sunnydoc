@@ -1537,6 +1537,7 @@ export async function testAISettings(payload: {
   api_key?: string;
   model?: string;
   saved?: boolean;
+  group?: "llm" | "embedding" | "rerank";
 }): Promise<AITestResult> {
   return request(`/settings/ai/test`, {
     method: "POST",
@@ -1549,6 +1550,7 @@ export async function fetchAIModels(payload: {
   base_url?: string;
   api_key?: string;
   saved?: boolean;
+  group?: "llm" | "embedding" | "rerank";
 }): Promise<AITestResult> {
   return request(`/settings/ai/models`, {
     method: "POST",

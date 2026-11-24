@@ -17,6 +17,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+import httpx
 from pydantic import BaseModel
 
 from app.core.config import DEFAULT_TOP_K, MEDIA_DIR, DATA_DIR, TEXT_EXTS, ai_config
@@ -373,7 +374,8 @@ class AITestRequest(BaseModel):
     base_url: str = ""
     api_key: str = ""
     model: str = ""
-    saved: bool = False  # true 时使用当前已保存配置
+    saved: bool = False  # true 时允许服务端补齐当前编辑值为空的配置
+    group: str = "llm"  # llm / embedding / rerank，不能全部按对话协议测试
 
 
 class CustomProvider(BaseModel):
@@ -1014,49 +1016,93 @@ def update_ai_settings(req: AISettingsRequest, admin: dict = Depends(require_adm
     return {"ok": True, "provider": payload["provider"]}
 
 
-def _resolve_test_params(req: AITestRequest) -> tuple[str, str, str]:
-    """从请求 + 已保存配置中解析 base_url/api_key/model。"""
+def _resolve_test_params(req: AITestRequest) -> tuple[str, str, str, str]:
+    """按模型组解析参数；脱敏密钥只由服务端在 saved=true 时补齐。
+
+    前端留空不等于清空：它表示继续用已保存配置。浏览器始终只提交新密钥，
+    不会把 GET 返回的掩码当成真实密钥。向量/精排没有独立密钥时沿用对话密钥，
+    与表单的「复用」说明和运行时 fallback 保持一致。
+    """
+    group = req.group if req.group in ("llm", "embedding", "rerank") else "llm"
     saved = ai_config() if req.saved else {}
-    base = (req.base_url or saved.get("llm_base_url") or "").strip()
-    # api_key: 请求中空时使用已保存的（GET 时已脱敏，不能直接当真实 key 用 —— 仅允许 saved=true）
+    base = (
+        req.base_url
+        or saved.get(f"{group}_base_url")
+        or (saved.get("llm_base_url") if group != "llm" else "")
+        or ""
+    ).strip()
     if req.api_key:
         key = req.api_key.strip()
     elif req.saved:
-        key = (saved.get("llm_api_key") or "").strip()
+        key = (
+            saved.get(f"{group}_api_key")
+            or (saved.get("embedding_api_key") if group == "rerank" else "")
+            or saved.get("llm_api_key")
+            or ""
+        ).strip()
     else:
         key = ""
-    model = (req.model or saved.get("llm_model") or "").strip()
-    return base, key, model
+    model = (req.model or saved.get(f"{group}_model") or "").strip()
+    return group, base, key, model
+
+
+def _test_minimal_connection(group: str, base: str, key: str, model: str) -> dict:
+    """Embedding / Rerank 用各自协议的最小请求，不能伪装成 chat 成功。"""
+    if group == "embedding":
+        url, payload = f"{base.rstrip('/')}/embeddings", {
+            "model": model, "input": "ping",
+        }
+    else:
+        url, payload = f"{base.rstrip('/')}/reranks", {
+            "model": model, "query": "ping", "documents": ["ping"], "top_n": 1,
+        }
+    try:
+        resp = httpx.post(
+            url, headers={"Authorization": f"Bearer {key}"},
+            json=payload, timeout=llm.LLM_TIMEOUT,
+        )
+    except httpx.HTTPError as e:
+        return {"ok": False, "status": -1, "detail": f"网络异常: {e}", "content": ""}
+    if resp.status_code >= 400:
+        try:
+            body = resp.json()
+            detail = (body.get("error") or {}).get("message") or body.get("message") or resp.text
+        except (ValueError, AttributeError):
+            detail = resp.text
+        return {"ok": False, "status": resp.status_code, "detail": (detail or "")[:400], "content": ""}
+    try:
+        data = resp.json()
+        content = "嵌入接口已响应" if group == "embedding" and data.get("data") else "精排接口已响应" if group == "rerank" and data.get("results") else ""
+        if not content:
+            raise ValueError("响应缺少预期的 data/results 字段")
+        return {"ok": True, "status": resp.status_code, "detail": "", "content": content}
+    except (ValueError, AttributeError) as e:
+        return {"ok": False, "status": resp.status_code, "detail": f"响应解析失败: {e}", "content": ""}
 
 
 @router.post("/settings/ai/test")
 def test_ai_settings(req: AITestRequest, admin: dict = Depends(require_admin)):
-    """连通性测试：用 ping 调一次 chat/completions，返回 ok/status/detail。"""
-    base, key, model = _resolve_test_params(req)
+    """按模型组测试真实协议；密钥只在服务端解析，不写入响应或日志。"""
+    group, base, key, model = _resolve_test_params(req)
     if not base:
-        return {"ok": False, "status": -1, "detail": "请填写 Base URL", "content": ""}
+        return {"ok": False, "status": -1, "detail": "请填写接口地址", "content": ""}
     if not key:
-        return {"ok": False, "status": -1, "detail": "请填写 API Key（已保存的密钥不会回显，无法用于测试）", "content": ""}
+        return {"ok": False, "status": -1, "detail": "请填写 API Key，或先保存已有配置", "content": ""}
     if not model:
-        return {"ok": False, "status": -1, "detail": "请填写模型名（或先点「获取模型列表」）", "content": ""}
-    return llm.test_connection(base, key, model)
+        return {"ok": False, "status": -1, "detail": "请填写模型名称（或先获取模型列表）", "content": ""}
+    if group == "llm":
+        return llm.test_connection(base, key, model)
+    return _test_minimal_connection(group, base, key, model)
 
 
 @router.post("/settings/ai/models")
 def list_ai_models(req: AITestRequest, admin: dict = Depends(require_admin)):
-    """拉取 {base_url}/models 的模型列表。"""
-    saved = ai_config() if req.saved else {}
-    base = (req.base_url or saved.get("llm_base_url") or "").strip()
-    if req.api_key:
-        key = req.api_key.strip()
-    elif req.saved:
-        key = (saved.get("llm_api_key") or "").strip()
-    else:
-        key = ""
+    """从当前模型组的接口拉取模型，允许复用服务端已保存密钥。"""
+    _, base, key, _ = _resolve_test_params(req)
     if not base:
-        return {"ok": False, "status": -1, "models": [], "detail": "请填写 Base URL"}
+        return {"ok": False, "status": -1, "models": [], "detail": "请填写接口地址"}
     if not key:
-        return {"ok": False, "status": -1, "models": [], "detail": "请填写 API Key（已保存的密钥不会回显，需重新填入）"}
+        return {"ok": False, "status": -1, "models": [], "detail": "请填写 API Key，或先保存已有配置"}
     return llm.fetch_models(base, key)
 
 

@@ -87,6 +87,7 @@ export function TitleBar({
       <Tooltip content="折叠侧栏">
         <button
           onClick={onToggleSidebar}
+          aria-label="折叠侧栏"
           className="icon-btn text-muted hover:text-text"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

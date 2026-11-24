@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { FileTree } from "./FileTree";
 import { Tooltip } from "./Tooltip";
-import { PlusIcon, SearchIcon, CloseIcon, FileIcon } from "./icons";
+import { PlusIcon, SearchIcon, CloseIcon, FileIcon, CheckIcon } from "./icons";
 import { EmptyState } from "./EmptyState";
 import { useResizable } from "@/hooks/useResizable";
 import { parseTagQuery } from "@/lib/tagQuery";
@@ -414,7 +414,7 @@ export function Sidebar({
   return (
     <aside
       style={{ width: collapsed && !mobile ? 40 : sidebarWidth }}
-      className={`relative flex shrink-0 flex-col overflow-hidden border-r border-line bg-surface ${
+      className={`relative flex shrink-0 flex-col overflow-hidden border-r border-line bg-surface ${mobile ? "sidebar-mobile" : ""} ${
         dragging ? "" : "sidebar-transition"
       } ${mobile ? "fixed inset-y-0 left-0 z-40 md:hidden" : "hidden md:flex"}`}
     >
@@ -694,11 +694,11 @@ export function Sidebar({
         </div>
         )}
 
-        <div className="mt-2 flex items-center gap-1.5">
-          <div className="relative flex-1">
+        <div className="mt-2">
+          <div className="sidebar-search-shell relative" data-testid="sidebar-search-shell">
             <SearchIcon
               size={15}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
+              className="sidebar-search-icon pointer-events-none absolute left-3 top-1/2 -translate-y-1/2"
             />
             <input
               value={searchQuery}
@@ -727,15 +727,17 @@ export function Sidebar({
                   setSelIndex(0);
                 }
               }}
-              placeholder="搜索文档内容…"
+              placeholder="搜索标题、正文或标签"
+              aria-label="搜索当前知识库的标题、正文或标签"
               data-testid="sidebar-search"
-              className="input input-icon pr-9"
+              className="sidebar-search-input input input-icon pr-11"
             />
             {searchQuery && (
               <button
                 onClick={() => onSearchChange("")}
-                className="absolute right-1.5 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full text-faint transition-colors hover:bg-hover hover:text-text"
-                title="清除"
+                className="sidebar-clear absolute right-1 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-faint transition-colors hover:bg-hover hover:text-text"
+                title="清除搜索"
+                aria-label="清除搜索"
               >
                 <CloseIcon size={14} />
               </button>
@@ -761,50 +763,6 @@ export function Sidebar({
             )}
           </div>
 
-          <div className="relative shrink-0" ref={sortMenuRef}>
-            <Tooltip content="排序方式">
-              <button
-                onClick={() => setSortMenuOpen((v) => !v)}
-                className="flex h-9 items-center gap-1 rounded-lg border border-line px-2.5 text-[14px] text-muted transition-colors hover:bg-hover hover:text-text"
-              >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M8 6h13M8 12h13M8 18h13" />
-                  <path d="M3 5l2 2 2-2M3 11l2 2 2-2M3 17l2 2 2-2" />
-                </svg>
-                {sortLabel}
-              </button>
-            </Tooltip>
-            {sortMenuOpen && (
-              <div className="menu-panel absolute right-0 top-full z-50 mt-1 w-32">
-                {sortOptions.map((o) => (
-                  <button
-                    key={o.value}
-                    onClick={() => {
-                      onSortChange(o.value);
-                      setSortMenuOpen(false);
-                    }}
-                    className={`menu-item justify-between ${
-                      sortBy === o.value
-                        ? "text-accent"
-                        : "text-muted hover:text-text"
-                    }`}
-                  >
-                    <span>{o.label}</span>
-                    {sortBy === o.value && <span>✓</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
@@ -969,6 +927,7 @@ export function Sidebar({
             {searchResults.map((r, i) => (
               <button
                 key={r.doc_id}
+                data-search-doc-id={r.doc_id}
                 onClick={() => onOpenSearchResult(r.doc_id)}
                 onMouseEnter={() => setSelIndex(i)}
                 className={`lift-x flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left ${
@@ -1106,10 +1065,10 @@ export function Sidebar({
                 条目少时不显示（避免给简单场景添乱）。 */}
             {data.length > 12 && (
               <div className="relative mx-1 mb-1.5">
-                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-faint">
+                <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-                       stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <path d="m21 21-4.35-4.35M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0z" />
+                       stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 5h16l-6 7v5l-4 2v-7z" />
                   </svg>
                 </span>
                 <input
@@ -1121,15 +1080,15 @@ export function Sidebar({
                       setTreeFilter("");
                     }
                   }}
-                  placeholder="在树中按名称筛选…"
+                  placeholder="筛选目录名称"
                   aria-label="在文档树中按名称筛选"
                   data-testid="tree-filter"
-                  className="input input-icon pr-8 text-[13px]"
+                  className="input input-sm input-icon-sm border-x-0 border-t-0 border-line bg-transparent pr-10 text-[12px] shadow-none hover:bg-surface-2"
                 />
                 {treeFilter && (
                   <button
                     onClick={() => setTreeFilter("")}
-                    className="absolute right-1 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full text-faint transition-colors hover:bg-hover hover:text-text"
+                    className="sidebar-clear absolute right-1 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-full text-faint transition-colors hover:bg-hover hover:text-text"
                     title="清除筛选"
                     aria-label="清除筛选"
                   >
@@ -1144,13 +1103,57 @@ export function Sidebar({
                 用户分不清"哪些是操作、哪里是内容"。
                 这里给树加一个不显眼的区头，明确"以下是我的文档树"。
                 `select-none` 防止拖动树时误选中标题文字。 */}
-            <div className="mb-0.5 flex select-none items-center gap-1.5 px-2 pt-1 text-[11px] font-medium text-faint">
+            <div data-testid="tree-heading" className="mb-0.5 flex select-none items-center gap-2 px-2 pt-1 text-[11px] font-medium text-faint">
               <span>文档树</span>
               {data.length > 0 && (
                 <span className="text-faint/70">
                   {data.length} 个顶层项
                 </span>
               )}
+              <div className="relative ml-auto" ref={sortMenuRef}>
+                <Tooltip content={`文档排序 · ${sortLabel}`}>
+                  <button
+                    onClick={() => setSortMenuOpen((v) => !v)}
+                    className={`flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] transition-colors ${
+                      sortMenuOpen ? "bg-accent-soft text-accent" : "text-faint hover:bg-hover hover:text-text"
+                    }`}
+                    aria-label={`文档排序：${sortLabel}`}
+                    aria-haspopup="menu"
+                    aria-expanded={sortMenuOpen}
+                    data-testid="sidebar-sort"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M8 6h13M8 12h13M8 18h13" />
+                      <path d="M3 5l2 2 2-2M3 11l2 2 2-2M3 17l2 2 2-2" />
+                    </svg>
+                    {sortLabel}
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="m7 10 5 5 5-5" />
+                    </svg>
+                  </button>
+                </Tooltip>
+                {sortMenuOpen && (
+                  <div className="menu-panel absolute right-0 top-full z-50 mt-1 w-32" role="menu">
+                    {sortOptions.map((o) => (
+                      <button
+                        key={o.value}
+                        role="menuitemradio"
+                        aria-checked={sortBy === o.value}
+                        onClick={() => {
+                          onSortChange(o.value);
+                          setSortMenuOpen(false);
+                        }}
+                        className={`menu-item justify-between ${
+                          sortBy === o.value ? "text-accent" : "text-muted hover:text-text"
+                        }`}
+                      >
+                        <span>{o.label}</span>
+                        {sortBy === o.value && <CheckIcon size={12} />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             {/* key 里带 treeEpoch：知识库总览点「目录」时，用一次重挂来让
                 已挂载的树读到新的 localStorage 展开记录（见 page.tsx

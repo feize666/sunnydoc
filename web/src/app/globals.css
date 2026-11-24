@@ -1994,6 +1994,131 @@ mark.search-hit {
 }
 
 /* ==========================================================================
+   设置分类与侧栏搜索（2026-11-23）
+   --------------------------------------------------------------------------
+   位移只用于稀疏的设置导航，不用于密集文档树。桌面悬停有清晰的 6px 右移，
+   选中项保持稳定；触屏不依赖 hover，粗指针下仍保留至少 44px 的命中区。
+   搜索边框、背景与焦点只属于 shell，input 本身不再叠加第二层框。
+   ========================================================================== */
+.settings-nav-item {
+  position: relative;
+  display: flex;
+  min-height: 36px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  padding: 8px 12px;
+  text-align: left;
+  color: var(--muted);
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
+    background-color 0.18s ease, border-color 0.18s ease,
+    box-shadow 0.18s ease, color 0.18s ease;
+}
+.settings-nav-item::after {
+  content: "";
+  position: absolute;
+  bottom: 5px;
+  left: 14px;
+  right: 14px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform 0.2s ease;
+}
+.settings-nav-icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  color: var(--faint);
+  transition: color 0.18s ease, transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.settings-nav-item.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
+}
+.settings-nav-item.is-active::after { transform: scaleX(1); }
+.settings-nav-item.is-active .settings-nav-icon { color: var(--accent); }
+@media (min-width: 768px) {
+  .settings-nav-item {
+    min-height: 56px;
+    gap: 10px;
+    padding-block: 9px;
+  }
+  .settings-nav-item::after {
+    top: 13px;
+    bottom: 13px;
+    left: 0;
+    right: auto;
+    width: 3px;
+    height: auto;
+    transform: scaleY(0);
+  }
+  .settings-nav-item.is-active::after { transform: scaleY(1); }
+}
+@media (hover: hover) and (pointer: fine) {
+  .settings-nav-item:hover:not(.is-active) {
+    background: var(--background);
+    border-color: var(--line);
+    box-shadow: var(--shadow-md);
+    color: var(--text);
+  }
+  .settings-nav-item:hover:not(.is-active) .settings-nav-icon {
+    color: var(--accent);
+    transform: scale(1.15);
+  }
+  .settings-nav-item:focus-visible:not(.is-active) {
+    background: var(--hover);
+    color: var(--text);
+  }
+  .settings-nav-item:focus-visible:not(.is-active) .settings-nav-icon {
+    color: var(--accent);
+    transform: scale(1.15);
+  }
+  @media (min-width: 768px) {
+    .settings-nav-item:hover:not(.is-active) { transform: translateX(6px); }
+    .settings-nav-item:focus-visible:not(.is-active) { transform: translateX(4px); }
+    .settings-nav-item:hover:not(.is-active)::after { transform: scaleY(0.55); }
+  }
+}
+.sidebar-search-shell {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.sidebar-search-icon { color: var(--faint); transition: color 0.18s ease; }
+.sidebar-search-input.input {
+  height: 38px;
+  min-height: 38px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  box-shadow: none;
+  font-size: 13px;
+}
+.sidebar-search-input.input:focus,
+.sidebar-search-input.input:focus-visible {
+  border: 0;
+  box-shadow: none;
+}
+.sidebar-search-shell:hover { background: var(--hover); }
+.sidebar-search-shell:focus-within {
+  border-color: var(--accent);
+  background: var(--background);
+  box-shadow: var(--focus-ring);
+}
+.sidebar-search-shell:focus-within .sidebar-search-icon { color: var(--accent); }
+
+/* ==========================================================================
    触屏适配（阶段 2）—— 仅在「粗指针 / 无悬停」的设备生效
    --------------------------------------------------------------------------
    为什么用 `@media (hover: none) and (pointer: coarse)` 而不是 `max-width`：
@@ -2009,6 +2134,15 @@ mark.search-hit {
    用 `min-width/min-height` + 保持 svg 尺寸，避免图标视觉变大破坏版面。
    ========================================================================== */
 @media (hover: none) and (pointer: coarse) {
+  /* 设置页签与表单输入同样属于触控目标；按输入方式而非视口宽度放大。 */
+  [role="tab"] { min-height: 44px; }
+  .input, .input-sm, .select, .select-sm { min-height: 44px; }
+  /* 侧栏的搜索、筛选和排序原本绕过了 .icon-btn，触屏上仍只有 24px。 */
+  .sidebar-mobile .sidebar-clear { width: 44px; height: 44px; right: 0; }
+  .sidebar-mobile .sidebar-search-shell { min-height: 44px; }
+  .sidebar-mobile .sidebar-search-input.input { height: 44px; min-height: 44px; }
+  .settings-nav-item { min-height: 44px; }
+  .sidebar-mobile [data-testid="sidebar-sort"] { min-height: 44px; padding-inline: 8px; }
   /* 图标按钮：32 → 44（含 .icon-btn 与工具按钮的紧凑档） */
   .icon-btn {
     min-width: 44px;
@@ -2192,6 +2326,22 @@ mark.search-hit {
    为什么只播一次：空态是唯一适合"打个招呼"的场合，循环播放会变成干扰。
    `backwards` 而非 `both` —— 播完要回到静止态（项目动效约定，见 DESIGN.md）。
    prefers-reduced-motion 下完全不播（无障碍要求）。 */
+@media (prefers-reduced-motion: reduce) {
+  .settings-nav-item,
+  .settings-nav-item::after,
+  .settings-nav-icon,
+  .sidebar-search-shell,
+  .sidebar-search-icon {
+    transition: none;
+  }
+  .settings-nav-item:hover:not(.is-active),
+  .settings-nav-item:focus-visible:not(.is-active),
+  .settings-nav-item:hover:not(.is-active) .settings-nav-icon,
+  .settings-nav-item:focus-visible:not(.is-active) .settings-nav-icon {
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .ai-logo-hero {
     animation: ai-logo-breathe 0.9s cubic-bezier(0.16, 1, 0.3, 1) backwards;
